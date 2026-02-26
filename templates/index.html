@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ringover CRM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255,255,255,0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            margin-bottom: 30px;
+        }
+
+        .logo i {
+            font-size: 28px;
+            color: #00d4aa;
+        }
+
+        .logo span {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00d4aa, #7b68ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: 5px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .nav-link:hover, .nav-link.active {
+            background: rgba(0,212,170,0.2);
+            color: #00d4aa;
+        }
+
+        .nav-link i {
+            width: 20px;
+            text-align: center;
+        }
+
+        .sync-btn {
+            margin-top: auto;
+            padding: 14px;
+            background: linear-gradient(135deg, #00d4aa, #00a884);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .sync-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,212,170,0.3);
+        }
+
+        .sync-btn.syncing i {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 0 15px;
+            width: 300px;
+        }
+
+        .search-bar i {
+            color: rgba(255,255,255,0.5);
+        }
+
+        .search-bar input {
+            background: none;
+            border: none;
+            padding: 12px;
+            color: #fff;
+            width: 100%;
+            outline: none;
+        }
+
+        .search-bar input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .stat-card .icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        .stat-card .icon.calls { background: rgba(0,212,170,0.2); color: #00d4aa; }
+        .stat-card .icon.incoming { background: rgba(59,130,246,0.2); color: #3b82f6; }
+        .stat-card .icon.outgoing { background: rgba(168,85,247,0.2); color: #a855f7; }
+        .stat-card .icon.missed { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .stat-card .icon.duration { background: rgba(234,179,8,0.2); color: #eab308; }
+        .stat-card .icon.contacts { background: rgba(236,72,153,0.2); color: #ec4899; }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-btn:hover, .tab-btn.active {
+            background: rgba(0,212,170,0.2);
+            border-color: #00d4aa;
+            color: #00d4aa;
+        }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            padding: 10px 15px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #fff;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .filter-select option {
+            background: #1a1a2e;
+        }
+
+        /* Calls Table */
+        .calls-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+
+        .calls-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .calls-table th {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            text-align: left;
+            font-weight: 500;
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .calls-table td {
+            padding: 15px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .calls-table tr:hover {
+            background: rgba(255,255,255,0.03);
+        }
+
+        .direction-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .direction-badge.in {
+            background: rgba(59,130,246,0.2);
+            color: #3b82f6;
+        }
+
+        .direction-badge.out {
+            background: rgba(168,85,247,0.2);
+            color: #a855f7;
+        }
+
+        .state-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .state-badge.ANSWERED { background: rgba(0,212,170,0.2); color: #00d4aa; }
+        .state-badge.MISSED { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .state-badge.VOICEMAIL { background: rgba(234,179,8,0.2); color: #eab308; }
+        .state-badge.BUSY { background: rgba(249,115,22,0.2); color: #f97316; }
+
+        .phone-number {
+            font-family: 'SF Mono', Monaco, monospace;
+            color: #00d4aa;
+        }
+
+        .call-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .action-btn.play {
+            background: rgba(0,212,170,0.2);
+            color: #00d4aa;
+        }
+
+        .action-btn.note {
+            background: rgba(59,130,246,0.2);
+            color: #3b82f6;
+        }
+
+        .action-btn.history {
+            background: rgba(168,85,247,0.2);
+            color: #a855f7;
+        }
+
+        .action-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Contacts Grid */
+        .contacts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .contact-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+        }
+
+        .contact-card:hover {
+            transform: translateY(-5px);
+            border-color: #00d4aa;
+        }
+
+        .contact-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00d4aa, #7b68ee);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .contact-name {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .contact-company {
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .contact-phone {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #00d4aa;
+            font-family: monospace;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: #1a1a2e;
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            font-size: 20px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.5);
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .note-input {
+            width: 100%;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #fff;
+            resize: vertical;
+            min-height: 100px;
+            margin-bottom: 15px;
+        }
+
+        .note-input:focus {
+            outline: none;
+            border-color: #00d4aa;
+        }
+
+        .save-btn {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #00d4aa, #00a884);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .notes-list {
+            margin-top: 20px;
+        }
+
+        .note-item {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .note-date {
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 5px;
+        }
+
+        /* Audio Player */
+        .audio-player {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .audio-player audio {
+            width: 100%;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .empty-state i {
+            font-size: 60px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        /* Top Numbers */
+        .top-numbers {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .top-numbers h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .number-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .number-item:last-child {
+            border-bottom: none;
+        }
+
+        .number-count {
+            background: rgba(0,212,170,0.2);
+            color: #00d4aa;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 15px 25px;
+            background: #00d4aa;
+            color: #1a1a2e;
+            border-radius: 10px;
+            font-weight: 500;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 2000;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* Hidden sections */
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        /* Export btn */
+        .export-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+
+        .export-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-phone-volume"></i>
+                <span>Ringover CRM</span>
+            </div>
+
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a class="nav-link active" data-section="dashboard">
+                        <i class="fas fa-chart-pie"></i>
+                        Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-section="calls">
+                        <i class="fas fa-phone-alt"></i>
+                        Appels
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-section="contacts">
+                        <i class="fas fa-address-book"></i>
+                        Contacts
+                    </a>
+                </li>
+            </ul>
+
+            <button class="sync-btn" onclick="syncData()">
+                <i class="fas fa-sync-alt"></i>
+                Synchroniser
+            </button>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="section active">
+                <div class="header">
+                    <h1>Dashboard</h1>
+                    <button class="export-btn" onclick="exportData()">
+                        <i class="fas fa-download"></i>
+                        Exporter CSV
+                    </button>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="icon calls"><i class="fas fa-phone-alt"></i></div>
+                        <div class="value" id="stat-total">-</div>
+                        <div class="label">Total appels</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon incoming"><i class="fas fa-phone-arrow-down-left"></i></div>
+                        <div class="value" id="stat-incoming">-</div>
+                        <div class="label">Appels entrants</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon outgoing"><i class="fas fa-phone-arrow-up-right"></i></div>
+                        <div class="value" id="stat-outgoing">-</div>
+                        <div class="label">Appels sortants</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon missed"><i class="fas fa-phone-missed"></i></div>
+                        <div class="value" id="stat-missed">-</div>
+                        <div class="label">Appels manqués</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon duration"><i class="fas fa-clock"></i></div>
+                        <div class="value" id="stat-duration">-</div>
+                        <div class="label">Durée moyenne</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon contacts"><i class="fas fa-users"></i></div>
+                        <div class="value" id="stat-contacts">-</div>
+                        <div class="label">Contacts</div>
+                    </div>
+                </div>
+
+                <div class="top-numbers">
+                    <h3><i class="fas fa-star"></i> Numéros les plus fréquents</h3>
+                    <div id="top-numbers-list"></div>
+                </div>
+            </section>
+
+            <!-- Calls Section -->
+            <section id="calls" class="section">
+                <div class="header">
+                    <h1>Historique des appels</h1>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="search-input" placeholder="Rechercher un numéro...">
+                    </div>
+                </div>
+
+                <div class="filters">
+                    <select class="filter-select" id="filter-direction">
+                        <option value="">Toutes directions</option>
+                        <option value="in">Entrants</option>
+                        <option value="out">Sortants</option>
+                    </select>
+                    <select class="filter-select" id="filter-state">
+                        <option value="">Tous les états</option>
+                        <option value="ANSWERED">Répondus</option>
+                        <option value="MISSED">Manqués</option>
+                        <option value="VOICEMAIL">Messagerie</option>
+                    </select>
+                </div>
+
+                <div class="calls-container">
+                    <table class="calls-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Direction</th>
+                                <th>De</th>
+                                <th>Vers</th>
+                                <th>État</th>
+                                <th>Durée</th>
+                                <th>Agent</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calls-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Contacts Section -->
+            <section id="contacts" class="section">
+                <div class="header">
+                    <h1>Contacts</h1>
+                </div>
+
+                <div class="contacts-grid" id="contacts-grid">
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Note Modal -->
+    <div class="modal-overlay" id="note-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-sticky-note"></i> Notes - <span id="modal-number"></span></h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+
+            <div class="audio-player" id="audio-container" style="display:none;">
+                <p style="margin-bottom:10px;font-size:14px;color:rgba(255,255,255,0.7)">
+                    <i class="fas fa-microphone"></i> Enregistrement
+                </p>
+                <audio controls id="audio-player"></audio>
+            </div>
+
+            <textarea class="note-input" id="note-input" placeholder="Ajouter une note..."></textarea>
+            <button class="save-btn" onclick="saveNote()">
+                <i class="fas fa-save"></i> Enregistrer
+            </button>
+
+            <div class="notes-list" id="notes-list"></div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div class="modal-overlay" id="history-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-history"></i> Historique - <span id="history-number"></span></h2>
+                <button class="modal-close" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div id="history-content"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentCallId = null;
+        let currentNumber = null;
+
+        // Navigation
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+
+                link.classList.add('active');
+                document.getElementById(link.dataset.section).classList.add('active');
+            });
+        });
+
+        // Format phone number
+        function formatPhone(number) {
+            if (!number) return '-';
+            const str = String(number);
+            if (str.startsWith('33') && str.length === 11) {
+                return '+33 ' + str.slice(2, 3) + ' ' + str.slice(3, 5) + ' ' + str.slice(5, 7) + ' ' + str.slice(7, 9) + ' ' + str.slice(9);
+            }
+            return str;
+        }
+
+        // Format date
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('fr-FR') + ' ' + date.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+        }
+
+        // Format duration
+        function formatDuration(seconds) {
+            if (!seconds) return '0s';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        }
+
+        // Toast notification
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Sync data
+        async function syncData() {
+            const btn = document.querySelector('.sync-btn');
+            btn.classList.add('syncing');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/sync');
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(`Synchronisé: ${data.calls_synced} appels, ${data.contacts_synced} contacts`);
+                    loadStats();
+                    loadCalls();
+                    loadContacts();
+                }
+            } catch (error) {
+                showToast('Erreur de synchronisation');
+            }
+
+            btn.classList.remove('syncing');
+            btn.disabled = false;
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+
+                document.getElementById('stat-total').textContent = stats.total_calls || 0;
+                document.getElementById('stat-incoming').textContent = stats.in_calls || 0;
+                document.getElementById('stat-outgoing').textContent = stats.out_calls || 0;
+                document.getElementById('stat-missed').textContent = stats.by_state?.MISSED || 0;
+                document.getElementById('stat-duration').textContent = formatDuration(Math.round(stats.avg_duration || 0));
+                document.getElementById('stat-contacts').textContent = stats.total_contacts || 0;
+
+                // Top numbers
+                const topList = document.getElementById('top-numbers-list');
+                if (stats.top_numbers && stats.top_numbers.length > 0) {
+                    topList.innerHTML = stats.top_numbers.map(n => `
+                        <div class="number-item">
+                            <span class="phone-number">${formatPhone(n.number)}</span>
+                            <span class="number-count">${n.count} appels</span>
+                        </div>
+                    `).join('');
+                } else {
+                    topList.innerHTML = '<p style="color:rgba(255,255,255,0.5)">Aucune donnée</p>';
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load calls
+        async function loadCalls() {
+            const direction = document.getElementById('filter-direction').value;
+            const state = document.getElementById('filter-state').value;
+            const search = document.getElementById('search-input').value;
+
+            let url = '/api/calls?';
+            if (direction) url += `direction=${direction}&`;
+            if (state) url += `state=${state}&`;
+            if (search) url += `search=${search}&`;
+
+            try {
+                const response = await fetch(url);
+                const calls = await response.json();
+
+                const tbody = document.getElementById('calls-tbody');
+
+                if (calls.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="8">
+                                <div class="empty-state">
+                                    <i class="fas fa-phone-slash"></i>
+                                    <p>Aucun appel trouvé</p>
+                                    <p style="font-size:14px;margin-top:10px;">Cliquez sur "Synchroniser" pour récupérer vos appels</p>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = calls.map(call => `
+                    <tr>
+                        <td>${formatDate(call.start_time)}</td>
+                        <td>
+                            <span class="direction-badge ${call.direction}">
+                                <i class="fas fa-arrow-${call.direction === 'in' ? 'down' : 'up'}"></i>
+                                ${call.direction === 'in' ? 'Entrant' : 'Sortant'}
+                            </span>
+                        </td>
+                        <td class="phone-number">${formatPhone(call.from_number)}</td>
+                        <td class="phone-number">${formatPhone(call.to_number)}</td>
+                        <td><span class="state-badge ${call.last_state}">${call.last_state}</span></td>
+                        <td>${formatDuration(call.incall_duration)}</td>
+                        <td>${call.user_name || '-'}</td>
+                        <td>
+                            <div class="call-actions">
+                                <button class="action-btn play" title="Écouter" onclick="playRecording('${call.record_url}')" ${!call.record_url ? 'disabled' : ''}>
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="action-btn note" title="Notes" onclick="openNoteModal(${call.cdr_id}, '${call.contact_number}', '${call.record_url || ''}')">
+                                    <i class="fas fa-sticky-note"></i>
+                                </button>
+                                <button class="action-btn history" title="Historique" onclick="showHistory('${call.contact_number}')">
+                                    <i class="fas fa-history"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading calls:', error);
+            }
+        }
+
+        // Load contacts
+        async function loadContacts() {
+            try {
+                const response = await fetch('/api/contacts');
+                const contacts = await response.json();
+
+                const grid = document.getElementById('contacts-grid');
+
+                if (contacts.length === 0) {
+                    grid.innerHTML = `
+                        <div class="empty-state" style="grid-column: 1/-1;">
+                            <i class="fas fa-address-book"></i>
+                            <p>Aucun contact trouvé</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                grid.innerHTML = contacts.map(contact => {
+                    const name = [contact.firstname, contact.lastname].filter(Boolean).join(' ') || 'Sans nom';
+                    const initial = (contact.firstname?.[0] || contact.company?.[0] || '?').toUpperCase();
+
+                    return `
+                        <div class="contact-card" onclick="showHistory('${contact.phone_number}')">
+                            <div class="contact-avatar">${initial}</div>
+                            <div class="contact-name">${name}</div>
+                            <div class="contact-company">${contact.company || ''}</div>
+                            <div class="contact-phone">
+                                <i class="fas fa-phone"></i>
+                                ${formatPhone(contact.phone_number)}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading contacts:', error);
+            }
+        }
+
+        // Play recording
+        function playRecording(url) {
+            if (!url) return;
+            window.open(url, '_blank');
+        }
+
+        // Open note modal
+        async function openNoteModal(cdrId, number, recordUrl) {
+            currentCallId = cdrId;
+            currentNumber = number;
+
+            document.getElementById('modal-number').textContent = formatPhone(number);
+            document.getElementById('note-input').value = '';
+
+            // Audio
+            const audioContainer = document.getElementById('audio-container');
+            const audioPlayer = document.getElementById('audio-player');
+            if (recordUrl) {
+                audioContainer.style.display = 'block';
+                audioPlayer.src = recordUrl;
+            } else {
+                audioContainer.style.display = 'none';
+            }
+
+            // Load existing notes
+            try {
+                const response = await fetch(`/api/call/${cdrId}/notes`);
+                const notes = await response.json();
+
+                const notesList = document.getElementById('notes-list');
+                if (notes.length > 0) {
+                    notesList.innerHTML = '<h4 style="margin-bottom:10px;color:rgba(255,255,255,0.7)">Notes existantes</h4>' +
+                        notes.map(n => `
+                            <div class="note-item">
+                                <div class="note-date">${formatDate(n.created_at)}</div>
+                                <div>${n.note}</div>
+                            </div>
+                        `).join('');
+                } else {
+                    notesList.innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Error loading notes:', error);
+            }
+
+            document.getElementById('note-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('note-modal').classList.remove('active');
+            document.getElementById('audio-player').pause();
+        }
+
+        // Save note
+        async function saveNote() {
+            const note = document.getElementById('note-input').value.trim();
+            if (!note) return;
+
+            try {
+                await fetch(`/api/call/${currentCallId}/notes`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({note, contact_number: currentNumber})
+                });
+
+                showToast('Note enregistrée');
+                openNoteModal(currentCallId, currentNumber, document.getElementById('audio-player').src);
+            } catch (error) {
+                showToast('Erreur lors de l\'enregistrement');
+            }
+        }
+
+        // Show history
+        async function showHistory(number) {
+            document.getElementById('history-number').textContent = formatPhone(number);
+
+            try {
+                const response = await fetch(`/api/number/${number}/history`);
+                const data = await response.json();
+
+                let html = '';
+
+                if (data.calls.length > 0) {
+                    html += '<h4 style="margin-bottom:15px;color:rgba(255,255,255,0.7)"><i class="fas fa-phone"></i> Appels</h4>';
+                    html += data.calls.map(call => `
+                        <div class="note-item">
+                            <div class="note-date">${formatDate(call.start_time)}</div>
+                            <div>
+                                <span class="direction-badge ${call.direction}" style="margin-right:10px;">
+                                    ${call.direction === 'in' ? 'Entrant' : 'Sortant'}
+                                </span>
+                                <span class="state-badge ${call.last_state}">${call.last_state}</span>
+                                <span style="margin-left:10px;">${formatDuration(call.incall_duration)}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                if (data.notes.length > 0) {
+                    html += '<h4 style="margin:20px 0 15px;color:rgba(255,255,255,0.7)"><i class="fas fa-sticky-note"></i> Notes</h4>';
+                    html += data.notes.map(n => `
+                        <div class="note-item">
+                            <div class="note-date">${formatDate(n.created_at)}</div>
+                            <div>${n.note}</div>
+                        </div>
+                    `).join('');
+                }
+
+                if (!html) {
+                    html = '<div class="empty-state"><p>Aucun historique</p></div>';
+                }
+
+                document.getElementById('history-content').innerHTML = html;
+            } catch (error) {
+                document.getElementById('history-content').innerHTML = '<p>Erreur de chargement</p>';
+            }
+
+            document.getElementById('history-modal').classList.add('active');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('history-modal').classList.remove('active');
+        }
+
+        // Export
+        function exportData() {
+            window.location.href = '/api/export';
+        }
+
+        // Filters
+        document.getElementById('filter-direction').addEventListener('change', loadCalls);
+        document.getElementById('filter-state').addEventListener('change', loadCalls);
+        document.getElementById('search-input').addEventListener('input', debounce(loadCalls, 300));
+
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        // Close modals on click outside
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('active');
+                }
+            });
+        });
+
+        // Initial load
+        loadStats();
+        loadCalls();
+        loadContacts();
+    </script>
+</body>
+</html>

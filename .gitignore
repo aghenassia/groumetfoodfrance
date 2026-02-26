@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.db
+*.sqlite3
+.venv/
+venv/
+node_modules/
+.next/
+dist/
+*.log
+.DS_Store
+backend/data/*.xlsx
