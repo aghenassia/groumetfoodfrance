@@ -231,6 +231,11 @@ function OrdersPageInner() {
     if (pieceId) {
       openDetail(pieceId);
     }
+    const searchParam = searchParams.get("search");
+    if (searchParam) {
+      setSearch(searchParam);
+      setDebouncedSearch(searchParam);
+    }
   }, [searchParams]);
 
   const fetchOrders = useCallback(() => {

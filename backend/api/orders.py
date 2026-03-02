@@ -84,11 +84,21 @@ async def list_orders(
 
     if search:
         pattern = f"%{search}%"
+        pieces_with_article = (
+            select(SalesLine.sage_piece_id)
+            .where(
+                or_(
+                    SalesLine.article_ref.ilike(pattern),
+                    SalesLine.designation.ilike(pattern),
+                )
+            )
+            .distinct()
+        )
         base = base.having(
             or_(
                 SalesLine.sage_piece_id.ilike(pattern),
                 func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).ilike(pattern),
-                func.max(SalesLine.designation).ilike(pattern),
+                SalesLine.sage_piece_id.in_(pieces_with_article),
             )
         )
 

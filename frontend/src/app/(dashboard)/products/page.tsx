@@ -1023,6 +1023,7 @@ function DetailPanel({
         <OrdersTab
           history={orderHistory}
           loading={loadingOrders}
+          articleRef={detail?.article_ref}
         />
       )}
     </>
@@ -1213,10 +1214,12 @@ const DOC_TYPE_CONFIG: Record<string, { icon: typeof FileText; color: string; bg
 function OrdersTab({
   history,
   loading,
+  articleRef,
 }: {
   history: ProductOrderHistoryResponse | null;
   loading: boolean;
   onOpenOrder?: (pieceId: string) => void;
+  articleRef?: string;
 }) {
   if (loading) {
     return (
@@ -1313,7 +1316,7 @@ function OrdersTab({
           {history.orders.length < history.total && (
             <div className="px-4 py-2 text-center">
               <Link
-                href="/orders"
+                href={articleRef ? `/orders?search=${encodeURIComponent(articleRef)}` : "/orders"}
                 className="text-xs text-primary hover:underline"
               >
                 Voir les {history.total} commandes →

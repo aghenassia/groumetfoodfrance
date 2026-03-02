@@ -1246,15 +1246,24 @@ export default function ClientDetailPage() {
                                     {formatDate(sale.date)}
                                   </td>
                                   <td className="px-3 py-2 text-xs font-mono">
-                                    <button
-                                      onClick={() => openOrder(sale.sage_piece_id)}
+                                    <Link
+                                      href={`/orders?piece_id=${encodeURIComponent(sale.sage_piece_id)}`}
                                       className="text-primary hover:underline"
                                     >
                                       {sale.sage_piece_id}
-                                    </button>
+                                    </Link>
                                   </td>
                                   <td className="px-3 py-2 text-xs max-w-[250px] truncate">
-                                    {sale.designation || sale.article_ref || "—"}
+                                    {sale.article_ref ? (
+                                      <Link
+                                        href={`/products?ref=${encodeURIComponent(sale.article_ref)}`}
+                                        className="hover:underline hover:text-primary transition-colors"
+                                      >
+                                        {sale.designation || sale.article_ref}
+                                      </Link>
+                                    ) : (
+                                      <span>{sale.designation || "—"}</span>
+                                    )}
                                   </td>
                                   <td className="px-3 py-2 text-xs text-right tabular-nums">
                                     {sale.quantity != null ? sale.quantity : "—"}
@@ -1373,8 +1382,26 @@ export default function ClientDetailPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-xs whitespace-nowrap">{formatDate(o.date)}</td>
-                          <td className="px-3 py-2 text-xs font-mono">{o.sage_piece_id}</td>
-                          <td className="px-3 py-2 text-xs max-w-[250px] truncate">{o.designation || o.article_ref || "—"}</td>
+                          <td className="px-3 py-2 text-xs font-mono">
+                            <Link
+                              href={`/orders?piece_id=${encodeURIComponent(o.sage_piece_id)}`}
+                              className="text-primary hover:underline"
+                            >
+                              {o.sage_piece_id}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2 text-xs max-w-[250px] truncate">
+                            {o.article_ref ? (
+                              <Link
+                                href={`/products?ref=${encodeURIComponent(o.article_ref)}`}
+                                className="hover:underline hover:text-primary transition-colors"
+                              >
+                                {o.designation || o.article_ref}
+                              </Link>
+                            ) : (
+                              <span>{o.designation || "—"}</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums">{o.quantity != null ? o.quantity : "—"}</td>
                           <td className="px-3 py-2 text-xs text-right font-medium tabular-nums">{formatCurrencyPrecise(o.amount_ht)}</td>
                         </tr>
