@@ -6,6 +6,7 @@ import {
   api,
   ProductListItem,
   ProductDetailResponse,
+  ProductOrderHistoryResponse,
   OrderDetailResponse,
   StockDepotItem,
 } from "@/lib/api";
@@ -55,6 +56,12 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  FileText,
+  Truck,
+  Receipt,
+  History,
+  Hash,
+  CalendarDays,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -138,6 +145,7 @@ function ProductsPageInner() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [animKey, setAnimKey] = useState(0);
   const [sortBy, setSortBy] = useState<SortKey>("ca");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [hasSales, setHasSales] = useState<string>("all");
@@ -190,6 +198,7 @@ function ProductsPageInner() {
       .then((res) => {
         setProducts(res.products);
         setTotal(res.total);
+        setAnimKey((k) => k + 1);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -470,15 +479,16 @@ function ProductsPageInner() {
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
-                    {products.map((p) => (
+                  <TableBody key={animKey}>
+                    {products.map((p, _i) => (
                       <TableRow
                         key={p.id}
-                        className={`group cursor-pointer transition-colors ${
+                        className={`stagger-row group cursor-pointer transition-colors ${
                           detail?.article_ref === p.article_ref
                             ? "bg-primary/5 border-l-2 border-l-primary"
                             : "hover:bg-muted/40"
                         }`}
+                        style={{ animationDelay: `${_i * 40}ms` }}
                         onClick={() => openDetail(p.article_ref)}
                       >
                         <TableCell>
@@ -504,6 +514,14 @@ function ProductsPageInner() {
                                   className="text-xs h-4 px-1 py-0 bg-red-50 text-red-600"
                                 >
                                   Inactif
+                                </Badge>
+                              )}
+                              {(p.pipeline_qty ?? 0) > 0 && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs h-4 px-1.5 py-0 text-amber-700 bg-amber-50 border-amber-200"
+                                >
+                                  Commandé
                                 </Badge>
                               )}
                             </div>
@@ -639,6 +657,14 @@ function ProductsPageInner() {
                       >
                         {p.avg_margin_percent.toFixed(1)}%
                       </span>
+                    )}
+                    {(p.pipeline_qty ?? 0) > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs h-4 px-1.5 py-0 text-amber-700 bg-amber-50 border-amber-200"
+                      >
+                        Commandé
+                      </Badge>
                     )}
                     <span className="ml-auto"><StockBadge product={p} /></span>
                   </div>
@@ -866,6 +892,8 @@ function MarginBadge({ value }: { value?: number | null }) {
   );
 }
 
+type DetailTab = "overview" | "orders";
+
 function DetailPanel({
   detail,
   loading,
@@ -879,6 +907,30 @@ function DetailPanel({
   onOpenProduct: (ref: string) => void;
   onOpenOrder: (pieceId: string) => void;
 }) {
+  const [tab, setTab] = useState<DetailTab>("overview");
+  const [orderHistory, setOrderHistory] = useState<ProductOrderHistoryResponse | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const prevRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (detail && detail.article_ref !== prevRef.current) {
+      prevRef.current = detail.article_ref;
+      setTab("overview");
+      setOrderHistory(null);
+    }
+  }, [detail]);
+
+  useEffect(() => {
+    if (tab === "orders" && detail && !orderHistory && !loadingOrders) {
+      setLoadingOrders(true);
+      api
+        .getProductOrders(detail.article_ref)
+        .then(setOrderHistory)
+        .catch(() => {})
+        .finally(() => setLoadingOrders(false));
+    }
+  }, [tab, detail, orderHistory, loadingOrders]);
+
   if (loading && !detail) {
     return (
       <Card>
@@ -933,8 +985,62 @@ function DetailPanel({
             <X className="w-4 h-4" />
           </Button>
         </CardHeader>
-        <CardContent className="pt-1">
-          {/* KPI grid */}
+        <CardContent className="pt-1 pb-2">
+          {/* Tab buttons */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <Button
+              variant={tab === "overview" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs px-2.5 gap-1"
+              onClick={() => setTab("overview")}
+            >
+              <BarChart3 className="w-3 h-3" />
+              Aperçu
+            </Button>
+            <Button
+              variant={tab === "orders" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs px-2.5 gap-1"
+              onClick={() => setTab("orders")}
+            >
+              <History className="w-3 h-3" />
+              Commandes
+              {detail.nb_orders != null && detail.nb_orders > 0 && (
+                <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px] rounded-full ml-0.5">
+                  {detail.nb_orders}
+                </Badge>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {tab === "overview" && (
+        <OverviewTab detail={detail} onOpenProduct={onOpenProduct} />
+      )}
+
+      {tab === "orders" && (
+        <OrdersTab
+          history={orderHistory}
+          loading={loadingOrders}
+        />
+      )}
+    </>
+  );
+}
+
+function OverviewTab({
+  detail,
+  onOpenProduct,
+}: {
+  detail: ProductDetailResponse;
+  onOpenProduct: (ref: string) => void;
+}) {
+  return (
+    <>
+      {/* KPI grid */}
+      <Card>
+        <CardContent className="pt-4 pb-3">
           <div className="grid grid-cols-2 gap-2">
             <KpiTile
               value={formatCurrency(detail.total_ca)}
@@ -957,7 +1063,6 @@ function DetailPanel({
               icon={<ShoppingCart className="w-3.5 h-3.5" />}
             />
           </div>
-          {/* Extra info row */}
           <div className="flex items-center justify-between mt-2.5 text-xs text-muted-foreground px-1">
             {detail.avg_margin_percent != null && (
               <span>
@@ -1094,6 +1199,129 @@ function DetailPanel({
           </CardContent>
         </Card>
       )}
+    </>
+  );
+}
+
+const DOC_TYPE_CONFIG: Record<string, { icon: typeof FileText; color: string; bg: string; label: string }> = {
+  BC: { icon: FileText, color: "text-amber-700", bg: "bg-amber-50 border-amber-200", label: "Bon de commande" },
+  BL: { icon: Truck, color: "text-blue-700", bg: "bg-blue-50 border-blue-200", label: "Bon de livraison" },
+  FA: { icon: Receipt, color: "text-green-700", bg: "bg-green-50 border-green-200", label: "Facture" },
+  AV: { icon: Receipt, color: "text-red-700", bg: "bg-red-50 border-red-200", label: "Avoir" },
+};
+
+function OrdersTab({
+  history,
+  loading,
+}: {
+  history: ProductOrderHistoryResponse | null;
+  loading: boolean;
+  onOpenOrder?: (pieceId: string) => void;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground text-sm">
+          Chargement des commandes...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!history || history.orders.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground text-sm">
+          Aucune commande trouvée pour ce produit
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      {/* Order list */}
+      <Card>
+        <CardHeader className="pb-1.5 pt-3">
+          <CardTitle className="text-base flex items-center gap-1.5">
+            <CalendarDays className="w-4 h-4 text-primary" />
+            Historique ({history.total} pièce{history.total > 1 ? "s" : ""})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 px-0">
+          <div className="divide-y divide-border">
+            {history.orders.map((o, i) => {
+              const cfg = DOC_TYPE_CONFIG[o.doc_type] || DOC_TYPE_CONFIG.FA;
+              const Icon = cfg.icon;
+              return (
+                <Link
+                  key={`${o.piece_id}-${i}`}
+                  href={`/orders?piece_id=${encodeURIComponent(o.piece_id)}`}
+                  className="flex items-center gap-2.5 px-4 py-2 hover:bg-accent/40 cursor-pointer transition-colors"
+                >
+                  <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${cfg.bg}`}>
+                    <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {o.client_id ? (
+                        <button
+                          type="button"
+                          className="text-xs font-medium truncate hover:underline hover:text-primary transition-colors text-left"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/clients/${o.client_id}`; }}
+                        >
+                          {o.client_name}
+                        </button>
+                      ) : (
+                        <span className="text-xs font-medium truncate">
+                          {o.client_name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] h-4 px-1 py-0 ${cfg.color} ${cfg.bg}`}
+                      >
+                        {o.doc_type}
+                      </Badge>
+                      <span className="text-[11px] text-muted-foreground font-mono">
+                        {o.piece_id}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {formatDateShort(o.date)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 space-y-0.5">
+                    <p className="text-xs font-bold tabular-nums">
+                      {formatCurrency(o.total_ht)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground tabular-nums">
+                      {formatQty(o.qty)} {o.unit_price ? `× ${formatCurrency(o.unit_price)}` : ""}
+                    </p>
+                  </div>
+                  {o.margin_pct != null && (
+                    <div className="shrink-0 w-10 text-right text-[11px]">
+                      <MarginBadge value={o.margin_pct} />
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+          {history.orders.length < history.total && (
+            <div className="px-4 py-2 text-center">
+              <Link
+                href="/orders"
+                className="text-xs text-primary hover:underline"
+              >
+                Voir les {history.total} commandes →
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }

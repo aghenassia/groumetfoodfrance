@@ -48,25 +48,25 @@ export function ClickToCall({
         onClick={handleDial}
         disabled={calling}
         className={cn(
-          "group relative inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm text-white",
-          "bg-gradient-to-r from-green-500 to-emerald-600",
-          "hover:from-green-400 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/25",
+          "group relative inline-flex items-center justify-center gap-2 h-9 px-5 rounded-lg",
+          "text-sm font-medium text-white",
+          "bg-sensai hover:bg-sensai/90",
           "active:scale-[0.97] transition-all duration-200",
           "disabled:opacity-60 disabled:cursor-not-allowed",
           className,
         )}
       >
-        <span className="relative flex items-center justify-center w-5 h-5">
+        <span className="relative flex items-center justify-center w-4 h-4 shrink-0">
           {calling ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <>
-              <span className="absolute inset-0 rounded-full bg-white/20 animate-ping group-hover:animate-ping" />
-              <Phone className="w-4 h-4 relative z-10" />
+              <span className="absolute inset-[-3px] rounded-full bg-white/20 animate-[ping_2s_ease-in-out_infinite] opacity-0 group-hover:opacity-100" />
+              <Phone className="w-3.5 h-3.5 relative z-10" />
             </>
           )}
         </span>
-        <span>{calling ? "Connexion…" : label || "Appeler"}</span>
+        <span className="truncate">{calling ? "Connexion…" : "Appeler"}</span>
       </button>
     );
   }

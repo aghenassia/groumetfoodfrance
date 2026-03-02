@@ -62,6 +62,8 @@ import {
   Loader2,
   Link2,
   Users,
+  FileText,
+  Truck,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { toast } from "sonner";
@@ -144,7 +146,7 @@ export default function ClientDetailPage() {
   const [newPhone, setNewPhone] = useState("");
   const [newPhoneLabel, setNewPhoneLabel] = useState("mobile");
   const [addingPhone, setAddingPhone] = useState(false);
-  const [activeTab, setActiveTab] = useState<"sales" | "calls" | "feedback" | "upsell" | "audit">("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "orders" | "calls" | "feedback" | "upsell" | "audit">("sales");
   const [expandedCall, setExpandedCall] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetailResponse | null>(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
@@ -180,6 +182,11 @@ export default function ClientDetailPage() {
   const [moveCompanySearch, setMoveCompanySearch] = useState('');
   const [moveCompanyResults, setMoveCompanyResults] = useState<Array<{id: string; name: string; city?: string}>>([]);
   const [movingContact, setMovingContact] = useState(false);
+
+  const [deleteContactTarget, setDeleteContactTarget] = useState<{id: string; name: string} | null>(null);
+  const [enrichSelectedFields, setEnrichSelectedFields] = useState<Record<string, boolean>>({});
+  const [showDeleteClient, setShowDeleteClient] = useState(false);
+  const [deletingClient, setDeletingClient] = useState(false);
 
   const fetchClient = () => {
     api
@@ -287,11 +294,43 @@ export default function ClientDetailPage() {
     }
   };
 
+  const handleDeleteClient = async () => {
+    setDeletingClient(true);
+    try {
+      await api.deleteClient(id);
+      toast.success("Entreprise supprimée");
+      router.push("/clients");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erreur de suppression");
+    } finally {
+      setDeletingClient(false);
+    }
+  };
+
+  const ENRICH_FIELDS: [keyof EnrichSuggestion, string][] = [
+    ["name", "Nom"],
+    ["contact_name", "Contact"],
+    ["phone", "Téléphone"],
+    ["email", "Email"],
+    ["address", "Adresse"],
+    ["postal_code", "Code postal"],
+    ["city", "Ville"],
+    ["website", "Site web"],
+    ["siret", "SIRET"],
+    ["naf_code", "Code NAF"],
+  ];
+
   const handleEnrich = async () => {
     setEnriching(true);
     try {
       const suggestions = await api.enrichClient(id);
       setEnrichSuggestions(suggestions);
+      const selected: Record<string, boolean> = {};
+      for (const [key] of ENRICH_FIELDS) {
+        const val = suggestions[key];
+        if (val) selected[key] = true;
+      }
+      setEnrichSelectedFields(selected);
       setShowEnrichDialog(true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erreur d'enrichissement IA");
@@ -300,30 +339,27 @@ export default function ClientDetailPage() {
     }
   };
 
-  const isNewData = (key: string) => {
-    if (!client || !enrichSuggestions) return false;
-    const val = (enrichSuggestions as unknown as Record<string, unknown>)[key];
-    if (!val) return false;
-    const existing = (client as unknown as Record<string, unknown>)[key];
-    return !existing;
+  const getExistingValue = (key: string): string | undefined => {
+    if (!client) return undefined;
+    if (key === "phone") return client.phone_e164 || undefined;
+    return (client as unknown as Record<string, string | undefined>)[key] || undefined;
   };
 
   const applyEnrichment = async () => {
     if (!enrichSuggestions || !client) return;
     const payload: UpdateClientPayload = {};
-    const fields = ["name", "contact_name", "address", "postal_code", "city", "country", "website", "siret", "email", "naf_code"] as const;
-    for (const f of fields) {
-      const val = enrichSuggestions[f];
+    for (const [key] of ENRICH_FIELDS) {
+      if (!enrichSelectedFields[key]) continue;
+      const val = enrichSuggestions[key];
       if (!val) continue;
-      const existing = (client as unknown as Record<string, unknown>)[f];
-      if (!existing) payload[f] = val;
-    }
-    if (enrichSuggestions.phone && !client.phone_e164) {
-      payload.phone = enrichSuggestions.phone;
+      if (key === "phone") {
+        payload.phone = val;
+      } else {
+        (payload as Record<string, string>)[key] = val;
+      }
     }
     if (Object.keys(payload).length === 0) {
-      toast.info("Aucune nouvelle donnée à appliquer");
-      setShowEnrichDialog(false);
+      toast.info("Aucun champ sélectionné");
       return;
     }
     setSaving(true);
@@ -443,14 +479,19 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleDeleteContact = async (contactId: string, contactName: string) => {
-    if (!confirm(`Supprimer le contact "${contactName}" ?`)) return;
+  const handleDeleteContact = (contactId: string, contactName: string) => {
+    setDeleteContactTarget({ id: contactId, name: contactName });
+  };
+
+  const confirmDeleteContact = async () => {
+    if (!deleteContactTarget) return;
     try {
-      await api.deleteContact(contactId);
-      toast.success('Contact supprimé');
+      await api.deleteContact(deleteContactTarget.id);
+      toast.success("Contact supprimé");
+      setDeleteContactTarget(null);
       fetchClient();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erreur');
+      toast.error(e instanceof Error ? e.message : "Erreur");
     }
   };
 
@@ -572,6 +613,9 @@ export default function ClientDetailPage() {
           )}
           {editing && (
             <>
+              <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setShowDeleteClient(true)}>
+                <Trash2 className="w-3.5 h-3.5 mr-1" />Supprimer
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>
                 <X className="w-3.5 h-3.5 mr-1" />Annuler
               </Button>
@@ -899,20 +943,15 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
-      {/* Contact Info + Phones */}
-      <div className="grid lg:grid-cols-3 gap-4">
+      {/* Mobile-only contact cards */}
+      <div className="lg:hidden grid sm:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-1.5">
               <Phone className="w-4 h-4" />
               Téléphones
             </CardTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setShowAddPhone(true)}
-            >
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAddPhone(true)}>
               <Plus className="w-3.5 h-3.5" />
             </Button>
           </CardHeader>
@@ -921,54 +960,29 @@ export default function ClientDetailPage() {
               <p className="text-xs text-muted-foreground">Aucun numéro</p>
             )}
             {client.phone_numbers.map((pn) => (
-              <div
-                key={pn.id}
-                className="flex items-center gap-2 py-1 px-2 rounded hover:bg-accent group"
-              >
+              <div key={pn.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-accent group">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{pn.raw_phone || pn.phone_e164}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {phoneLabel(pn.label)}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{phoneLabel(pn.label)}</p>
                 </div>
                 <ClickToCall phoneNumber={pn.phone_e164} />
-                {pn.source !== "sage" && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                    onClick={() => handleRemovePhone(pn.id)}
-                  >
-                    <Trash2 className="w-3 h-3 text-red-600" />
-                  </Button>
-                )}
               </div>
             ))}
             {client.phone_numbers.length === 0 && client.phone && (
               <div className="flex items-center gap-2 py-1 px-2">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{client.phone}</p>
-                </div>
-                {client.phone_e164 && (
-                  <ClickToCall phoneNumber={client.phone_e164} />
-                )}
+                <div className="flex-1"><p className="text-sm font-medium">{client.phone}</p></div>
+                {client.phone_e164 && <ClickToCall phoneNumber={client.phone_e164} />}
               </div>
             )}
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-1.5">
               <Users className="w-4 h-4" />
               Contacts ({client.contacts?.length || 0})
             </CardTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={openNewContact}
-            >
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={openNewContact}>
               <Plus className="w-3.5 h-3.5" />
             </Button>
           </CardHeader>
@@ -977,106 +991,24 @@ export default function ClientDetailPage() {
               <p className="text-xs text-muted-foreground">Aucun contact</p>
             ) : (
               client.contacts.map((ct) => (
-                <div
-                  key={ct.id}
-                  className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group"
-                >
+                <div key={ct.id} className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{ct.name}</p>
-                      {ct.is_primary && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>
-                      )}
-                      {ct.role && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>
-                      )}
-                    </div>
+                    <p className="text-sm font-medium truncate">{ct.name}</p>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
                       {ct.phone && <span className="flex items-center gap-1 whitespace-nowrap"><Phone className="w-3 h-3 shrink-0" />{ct.phone}</span>}
-                      {ct.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openMoveContact(ct.id)}>
-                      <ArrowUpDown className="w-3 h-3" />
-                    </Button>
-                    {!ct.is_primary && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDeleteContact(ct.id, ct.name)}>
-                        <Trash2 className="w-3 h-3 text-red-600" />
-                      </Button>
-                    )}
-                  </div>
+                  {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
                 </div>
               ))
             )}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Infos légales</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {client.siret && (
-              <div>
-                <span className="text-xs text-muted-foreground">SIRET</span>
-                <p className="font-mono text-xs">{client.siret}</p>
-              </div>
-            )}
-            {client.vat_number && (
-              <div>
-                <span className="text-xs text-muted-foreground">TVA intracom</span>
-                <p className="font-mono text-xs">{client.vat_number}</p>
-              </div>
-            )}
-            {client.naf_code && (
-              <div>
-                <span className="text-xs text-muted-foreground">Code NAF</span>
-                <p className="font-mono text-xs">{client.naf_code}</p>
-              </div>
-            )}
-            {client.sage_created_at && (
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  Créé dans Sage
-                </span>
-                <p>{formatDate(client.sage_created_at)}</p>
-              </div>
-            )}
-            {!client.siret && !client.vat_number && !client.naf_code && (
-              <p className="text-xs text-muted-foreground">Aucune info légale</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-dashed border-sora/30">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-sora" />
-              Enrichissement IA
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground mb-3">
-              Recherche automatique des informations de l&apos;entreprise via IA et Google Places.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-1.5 border-sora/30 hover:bg-sora/10"
-              onClick={handleEnrich}
-              disabled={enriching}
-            >
-              {enriching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-sora" />}
-              {enriching ? "Recherche en cours..." : "Enrichir cette entreprise"}
-            </Button>
-          </CardContent>
-        </Card>
       </div>
+
+      {/* Main content + sidebar layout */}
+      <div className="grid lg:grid-cols-[1fr_340px] gap-4 items-start">
+      <div className="space-y-6 min-w-0">
 
       {/* Top Products */}
       {client.top_products.length > 0 && (
@@ -1143,6 +1075,20 @@ export default function ClientDetailPage() {
             <ShoppingCart className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
             <span className="hidden sm:inline">Historique </span>ventes ({client.recent_sales.length})
           </Button>
+          {client.recent_orders && client.recent_orders.length > 0 && (
+            <Button
+              variant={activeTab === "orders" ? "default" : "outline"}
+              size="sm"
+              className="shrink-0 text-xs sm:text-sm"
+              onClick={() => setActiveTab("orders")}
+            >
+              <Package className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
+              <span className="hidden sm:inline">Commandes </span>en cours ({client.recent_orders.length})
+              {client.pipeline && (
+                <Badge variant="secondary" className="ml-1.5 text-[10px]">{formatCurrency(client.pipeline.orders_ca)}</Badge>
+              )}
+            </Button>
+          )}
           <Button
             variant={activeTab === "calls" ? "default" : "outline"}
             size="sm"
@@ -1376,6 +1322,79 @@ export default function ClientDetailPage() {
                     })()}
                   </div>
                 </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === "orders" && client.recent_orders && (
+          <Card className="border-dashed border-kiku/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Package className="w-4 h-4 text-kiku" />
+                Commandes en cours (BC / BL)
+                {client.pipeline && (
+                  <span className="text-muted-foreground text-xs font-normal ml-auto">
+                    Total : {formatCurrency(client.pipeline.orders_ca)}
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {client.recent_orders.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Aucune commande en cours
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="bg-kiku/5">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">Type</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">Date</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">Pièce</th>
+                        <th className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">Article</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground font-medium">Qté</th>
+                        <th className="text-right px-3 py-2 text-xs text-muted-foreground font-medium">Montant HT</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {client.recent_orders.map((o, i) => (
+                        <tr key={i} className="hover:bg-accent/50">
+                          <td className="px-3 py-2 text-xs">
+                            {o.sage_doc_type === 1 ? (
+                              <span className="inline-flex items-center gap-1 text-kiku font-medium">
+                                <FileText className="w-3.5 h-3.5" /> BC
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-sora font-medium">
+                                <Truck className="w-3.5 h-3.5" /> BL
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs whitespace-nowrap">{formatDate(o.date)}</td>
+                          <td className="px-3 py-2 text-xs font-mono">{o.sage_piece_id}</td>
+                          <td className="px-3 py-2 text-xs max-w-[250px] truncate">{o.designation || o.article_ref || "—"}</td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums">{o.quantity != null ? o.quantity : "—"}</td>
+                          <td className="px-3 py-2 text-xs text-right font-medium tabular-nums">{formatCurrencyPrecise(o.amount_ht)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/30 border-t">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-xs font-medium">
+                          {client.recent_orders.length} ligne{client.recent_orders.length > 1 ? "s" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-right font-medium tabular-nums">
+                          {client.recent_orders.reduce((s, r) => s + (r.quantity ?? 0), 0)}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-right font-bold tabular-nums">
+                          {formatCurrencyPrecise(client.recent_orders.reduce((s, r) => s + r.amount_ht, 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1846,6 +1865,173 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
+      </div>{/* end main left column */}
+
+      {/* Sidebar right — sticky */}
+      <div className="hidden lg:block sticky top-0 space-y-4 max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-thin">
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Phone className="w-4 h-4" />
+              Téléphones
+            </CardTitle>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAddPhone(true)}>
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {client.phone_numbers.length === 0 && !client.phone && (
+              <p className="text-xs text-muted-foreground">Aucun numéro</p>
+            )}
+            {client.phone_numbers.map((pn) => (
+              <div key={pn.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-accent group">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{pn.raw_phone || pn.phone_e164}</p>
+                  <p className="text-xs text-muted-foreground">{phoneLabel(pn.label)}</p>
+                </div>
+                <ClickToCall phoneNumber={pn.phone_e164} />
+                {pn.source !== "sage" && (
+                  <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => handleRemovePhone(pn.id)}>
+                    <Trash2 className="w-3 h-3 text-red-600" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            {client.phone_numbers.length === 0 && client.phone && (
+              <div className="flex items-center gap-2 py-1 px-2">
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{client.phone}</p>
+                </div>
+                {client.phone_e164 && <ClickToCall phoneNumber={client.phone_e164} />}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Users className="w-4 h-4" />
+              Contacts ({client.contacts?.length || 0})
+            </CardTitle>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={openNewContact}>
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {(!client.contacts || client.contacts.length === 0) ? (
+              <p className="text-xs text-muted-foreground">Aucun contact</p>
+            ) : (
+              client.contacts.map((ct) => (
+                <div key={ct.id} className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{ct.name}</p>
+                      {ct.is_primary && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>
+                      )}
+                      {ct.role && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                      {ct.phone && <span className="flex items-center gap-1 whitespace-nowrap"><Phone className="w-3 h-3 shrink-0" />{ct.phone}</span>}
+                      {ct.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openMoveContact(ct.id)}>
+                      <ArrowUpDown className="w-3 h-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDeleteContact(ct.id, ct.name)}>
+                      <Trash2 className="w-3 h-3 text-red-600" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Infos légales</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {client.siret && (
+              <div>
+                <span className="text-xs text-muted-foreground">SIRET</span>
+                <p className="font-mono text-xs">{client.siret}</p>
+              </div>
+            )}
+            {client.vat_number && (
+              <div>
+                <span className="text-xs text-muted-foreground">TVA intracom</span>
+                <p className="font-mono text-xs">{client.vat_number}</p>
+              </div>
+            )}
+            {client.naf_code && (
+              <div>
+                <span className="text-xs text-muted-foreground">Code NAF</span>
+                <p className="font-mono text-xs">{client.naf_code}</p>
+              </div>
+            )}
+            {client.website && (
+              <div>
+                <span className="text-xs text-muted-foreground">Site web</span>
+                <a
+                  href={client.website.startsWith("http") ? client.website : `https://${client.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-sora hover:underline truncate"
+                >
+                  <Globe className="w-3 h-3 shrink-0" />
+                  {client.website.replace(/^https?:\/\//, "")}
+                </a>
+              </div>
+            )}
+            {client.sage_created_at && (
+              <div>
+                <span className="text-xs text-muted-foreground">Créé dans Sage</span>
+                <p>{formatDate(client.sage_created_at)}</p>
+              </div>
+            )}
+            {!client.siret && !client.vat_number && !client.naf_code && !client.website && (
+              <p className="text-xs text-muted-foreground">Aucune info légale</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-dashed border-sora/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-sora" />
+              Enrichissement IA
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              Recherche automatique des informations de l&apos;entreprise via IA et Google Places.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1.5 border-sora/30 hover:bg-sora/10"
+              onClick={handleEnrich}
+              disabled={enriching}
+            >
+              {enriching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-sora" />}
+              {enriching ? "Recherche en cours..." : "Enrichir cette entreprise"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>{/* end sidebar */}
+      </div>{/* end grid layout */}
+
       {/* Enrich AI dialog */}
       <Dialog open={showEnrichDialog} onOpenChange={setShowEnrichDialog}>
         <DialogContent className="max-w-md">
@@ -1867,34 +2053,44 @@ export default function ClientDetailPage() {
                     enrichSuggestions.confidence === "medium" ? "Moyenne" : "Faible"}
                 </Badge>
               )}
-              <div className="space-y-2 text-sm">
-                {([
-                  ["name", "Nom"],
-                  ["contact_name", "Contact"],
-                  ["phone", "Téléphone"],
-                  ["email", "Email"],
-                  ["address", "Adresse"],
-                  ["postal_code", "Code postal"],
-                  ["city", "Ville"],
-                  ["website", "Site web"],
-                  ["siret", "SIRET"],
-                  ["naf_code", "Code NAF"],
-                ] as [keyof EnrichSuggestion, string][]).map(([key, label]) => {
+              <p className="text-xs text-muted-foreground">Sélectionnez les champs à appliquer. Les champs décochés ne seront pas modifiés.</p>
+              <div className="space-y-1 text-sm">
+                {ENRICH_FIELDS.map(([key, label]) => {
                   const val = enrichSuggestions[key];
                   if (!val) return null;
-                  const willApply = isNewData(key);
+                  const existing = getExistingValue(key);
+                  const isSelected = enrichSelectedFields[key] ?? false;
                   return (
-                    <div key={key} className={`flex items-center justify-between py-1 border-b last:border-0 ${willApply ? "" : "opacity-50"}`}>
-                      <span className="text-muted-foreground">{label}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{val}</span>
-                        {willApply ? (
-                          <Badge variant="outline" className="text-[10px] border-green-300 text-green-700 bg-green-50 px-1">nouveau</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] px-1">déjà renseigné</Badge>
+                    <button
+                      type="button"
+                      key={key}
+                      className={`w-full flex items-center gap-3 py-2 px-3 rounded-lg border transition-colors text-left ${
+                        isSelected
+                          ? "border-sensai/40 bg-sensai/5"
+                          : "border-transparent bg-accent/30 opacity-60"
+                      }`}
+                      onClick={() => setEnrichSelectedFields((p) => ({ ...p, [key]: !p[key] }))}
+                    >
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected ? "bg-sensai border-sensai text-white" : "border-muted-foreground/30"
+                      }`}>
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground">{label}</p>
+                        <p className="text-sm font-medium truncate">{val}</p>
+                        {existing && (
+                          <p className="text-xs text-amber-600 truncate">
+                            Actuel : {existing}
+                          </p>
                         )}
                       </div>
-                    </div>
+                      {existing ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 border-amber-300 text-amber-700 bg-amber-50 shrink-0">écrase</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] px-1.5 border-green-300 text-green-700 bg-green-50 shrink-0">nouveau</Badge>
+                      )}
+                    </button>
                   );
                 })}
               </div>
@@ -1902,10 +2098,10 @@ export default function ClientDetailPage() {
                 <Button
                   className="flex-1"
                   onClick={applyEnrichment}
-                  disabled={saving}
+                  disabled={saving || Object.values(enrichSelectedFields).filter(Boolean).length === 0}
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                  Appliquer
+                  Appliquer ({Object.values(enrichSelectedFields).filter(Boolean).length})
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => setShowEnrichDialog(false)}>
                   Ignorer
@@ -1913,6 +2109,80 @@ export default function ClientDetailPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete contact confirmation dialog */}
+      <Dialog open={!!deleteContactTarget} onOpenChange={(open) => { if (!open) setDeleteContactTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="w-5 h-5" />
+              Supprimer le contact
+            </DialogTitle>
+          </DialogHeader>
+          {deleteContactTarget && (
+            <div className="space-y-4">
+              <p className="text-sm">
+                Voulez-vous supprimer <strong>{deleteContactTarget.name}</strong> ?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                <p className="font-medium flex items-center gap-1.5 mb-1">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Historique des conversations
+                </p>
+                <p className="text-xs">
+                  Les appels associés à ce contact seront conservés dans l&apos;historique mais ne seront plus liés à ce contact.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="destructive" className="flex-1" onClick={confirmDeleteContact}>
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Supprimer
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setDeleteContactTarget(null)}>
+                  Annuler
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete client confirmation dialog */}
+      <Dialog open={showDeleteClient} onOpenChange={setShowDeleteClient}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="w-5 h-5" />
+              Supprimer l&apos;entreprise
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm">
+              Voulez-vous supprimer <strong>{client.name}</strong> et toutes ses données ?
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 space-y-1.5">
+              <p className="font-medium flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Action irréversible
+              </p>
+              <ul className="text-xs space-y-0.5 ml-5.5 list-disc">
+                <li>Tous les contacts seront supprimés</li>
+                <li>Les entrées playlist seront supprimées</li>
+                <li>Les appels et ventes seront dissociés (conservés sans lien)</li>
+              </ul>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteClient} disabled={deletingClient}>
+                {deletingClient ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
+                Supprimer
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowDeleteClient(false)}>
+                Annuler
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -17,8 +17,12 @@ from models.client_score import ClientScore
 from models.qualification import CallQualification
 from models.ai_analysis import AiAnalysis
 from models.margin_rule import MarginRule
+from models.product import Product
 
 router = APIRouter(prefix="/api/me", tags=["my-dashboard"])
+
+INVOICE_TYPES = [6, 7]
+PIPELINE_TYPES = [1, 3]
 
 
 def _user_calls_filter(user: User):
@@ -109,7 +113,7 @@ async def my_stats(
     )
     avg_ai = ai_q.scalar()
 
-    # --- Sales stats current period ---
+    # --- Sales stats current period (invoices only) ---
     sales_q = await db.execute(
         select(
             func.coalesce(func.sum(SalesLine.amount_ht), 0),
@@ -119,17 +123,19 @@ async def my_stats(
         )
         .where(
             sales_filter,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
             SalesLine.date >= d_from,
             SalesLine.date <= d_to,
         )
     )
     sr = sales_q.one()
 
-    # --- Sales stats previous period ---
+    # --- Sales stats previous period (invoices only) ---
     prev_sales_q = await db.execute(
         select(func.coalesce(func.sum(SalesLine.amount_ht), 0))
         .where(
             sales_filter,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
             SalesLine.date >= prev_from,
             SalesLine.date <= prev_to,
         )
@@ -141,7 +147,7 @@ async def my_stats(
     if prev_ca > 0:
         ca_evolution = round(((current_ca - prev_ca) / prev_ca) * 100, 1)
 
-    # --- Monthly CA (last 12 months) ---
+    # --- Monthly CA (last 12 months, invoices only) ---
     from sqlalchemy import func as sqlfunc
     month_label = sqlfunc.to_char(SalesLine.date, "YYYY-MM")
     monthly_q = await db.execute(
@@ -152,6 +158,7 @@ async def my_stats(
         )
         .where(
             sales_filter,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
             SalesLine.date >= today - timedelta(days=365),
         )
         .group_by(month_label)
@@ -161,6 +168,41 @@ async def my_stats(
         {"month": r[0], "ca": float(r[1]), "orders": r[2]}
         for r in monthly_q.all()
     ]
+
+    # --- Weekly trends for sparklines (last 8 weeks, invoices only) ---
+    week_start = today - timedelta(weeks=8)
+    week_label = sqlfunc.to_char(func.date_trunc("week", SalesLine.date), "YYYY-MM-DD")
+    weekly_q = await db.execute(
+        select(
+            week_label.label("week"),
+            func.sum(SalesLine.amount_ht).label("ca"),
+            func.count(distinct(SalesLine.sage_piece_id)).label("orders"),
+            func.count(distinct(SalesLine.client_sage_id)).label("clients"),
+            func.sum(SalesLine.net_weight).label("weight"),
+            func.sum(SalesLine.margin_value).label("margin_gross"),
+        )
+        .where(
+            sales_filter,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            SalesLine.date >= week_start,
+        )
+        .group_by(week_label)
+        .order_by(week_label)
+    )
+    weekly_trends = []
+    for r in weekly_q.all():
+        ca_val = float(r[1] or 0)
+        orders_val = int(r[2] or 0)
+        weight_val = float(r[4] or 0) / 1000
+        weekly_trends.append({
+            "week": r[0],
+            "ca": round(ca_val, 2),
+            "orders": orders_val,
+            "clients": int(r[3] or 0),
+            "avg_basket": round(ca_val / orders_val, 2) if orders_val > 0 else 0,
+            "weight_kg": round(weight_val, 1),
+            "margin_gross": round(float(r[5] or 0), 2),
+        })
 
     target = float(user.target_ca_monthly) if user.target_ca_monthly else None
     target_progress = None
@@ -195,6 +237,7 @@ async def my_stats(
             "progress_pct": target_progress,
         },
         "monthly_ca": monthly,
+        "weekly_trends": weekly_trends,
     }
 
 
@@ -257,10 +300,13 @@ async def my_top_products(
             if found:
                 target_user = found
 
-    filters = []
+    service_refs = select(Product.article_ref).where(Product.is_service == True).scalar_subquery()
+
+    filters = [SalesLine.sage_doc_type.in_(INVOICE_TYPES)]
     if user_id != "all":
         filters.append(_user_sales_filter(target_user))
     filters.append(SalesLine.article_ref != None)
+    filters.append(SalesLine.article_ref.notin_(service_refs))
     if date_from:
         filters.append(SalesLine.date >= date_from)
     if date_to:
@@ -311,7 +357,7 @@ async def my_top_clients(
             if found:
                 target_user = found
 
-    filters = []
+    filters = [SalesLine.sage_doc_type.in_(INVOICE_TYPES)]
     if user_id != "all":
         filters.append(_user_sales_filter(target_user))
     if date_from:
@@ -382,6 +428,7 @@ async def my_margins(
             Client.margin_group,
         )
         .outerjoin(Client, Client.id == SalesLine.client_id)
+        .where(SalesLine.sage_doc_type.in_(INVOICE_TYPES))
     )
     if user_id != "all":
         stmt = stmt.where(base_filter)
@@ -425,4 +472,89 @@ async def my_margins(
         "margin_gross_pct": round(margin_gross_pct, 1),
         "margin_net_pct": round(margin_net_pct, 1),
         "total_weight_kg": round(total_weight, 1),
+    }
+
+
+@router.get("/pipeline")
+async def my_pipeline(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    user_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Pipeline des commandes en cours (BC + BL non facturés)."""
+    target_user = user
+    if user_id and user_id not in (user.id, "all"):
+        if user.role in ("admin", "manager"):
+            found = await db.get(User, user_id)
+            if found:
+                target_user = found
+
+    today = date.today()
+    d_from = date.fromisoformat(date_from) if date_from else today.replace(day=1)
+    d_to = date.fromisoformat(date_to) if date_to else today
+
+    sales_filter = _user_sales_filter(target_user) if (not user_id or user_id != "all") else True
+
+    base_where = [
+        SalesLine.sage_doc_type.in_(PIPELINE_TYPES),
+        SalesLine.date >= d_from,
+        SalesLine.date <= d_to,
+    ]
+    if sales_filter is not True:
+        base_where.insert(0, sales_filter)
+
+    agg_q = await db.execute(
+        select(
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+            func.count(distinct(SalesLine.sage_piece_id)),
+            func.count(distinct(SalesLine.client_sage_id)),
+            func.max(SalesLine.date),
+        )
+        .where(*base_where)
+    )
+    agg = agg_q.one()
+
+    doc_type_label = case(
+        (SalesLine.sage_doc_type == 1, "BC"),
+        (SalesLine.sage_doc_type == 3, "BL"),
+        else_="Autre",
+    )
+    recent_q = await db.execute(
+        select(
+            SalesLine.sage_piece_id,
+            SalesLine.date,
+            func.max(Client.name).label("client_name"),
+            func.max(Client.id).label("client_id"),
+            func.sum(SalesLine.amount_ht).label("total_ht"),
+            func.count(SalesLine.id).label("nb_lines"),
+            func.max(doc_type_label).label("doc_type"),
+        )
+        .outerjoin(Client, Client.id == SalesLine.client_id)
+        .where(*base_where)
+        .group_by(SalesLine.sage_piece_id, SalesLine.date)
+        .order_by(SalesLine.date.desc())
+        .limit(10)
+    )
+
+    recent_orders = [
+        {
+            "piece_id": r[0],
+            "date": str(r[1]),
+            "client_name": r[2] or "Inconnu",
+            "client_id": r[3],
+            "total_ht": round(float(r[4] or 0), 2),
+            "nb_lines": r[5],
+            "doc_type": r[6],
+        }
+        for r in recent_q.all()
+    ]
+
+    return {
+        "orders_count": agg[1] or 0,
+        "orders_ca": round(float(agg[0]), 2),
+        "orders_clients": agg[2] or 0,
+        "last_order_date": str(agg[3]) if agg[3] else None,
+        "recent_orders": recent_orders,
     }

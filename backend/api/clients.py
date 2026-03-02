@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update, exists, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,8 @@ from models.call import Call
 from models.phone_index import PhoneIndex
 from models.contact import Contact
 from models.client_audit import ClientAuditLog
+from models.product import Product
+from models.playlist import DailyPlaylist
 from schemas.client import (
     ClientResponse,
     ClientListItem,
@@ -82,13 +84,28 @@ async def list_clients(
 
     if search:
         pattern = f"%{search}%"
+        contact_match = exists(
+            select(Contact.id).where(
+                Contact.company_id == Client.id,
+                or_(
+                    Contact.name.ilike(pattern),
+                    Contact.phone.ilike(pattern),
+                    Contact.phone_e164.ilike(pattern),
+                    Contact.email.ilike(pattern),
+                    Contact.role.ilike(pattern),
+                ),
+            )
+        )
         base = base.where(
-            Client.name.ilike(pattern)
-            | Client.sage_id.ilike(pattern)
-            | Client.city.ilike(pattern)
-            | Client.contact_name.ilike(pattern)
-            | Client.phone.ilike(pattern)
-            | Client.email.ilike(pattern)
+            or_(
+                Client.name.ilike(pattern),
+                Client.sage_id.ilike(pattern),
+                Client.city.ilike(pattern),
+                Client.contact_name.ilike(pattern),
+                Client.phone.ilike(pattern),
+                Client.email.ilike(pattern),
+                contact_match,
+            )
         )
 
     if assigned_user_id == "__none__":
@@ -285,20 +302,48 @@ async def get_client(
     )
     score_obj = score_result.scalar_one_or_none()
 
-    # Toutes les ventes (par sage_id aussi, pas seulement client_id)
+    INVOICE_TYPES = [6, 7]
+    PIPELINE_TYPES = [1, 3]
+    client_match = (SalesLine.client_id == client_id) | (SalesLine.client_sage_id == client.sage_id)
+
+    # Ventes facturées (par sage_id aussi, pas seulement client_id)
     sales_result = await db.execute(
         select(SalesLine)
-        .where(
-            (SalesLine.client_id == client_id)
-            | (SalesLine.client_sage_id == client.sage_id)
-        )
+        .where(client_match, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
         .order_by(SalesLine.date.desc())
         .limit(50)
     )
     all_sales = sales_result.scalars().all()
     recent_sales = [SalesLineBrief.model_validate(s) for s in all_sales]
 
-    # Résumé des ventes
+    # Commandes en cours (BC + BL)
+    orders_result = await db.execute(
+        select(SalesLine)
+        .where(client_match, SalesLine.sage_doc_type.in_(PIPELINE_TYPES))
+        .order_by(SalesLine.date.desc())
+        .limit(20)
+    )
+    all_orders = orders_result.scalars().all()
+    recent_orders = [SalesLineBrief.model_validate(o) for o in all_orders]
+
+    # Pipeline summary
+    from schemas.client import PipelineSummary
+    pipeline_q = await db.execute(
+        select(
+            sqlfunc.count(distinct(SalesLine.sage_piece_id)),
+            sqlfunc.coalesce(sqlfunc.sum(SalesLine.amount_ht), 0),
+            sqlfunc.max(SalesLine.date),
+        )
+        .where(client_match, SalesLine.sage_doc_type.in_(PIPELINE_TYPES))
+    )
+    pq = pipeline_q.one()
+    pipeline = PipelineSummary(
+        orders_count=pq[0] or 0,
+        orders_ca=round(float(pq[1] or 0), 2),
+        last_order_date=pq[2],
+    ) if pq[0] else None
+
+    # Résumé des ventes (factures uniquement)
     summary_result = await db.execute(
         select(
             sqlfunc.count(SalesLine.id).label("total_orders"),
@@ -310,10 +355,7 @@ async def get_client(
             sqlfunc.max(SalesLine.date).label("last_order_date"),
             sqlfunc.count(distinct(SalesLine.article_ref)).label("distinct_products"),
         )
-        .where(
-            (SalesLine.client_id == client_id)
-            | (SalesLine.client_sage_id == client.sage_id)
-        )
+        .where(client_match, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
     )
     sr = summary_result.one()
     from schemas.client import SalesSummary
@@ -328,8 +370,9 @@ async def get_client(
         distinct_products=sr.distinct_products,
     ) if sr.total_orders > 0 else None
 
-    # Top produits achetés
+    # Top produits achetés (factures uniquement, hors articles service)
     from schemas.client import TopProduct
+    service_refs = select(Product.article_ref).where(Product.is_service == True).scalar_subquery()
     top_prods_result = await db.execute(
         select(
             SalesLine.article_ref,
@@ -339,8 +382,9 @@ async def get_client(
             sqlfunc.count(SalesLine.id).label("order_count"),
         )
         .where(
-            (SalesLine.client_id == client_id)
-            | (SalesLine.client_sage_id == client.sage_id)
+            client_match,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            SalesLine.article_ref.notin_(service_refs),
         )
         .group_by(SalesLine.article_ref)
         .order_by(sqlfunc.sum(SalesLine.amount_ht).desc())
@@ -357,7 +401,7 @@ async def get_client(
         for r in top_prods_result.all()
     ]
 
-    # CA mensuel
+    # CA mensuel (factures uniquement)
     from schemas.client import MonthlySales
     client_month = sqlfunc.to_char(SalesLine.date, "YYYY-MM")
     monthly_result = await db.execute(
@@ -367,10 +411,7 @@ async def get_client(
             sqlfunc.count(SalesLine.id).label("order_count"),
             sqlfunc.avg(SalesLine.margin_percent).label("margin_avg"),
         )
-        .where(
-            (SalesLine.client_id == client_id)
-            | (SalesLine.client_sage_id == client.sage_id)
-        )
+        .where(client_match, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
         .group_by(client_month)
         .order_by(client_month)
     )
@@ -470,6 +511,8 @@ async def get_client(
         top_products=top_products,
         monthly_sales=monthly_sales,
         recent_sales=recent_sales,
+        recent_orders=recent_orders,
+        pipeline=pipeline,
         recent_calls=recent_calls,
         last_qualification_mood=client.last_qualification_mood,
         last_qualification_outcome=client.last_qualification_outcome,
@@ -566,6 +609,33 @@ async def remove_phone_number(
     )
     await db.commit()
     return {"deleted": True}
+
+
+@router.delete("/{client_id}")
+async def delete_client(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Supprime un client et nettoie toutes les données liées."""
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+
+    await db.execute(
+        update(SalesLine).where(SalesLine.client_id == client_id).values(client_id=None)
+    )
+    await db.execute(
+        update(Call).where(Call.client_id == client_id).values(client_id=None)
+    )
+    await db.execute(
+        delete(DailyPlaylist).where(DailyPlaylist.client_id == client_id)
+    )
+
+    await db.delete(client)
+    await db.commit()
+    return {"deleted": True, "name": client.name}
 
 
 @router.post("", response_model=ClientResponse)

@@ -65,6 +65,7 @@ from api.my_dashboard import router as my_dashboard_router
 from api.margin_rules import router as margin_rules_router
 from api.objectives import router as objectives_router
 from api.challenges import router as challenges_router
+from api.orders import router as orders_router
 
 app.include_router(auth_router)
 app.include_router(clients_router)
@@ -78,6 +79,7 @@ app.include_router(my_dashboard_router)
 app.include_router(margin_rules_router)
 app.include_router(objectives_router)
 app.include_router(challenges_router)
+app.include_router(orders_router)
 
 
 @app.get("/api/health")

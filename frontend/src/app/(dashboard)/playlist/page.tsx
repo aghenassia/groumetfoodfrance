@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, PlaylistItem, PlaylistInsight } from "@/lib/api";
+import { api, PlaylistItem, PlaylistInsight, EnrichSuggestion, UpdateClientPayload } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -14,6 +14,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ListMusic,
   CheckCircle2,
@@ -35,6 +41,10 @@ import {
   ShoppingBag,
   User,
   Building2,
+  Phone,
+  Search,
+  Zap,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -85,6 +95,11 @@ export default function PlaylistPage() {
   const [insight, setInsight] = useState<PlaylistInsight | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichSuggestions, setEnrichSuggestions] = useState<EnrichSuggestion | null>(null);
+  const [enrichTargetId, setEnrichTargetId] = useState<string | null>(null);
+  const [enrichSelectedFields, setEnrichSelectedFields] = useState<Record<string, boolean>>({});
+  const [enrichSaving, setEnrichSaving] = useState(false);
 
   const selectedItem = items.find((i) => i.playlist_id === selectedId) || null;
 
@@ -137,6 +152,79 @@ export default function PlaylistPage() {
       toast.error("Erreur IA");
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const ENRICH_FIELDS: [keyof EnrichSuggestion, string][] = [
+    ["name", "Nom"],
+    ["contact_name", "Contact"],
+    ["phone", "Téléphone"],
+    ["email", "Email"],
+    ["address", "Adresse"],
+    ["postal_code", "Code postal"],
+    ["city", "Ville"],
+    ["website", "Site web"],
+    ["siret", "SIRET"],
+    ["naf_code", "Code NAF"],
+  ];
+
+  const enrichClient = async (clientId: string) => {
+    setEnrichLoading(true);
+    try {
+      const suggestions = await api.enrichClient(clientId);
+      const hasData = ENRICH_FIELDS.some(([k]) => !!suggestions[k]);
+      if (!hasData) {
+        toast.info("Aucune nouvelle donnée trouvée — complétez la fiche manuellement");
+        return;
+      }
+      const selected: Record<string, boolean> = {};
+      for (const [key] of ENRICH_FIELDS) {
+        if (suggestions[key]) selected[key] = true;
+      }
+      setEnrichSuggestions(suggestions);
+      setEnrichTargetId(clientId);
+      setEnrichSelectedFields(selected);
+    } catch {
+      toast.error("Erreur lors de l'enrichissement");
+    } finally {
+      setEnrichLoading(false);
+    }
+  };
+
+  const applyEnrichFromPlaylist = async () => {
+    if (!enrichSuggestions || !enrichTargetId) return;
+    const payload: UpdateClientPayload = {};
+    for (const [key] of ENRICH_FIELDS) {
+      if (!enrichSelectedFields[key]) continue;
+      const val = enrichSuggestions[key];
+      if (!val) continue;
+      if (key === "phone") {
+        payload.phone = val;
+      } else {
+        (payload as Record<string, string>)[key] = val;
+      }
+    }
+    if (Object.keys(payload).length === 0) {
+      toast.info("Aucun champ sélectionné");
+      return;
+    }
+    setEnrichSaving(true);
+    try {
+      await api.updateClient(enrichTargetId, payload);
+      if (payload.phone) {
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === enrichTargetId ? { ...i, phone_e164: payload.phone ?? i.phone_e164 } : i
+          )
+        );
+      }
+      toast.success("Enrichissement appliqué");
+      setEnrichSuggestions(null);
+      setEnrichTargetId(null);
+    } catch {
+      toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setEnrichSaving(false);
     }
   };
 
@@ -238,7 +326,7 @@ export default function PlaylistPage() {
 
                     {/* Contact + Company info */}
                     <div className="flex-1 min-w-0">
-                      {item.primary_contact ? (
+                      {item.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(item.primary_contact.name) ? (
                         <>
                           <div className="flex items-center gap-1.5">
                             <User className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -260,7 +348,7 @@ export default function PlaylistPage() {
                         </>
                       ) : (
                         <p className="text-sm font-medium truncate">
-                          {item.contact_name || item.name}
+                          {item.contact_name && !/^\+?\d[\d\s-]{6,}$/.test(item.contact_name) ? item.contact_name : item.name}
                         </p>
                       )}
                       {item.reason_detail && (
@@ -360,12 +448,12 @@ export default function PlaylistPage() {
                         {reasonIcon(insight.reason)} {reasonLabel(insight.reason)}
                       </Badge>
                     </div>
-                    {selectedItem.primary_contact && (
+                    {selectedItem.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(selectedItem.primary_contact.name) && (
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <User className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium">{selectedItem.primary_contact.name}</span>
+                        <span className="text-sm font-medium truncate">{selectedItem.primary_contact.name}</span>
                         {selectedItem.primary_contact.role && (
-                          <span className="text-xs text-muted-foreground">· {selectedItem.primary_contact.role}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">· {selectedItem.primary_contact.role}</span>
                         )}
                       </div>
                     )}
@@ -383,21 +471,52 @@ export default function PlaylistPage() {
                 </div>
 
                 {/* Quick actions */}
-                <div className="flex gap-2 mt-3">
-                  <Link href={`/clients/${selectedItem.id}`} className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full text-xs">
-                      <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                      Fiche client
-                    </Button>
-                  </Link>
-                  {selectedItem.phone_e164 && (
-                    <ClickToCall
-                      phoneNumber={selectedItem.phone_e164}
-                      variant="cta"
-                      label={selectedItem.primary_contact?.name ? `Appeler ${selectedItem.primary_contact.name}` : "Appeler"}
-                      contactName={selectedItem.primary_contact?.name || selectedItem.contact_name || undefined}
-                      className="flex-1"
-                    />
+                <div className="mt-3 space-y-2">
+                  <div className="flex gap-2">
+                    <Link href={`/clients/${selectedItem.id}`} className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full text-xs h-9">
+                        <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                        Fiche client
+                      </Button>
+                    </Link>
+                    {selectedItem.phone_e164 ? (
+                      <ClickToCall
+                        phoneNumber={selectedItem.phone_e164}
+                        variant="cta"
+                        contactName={selectedItem.primary_contact?.name || selectedItem.contact_name || undefined}
+                        className="flex-1"
+                      />
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs h-9 border-dashed"
+                        onClick={() => enrichClient(selectedItem.id)}
+                        disabled={enrichLoading}
+                      >
+                        {enrichLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5 mr-1.5" />
+                        )}
+                        {enrichLoading ? "Recherche…" : "Trouver un n°"}
+                      </Button>
+                    )}
+                  </div>
+                  {selectedItem.phone_e164 && (() => {
+                    const rawName = selectedItem.primary_contact?.name || selectedItem.contact_name;
+                    const isPhone = !rawName || /^\+?\d[\d\s-]{6,}$/.test(rawName);
+                    return (
+                      <p className="text-xs text-muted-foreground text-center">
+                        {!isPhone && <><span>{rawName}</span><span className="mx-1">·</span></>}
+                        <span className="font-mono">{selectedItem.phone_e164}</span>
+                      </p>
+                    );
+                  })()}
+                  {!selectedItem.phone_e164 && (
+                    <p className="text-xs text-muted-foreground text-center italic">
+                      Pas de numéro — cliquez sur &quot;Trouver un n°&quot; pour lancer l&apos;enrichissement IA
+                    </p>
                   )}
                 </div>
               </div>
@@ -465,6 +584,39 @@ export default function PlaylistPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Upsell recommendations */}
+                {insight.upsell_recommendations && insight.upsell_recommendations.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2 text-sensai">
+                      <Zap className="w-4 h-4" />
+                      Opportunités upsell
+                    </h4>
+                    <div className="border border-sensai/20 bg-sensai/5 rounded-lg divide-y divide-sensai/10">
+                      {insight.upsell_recommendations.map((r) => (
+                        <Link
+                          key={r.article_ref}
+                          href={`/products?ref=${encodeURIComponent(r.article_ref)}`}
+                          className="flex items-center gap-2.5 px-3 py-2 hover:bg-sensai/10 transition-colors group"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-sensai/15 flex items-center justify-center shrink-0">
+                            <Zap className="w-3 h-3 text-sensai" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate group-hover:underline">{r.designation}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {r.similar_clients_count} client{r.similar_clients_count > 1 ? "s" : ""} similaire{r.similar_clients_count > 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-medium">{r.avg_revenue.toLocaleString("fr-FR")}€</p>
+                            <p className="text-[10px] text-muted-foreground">CA moy.</p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Products */}
                 {insight.top_products.length > 0 && (
@@ -570,6 +722,93 @@ export default function PlaylistPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Enrich dialog */}
+      <Dialog open={!!enrichSuggestions} onOpenChange={(open) => { if (!open) { setEnrichSuggestions(null); setEnrichTargetId(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              Suggestions d&apos;enrichissement IA
+            </DialogTitle>
+          </DialogHeader>
+          {enrichSuggestions && (
+            <div className="space-y-4">
+              {enrichSuggestions.confidence && (
+                <Badge variant="outline" className={`text-xs ${
+                  enrichSuggestions.confidence === "high" ? "border-green-300 text-green-700 bg-green-50" :
+                  enrichSuggestions.confidence === "medium" ? "border-amber-300 text-amber-700 bg-amber-50" :
+                  "border-red-300 text-red-700 bg-red-50"
+                }`}>
+                  Confiance : {enrichSuggestions.confidence === "high" ? "Élevée" :
+                    enrichSuggestions.confidence === "medium" ? "Moyenne" : "Faible"}
+                </Badge>
+              )}
+              <p className="text-xs text-muted-foreground">Sélectionnez les champs à appliquer sur la fiche client.</p>
+              <div className="space-y-1 text-sm">
+                {ENRICH_FIELDS.map(([key, label]) => {
+                  const val = enrichSuggestions[key];
+                  if (!val) return null;
+                  const isSelected = enrichSelectedFields[key] ?? false;
+                  const currentItem = items.find((i) => i.id === enrichTargetId);
+                  const existing = key === "phone"
+                    ? currentItem?.phone_e164
+                    : key === "name"
+                      ? currentItem?.name
+                      : key === "city"
+                        ? currentItem?.city
+                        : key === "email"
+                          ? currentItem?.email
+                          : undefined;
+                  return (
+                    <button
+                      type="button"
+                      key={key}
+                      className={`w-full flex items-center gap-3 py-2 px-3 rounded-lg border transition-colors text-left ${
+                        isSelected
+                          ? "border-sensai/40 bg-sensai/5"
+                          : "border-transparent bg-accent/30 opacity-60"
+                      }`}
+                      onClick={() => setEnrichSelectedFields((p) => ({ ...p, [key]: !p[key] }))}
+                    >
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected ? "bg-sensai border-sensai text-white" : "border-muted-foreground/30"
+                      }`}>
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground">{label}</p>
+                        <p className="text-sm font-medium truncate">{val}</p>
+                        {existing && (
+                          <p className="text-xs text-amber-600 truncate">Actuel : {existing}</p>
+                        )}
+                      </div>
+                      {existing ? (
+                        <Badge variant="outline" className="text-[10px] px-1.5 border-amber-300 text-amber-700 bg-amber-50 shrink-0">écrase</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] px-1.5 border-green-300 text-green-700 bg-green-50 shrink-0">nouveau</Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="flex-1"
+                  onClick={applyEnrichFromPlaylist}
+                  disabled={enrichSaving || Object.values(enrichSelectedFields).filter(Boolean).length === 0}
+                >
+                  {enrichSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                  Appliquer ({Object.values(enrichSelectedFields).filter(Boolean).length})
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => { setEnrichSuggestions(null); setEnrichTargetId(null); }}>
+                  Ignorer
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

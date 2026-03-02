@@ -14,6 +14,8 @@ from models.client import Client
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
+_service_refs_subq = select(Product.article_ref).where(Product.is_service == True).scalar_subquery()
+
 
 class ProductResponse(BaseModel):
     id: str
@@ -47,6 +49,8 @@ class ProductListItem(ProductResponse):
     nb_orders: int | None = None
     last_sale_date: date | None = None
     avg_margin_percent: float | None = None
+    pipeline_qty: float | None = None
+    pipeline_ca: float | None = None
 
 
 class StockDepotItem(BaseModel):
@@ -95,6 +99,7 @@ async def list_products(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    INVOICE_TYPES = [6, 7]
     base = (
         select(
             Product,
@@ -105,9 +110,14 @@ async def list_products(
             func.max(SalesLine.date).label("last_sale_date"),
             func.avg(SalesLine.margin_percent).label("avg_margin"),
         )
-        .outerjoin(SalesLine, SalesLine.article_ref == Product.article_ref)
+        .outerjoin(SalesLine, and_(
+            SalesLine.article_ref == Product.article_ref,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+        ))
         .group_by(Product.id)
     )
+
+    base = base.where(Product.is_service == False)
 
     if search:
         pattern = f"%{search}%"
@@ -163,6 +173,7 @@ async def list_products(
     rows = result.all()
 
     items = []
+    article_refs = []
     for row in rows:
         product = row[0]
         item = ProductListItem.model_validate(product)
@@ -173,6 +184,28 @@ async def list_products(
         item.last_sale_date = row[5]
         item.avg_margin_percent = round(float(row[6]), 1) if row[6] else None
         items.append(item)
+        article_refs.append(product.article_ref)
+
+    if article_refs:
+        current_month_start = date.today().replace(day=1)
+        pipeline_q = await db.execute(
+            select(
+                SalesLine.article_ref,
+                func.coalesce(func.sum(SalesLine.quantity), 0),
+                func.coalesce(func.sum(SalesLine.amount_ht), 0),
+            )
+            .where(
+                SalesLine.article_ref.in_(article_refs),
+                SalesLine.sage_doc_type.in_([1, 3]),
+                SalesLine.date >= current_month_start,
+            )
+            .group_by(SalesLine.article_ref)
+        )
+        pipeline_map = {r[0]: (float(r[1]), float(r[2])) for r in pipeline_q.all()}
+        for item in items:
+            if item.article_ref in pipeline_map:
+                item.pipeline_qty = pipeline_map[item.article_ref][0]
+                item.pipeline_ca = pipeline_map[item.article_ref][1]
 
     return {"total": total, "offset": offset, "limit": limit, "products": items}
 
@@ -203,7 +236,7 @@ async def get_order_detail(
         "sage_piece_id": sage_piece_id,
         "date": str(first.date),
         "client_sage_id": first.client_sage_id,
-        "client_name": first.client_name or (client_row[1] if client_row else None),
+        "client_name": (client_row[1] if client_row else None) or first.client_name,
         "client_id": client_row[0] if client_row else first.client_id,
         "total_ht": sum(float(l.amount_ht or 0) for l in lines),
         "lines": [
@@ -274,6 +307,7 @@ async def product_upsell(
             SalesLine.client_sage_id.in_(similar_ids),
             SalesLine.article_ref.notin_(owned_refs),
             SalesLine.article_ref != None,
+            SalesLine.article_ref.notin_(_service_refs_subq),
         )
         .group_by(SalesLine.article_ref)
         .order_by(func.count(distinct(SalesLine.client_sage_id)).desc())
@@ -315,6 +349,90 @@ async def get_families(
     return [{"family": r[0], "count": r[1]} for r in result.all()]
 
 
+@router.get("/orders")
+async def product_orders(
+    ref: str = Query(..., description="Référence article"),
+    limit: int = Query(default=50, le=200),
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Historique des commandes contenant cet article (toutes pièces, tous types)."""
+    base_where = [SalesLine.article_ref == ref]
+
+    count_q = await db.execute(
+        select(func.count(distinct(SalesLine.sage_piece_id))).where(*base_where)
+    )
+    total = count_q.scalar() or 0
+
+    agg_q = await db.execute(
+        select(
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+            func.coalesce(func.sum(SalesLine.quantity), 0),
+            func.count(distinct(SalesLine.client_sage_id)),
+            func.avg(SalesLine.unit_price),
+            func.avg(SalesLine.margin_percent),
+        ).where(*base_where)
+    )
+    agg = agg_q.one()
+
+    doc_type_label = case(
+        (SalesLine.sage_doc_type == 1, "BC"),
+        (SalesLine.sage_doc_type == 3, "BL"),
+        (SalesLine.sage_doc_type == 6, "FA"),
+        (SalesLine.sage_doc_type == 7, "AV"),
+        else_="Autre",
+    )
+
+    rows_q = await db.execute(
+        select(
+            SalesLine.sage_piece_id,
+            SalesLine.date,
+            func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).label("client_name"),
+            func.max(Client.id).label("client_id"),
+            func.sum(SalesLine.quantity).label("qty"),
+            func.sum(SalesLine.amount_ht).label("total_ht"),
+            func.avg(SalesLine.unit_price).label("unit_price"),
+            func.avg(SalesLine.margin_percent).label("margin_pct"),
+            func.max(doc_type_label).label("doc_type"),
+            func.max(SalesLine.sage_doc_type).label("doc_type_raw"),
+        )
+        .outerjoin(Client, Client.sage_id == SalesLine.client_sage_id)
+        .where(*base_where)
+        .group_by(SalesLine.sage_piece_id, SalesLine.date)
+        .order_by(SalesLine.date.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    orders = [
+        {
+            "piece_id": r.sage_piece_id,
+            "date": str(r.date) if r.date else None,
+            "client_name": r.client_name or "Inconnu",
+            "client_id": r.client_id,
+            "qty": float(r.qty or 0),
+            "total_ht": round(float(r.total_ht or 0), 2),
+            "unit_price": round(float(r.unit_price), 2) if r.unit_price else None,
+            "margin_pct": round(float(r.margin_pct), 1) if r.margin_pct else None,
+            "doc_type": r.doc_type,
+            "doc_type_raw": r.doc_type_raw,
+        }
+        for r in rows_q.all()
+    ]
+
+    return {
+        "total": total,
+        "summary": {
+            "total_ca": round(float(agg[0]), 2),
+            "total_qty": round(float(agg[1]), 2),
+            "nb_clients": agg[2],
+            "avg_price": round(float(agg[3]), 2) if agg[3] else None,
+            "avg_margin": round(float(agg[4]), 1) if agg[4] else None,
+        },
+        "orders": orders,
+    }
+
+
 @router.get("/detail")
 async def get_product(
     ref: str = Query(..., description="Référence article"),
@@ -354,7 +472,7 @@ async def get_product(
     top_clients_q = await db.execute(
         select(
             SalesLine.client_sage_id,
-            func.max(SalesLine.client_name).label("name"),
+            func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).label("name"),
             func.max(Client.id).label("client_id"),
             func.sum(SalesLine.amount_ht).label("ca"),
             func.sum(SalesLine.quantity).label("qty"),
@@ -420,6 +538,7 @@ async def get_product(
             ),
             SalesLine.article_ref != article_ref,
             SalesLine.article_ref != None,
+            SalesLine.article_ref.notin_(_service_refs_subq),
         )
         .group_by(SalesLine.article_ref)
         .order_by(func.count(distinct(SalesLine.sage_piece_id)).desc())

@@ -20,6 +20,7 @@ from models.sync_log import SyncLog
 from models.ai_analysis import AiAnalysis
 from models.qualification import CallQualification
 from models.client_audit import ClientAuditLog
+from models.playlist import DailyPlaylist
 from connectors.phone_normalizer import normalize_phone
 
 settings = get_settings()
@@ -275,6 +276,43 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
     if lifecycle_applied:
         await db.commit()
 
+    # Auto-valider les entrées playlist quand un appel correspond
+    from datetime import date as date_type
+    today = date_type.today()
+    playlist_updated = 0
+
+    pending_entries = await db.execute(
+        select(DailyPlaylist).where(
+            DailyPlaylist.generated_date == today,
+            DailyPlaylist.status == "pending",
+        )
+    )
+    pending_map: dict[tuple[str, str], DailyPlaylist] = {}
+    for entry in pending_entries.scalars().all():
+        pending_map[(entry.user_id, entry.client_id)] = entry
+
+    if pending_map:
+        recent_calls = await db.execute(
+            select(Call).where(
+                Call.start_time >= datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+                Call.client_id.isnot(None),
+                Call.user_id.isnot(None),
+                Call.is_answered == True,
+            )
+        )
+        for call in recent_calls.scalars().all():
+            key = (call.user_id, call.client_id)
+            entry = pending_map.get(key)
+            if entry:
+                entry.status = "called"
+                entry.called_at = call.start_time
+                entry.call_id = call.id
+                playlist_updated += 1
+                del pending_map[key]
+
+        if playlist_updated:
+            await db.commit()
+
     # Log de sync dans une opération séparée
     log = SyncLog(
         source="ringover_calls",
@@ -292,6 +330,7 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
         "synced": created,
         "errors": errors,
         "auto_qualified": auto_qualified,
+        "playlist_auto_called": playlist_updated,
         "total_from_api": len(all_calls),
     }
 

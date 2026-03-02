@@ -322,7 +322,8 @@ async def sync_sales_from_sage(
                 else:
                     continue
 
-                article_ref = _clean(str(sl.get("AR_Ref", "")))
+                raw_ref = sl.get("AR_Ref")
+                article_ref = _clean(str(raw_ref)) if raw_ref else None
                 co_no = sl.get("CO_No")
                 sales_rep_name = _clean(str(sl.get("SalesRepName", "")))
 
@@ -468,6 +469,12 @@ async def sync_products_from_sage(
         sage_articles = connector.get_articles(since=since)
         log.records_found = len(sage_articles)
 
+        SERVICE_REFS = {
+            "TRANSPORT", "ARTDIVERS", "ARTDIVERS20", "ARTDIVERS5",
+            "ZACOMPTE", "ZAVOIR", "ZESCOMPTE",
+            "ZPORTSOUMIS", "ZPORTNONSOUMIS", "ZREMISE",
+        }
+
         created, errors = 0, 0
 
         for sa in sage_articles:
@@ -487,6 +494,7 @@ async def sync_products_from_sage(
                     "weight": sa.get("AR_PoidsNet"),
                     "barcode": _clean(str(sa.get("AR_CodeBarre", ""))),
                     "is_active": not bool(sa.get("AR_Sommeil")),
+                    "is_service": ref.upper() in SERVICE_REFS,
                     "synced_at": datetime.now(timezone.utc),
                 }
 

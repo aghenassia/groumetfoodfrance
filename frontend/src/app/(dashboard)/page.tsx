@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { api, CallStats, PlaylistItem, Reminder, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient } from "@/lib/api";
+import { api, CallStats, PlaylistItem, Reminder, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient, PipelineStats } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -50,9 +50,13 @@ import {
   Percent,
   Gift,
   Flame,
+  Package,
+  FileText,
+  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
+import { SparkLine, THEME_COLORS } from "@/components/ui/spark-line";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -162,6 +166,7 @@ export default function DashboardPage() {
   const [margins, setMargins] = useState<MyMargins | null>(null);
   const [topProducts, setTopProducts] = useState<MyTopProduct[]>([]);
   const [topClients, setTopClients] = useState<MyTopClient[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
 
   const [preset, setPreset] = useState<DatePreset>("30d");
   const [dateRange, setDateRange] = useState(presetRange("30d"));
@@ -207,19 +212,28 @@ export default function DashboardPage() {
       rankParams.user_id = "all";
     }
 
+    const pipelineParams = { ...params };
+    if (viewAs !== "me" && viewAs !== "all") {
+      pipelineParams.user_id = viewAs;
+    } else if (viewAs === "all") {
+      pipelineParams.user_id = "all";
+    }
+
     Promise.all([
       api.getCallStats(callParams),
       api.getMyStats(statsParams),
       api.getMyMargins(marginParams),
       api.getMyTopProducts(rankParams),
       api.getMyTopClients(rankParams),
+      api.getMyPipeline(pipelineParams),
     ])
-      .then(([callStats, myStatsData, marginsData, prods, clients]) => {
+      .then(([callStats, myStatsData, marginsData, prods, clients, pipelineData]) => {
         setStats(callStats);
         setMyStats(myStatsData);
         setMargins(marginsData);
         setTopProducts(prods);
         setTopClients(clients);
+        setPipeline(pipelineData);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -362,95 +376,98 @@ export default function DashboardPage() {
       </div>
 
       {/* 1. STATS : Business */}
-      {myStats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card>
-            <CardContent className="pt-5 pb-4">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Chiffre d'affaires</p>
-              <p className="text-2xl font-extrabold mt-1">{loading ? "…" : formatCurrency(currentCA)}</p>
-              <div className="flex items-center gap-1.5 mt-2">
-                {caEvolution !== 0 && (
-                  <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${caEvolution > 0 ? "text-kiku bg-kiku/15" : "text-ume bg-ume/15"}`}>
-                    {caEvolution > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {caEvolution > 0 ? "+" : ""}{caEvolution}%
-                  </span>
-                )}
-              </div>
-              {targetCA && targetCA > 0 && (
-                <div className="mt-3">
-                  <ProgressGauge value={currentCA} max={targetCA} label={`Obj. ${formatCurrency(targetCA)}`} />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-5 pb-4">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Commandes</p>
-              <p className="text-2xl font-extrabold mt-1">{loading ? "…" : myStats.sales.orders}</p>
-              <p className="text-[11px] text-muted-foreground mt-2">{myStats.sales.clients} clients actifs</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-5 pb-4">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Panier moyen</p>
-              <p className="text-2xl font-extrabold mt-1">{loading ? "…" : formatCurrency(myStats.sales.avg_basket)}</p>
-              {margins && margins.total_weight_kg > 0 && (
-                <p className="text-[11px] text-muted-foreground mt-2">CA/kg : {formatCurrency(margins.total_ca / margins.total_weight_kg)}</p>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-5 pb-4">
-              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Volume vendu</p>
-              <p className="text-2xl font-extrabold mt-1">
-                {loading ? "…" : margins && margins.total_weight_kg > 0
-                  ? `${margins.total_weight_kg.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} kg`
-                  : "—"}
-              </p>
-              {margins && margins.total_weight_kg > 0 && (
-                <p className="text-[11px] text-muted-foreground mt-2">{(margins.total_weight_kg / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} tonnes</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {myStats && (() => {
+        const wt = myStats.weekly_trends || [];
+        const sparkCA = wt.map((w) => w.ca);
+        const sparkOrders = wt.map((w) => w.orders);
+        const sparkBasket = wt.map((w) => w.avg_basket);
+        const sparkWeight = wt.map((w) => w.weight_kg);
 
-      {/* 1b. STATS : Marges */}
-      {margins && margins.total_ca > 0 && (() => {
-        const netPositive = margins.total_margin_net >= 0;
-        const deductions = margins.total_margin_gross - margins.total_margin_net;
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <CardContent className="pt-5 pb-4">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Marge brute</p>
-                <p className="text-2xl font-extrabold mt-1">{loading ? "…" : formatCurrency(margins.total_margin_gross)}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[11px] font-semibold text-sora bg-sora/10 px-1.5 py-0.5 rounded-full">{margins.margin_gross_pct.toFixed(1)}%</span>
-                  {margins.total_weight_kg > 0 && <span className="text-[11px] text-muted-foreground">{formatCurrency(margins.total_margin_gross / margins.total_weight_kg)}/kg</span>}
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Chiffre d&apos;affaires</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">{loading ? "…" : formatCurrency(currentCA)}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {caEvolution !== 0 && (
+                        <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${caEvolution > 0 ? "text-kiku bg-kiku/15" : "text-ume bg-ume/15"}`}>
+                          {caEvolution > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {caEvolution > 0 ? "+" : ""}{caEvolution}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <SparkLine
+                    data={sparkCA}
+                    color={THEME_COLORS.sora}
+                    height={44}
+                    width={110}
+                    tooltipFormatter={(v) => formatCurrency(v)}
+                  />
+                </div>
+                {targetCA && targetCA > 0 && (
+                  <div className="mt-3">
+                    <ProgressGauge value={currentCA} max={targetCA} label={`Obj. ${formatCurrency(targetCA)}`} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Commandes</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">{loading ? "…" : myStats.sales.orders}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">{myStats.sales.clients} clients actifs</p>
+                  </div>
+                  <SparkLine data={sparkOrders} color={THEME_COLORS.sora} height={44} width={110} />
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <CardContent className="pt-5 pb-4">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Marge nette</p>
-                <p className={`text-2xl font-extrabold mt-1 ${netPositive ? "" : "text-ume"}`}>{loading ? "…" : formatCurrency(margins.total_margin_net)}</p>
-                <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${netPositive ? "text-sora bg-sora/10" : "text-ume bg-ume/10"}`}>{margins.margin_net_pct.toFixed(1)}%</span>
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Panier moyen</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">{loading ? "…" : formatCurrency(myStats.sales.avg_basket)}</p>
+                    {margins && margins.total_weight_kg > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-1">CA/kg : {formatCurrency(margins.total_ca / margins.total_weight_kg)}</p>
+                    )}
+                  </div>
+                  <SparkLine
+                    data={sparkBasket}
+                    color={THEME_COLORS.kiku}
+                    height={44}
+                    width={110}
+                    tooltipFormatter={(v) => formatCurrency(v)}
+                  />
+                </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <CardContent className="pt-5 pb-4">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Déductions</p>
-                <p className="text-2xl font-extrabold mt-1 text-ume">{loading ? "…" : formatCurrency(deductions)}</p>
-                <p className="text-[11px] text-muted-foreground mt-2">Logistique · Structure · RFA</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-5 pb-4">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Taux marge nette</p>
-                <p className={`text-2xl font-extrabold mt-1 ${netPositive ? "" : "text-ume"}`}>{margins.margin_net_pct.toFixed(1)} <span className="text-base font-bold text-muted-foreground">%</span></p>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-3">
-                  <div className={`h-full rounded-full transition-all ${netPositive ? "bg-sora" : "bg-ume"}`} style={{ width: `${Math.min(Math.abs(margins.margin_net_pct), 100)}%` }} />
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Volume vendu</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">
+                      {loading ? "…" : margins && margins.total_weight_kg > 0
+                        ? `${margins.total_weight_kg.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} kg`
+                        : "—"}
+                    </p>
+                    {margins && margins.total_weight_kg > 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-1">{(margins.total_weight_kg / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} tonnes</p>
+                    )}
+                  </div>
+                  <SparkLine
+                    data={sparkWeight}
+                    color={THEME_COLORS.kiku}
+                    height={44}
+                    width={110}
+                    tooltipFormatter={(v) => `${v.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} kg`}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -458,7 +475,183 @@ export default function DashboardPage() {
         );
       })()}
 
-      {/* 1c. STATS : Téléphonie */}
+      {/* 1b. STATS : Marges */}
+      {margins && margins.total_ca > 0 && (() => {
+        const netPositive = margins.total_margin_net >= 0;
+        const deductions = margins.total_margin_gross - margins.total_margin_net;
+        const wt = myStats?.weekly_trends || [];
+        const sparkMarginGross = wt.map((w) => w.margin_gross);
+        const sparkMarginPct = wt.map((w) => w.ca > 0 ? Math.round((w.margin_gross / w.ca) * 1000) / 10 : 0);
+
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Marge brute</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">{loading ? "…" : formatCurrency(margins.total_margin_gross)}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] font-semibold text-sora bg-sora/10 px-1.5 py-0.5 rounded-full">{margins.margin_gross_pct.toFixed(1)}%</span>
+                      {margins.total_weight_kg > 0 && <span className="text-[11px] text-muted-foreground">{formatCurrency(margins.total_margin_gross / margins.total_weight_kg)}/kg</span>}
+                    </div>
+                  </div>
+                  <SparkLine
+                    data={sparkMarginGross}
+                    color={THEME_COLORS.sora}
+                    height={44}
+                    width={110}
+                    tooltipFormatter={(v) => formatCurrency(v)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Marge nette</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className={`text-2xl font-extrabold ${netPositive ? "" : "text-ume"}`}>{loading ? "…" : formatCurrency(margins.total_margin_net)}</p>
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full mt-1 inline-block ${netPositive ? "text-sora bg-sora/10" : "text-ume bg-ume/10"}`}>{margins.margin_net_pct.toFixed(1)}%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Déductions</p>
+                <p className="text-2xl font-extrabold mt-1 text-ume">{loading ? "…" : formatCurrency(deductions)}</p>
+                <p className="text-[11px] text-muted-foreground mt-2">Logistique · Structure · RFA</p>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Taux marge brute</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className={`text-2xl font-extrabold ${netPositive ? "" : "text-ume"}`}>{margins.margin_gross_pct.toFixed(1)} <span className="text-base font-bold text-muted-foreground">%</span></p>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-2 w-20">
+                      <div className={`h-full rounded-full transition-all ${netPositive ? "bg-sora" : "bg-ume"}`} style={{ width: `${Math.min(Math.abs(margins.margin_gross_pct), 100)}%` }} />
+                    </div>
+                  </div>
+                  <SparkLine
+                    data={sparkMarginPct}
+                    color={netPositive ? THEME_COLORS.sora : THEME_COLORS.ume}
+                    height={44}
+                    width={110}
+                    tooltipFormatter={(v) => `${v.toFixed(1)}%`}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* 1c. PIPELINE : Commandes en cours (BC + BL) */}
+      {pipeline && pipeline.orders_count > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-2 mb-1">
+            <Package className="w-4 h-4 text-kiku" />
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pipeline en cours</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-kiku/20">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">CA en commande</p>
+                <div className="flex items-end justify-between mt-1">
+                  <div>
+                    <p className="text-2xl font-extrabold">{loading ? "…" : formatCurrency(pipeline.orders_ca)}</p>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-full text-kiku bg-kiku/15 mt-1">
+                      <Package className="w-3 h-3" />
+                      {pipeline.orders_count} doc.
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-kiku/20">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Clients actifs</p>
+                <div className="mt-1">
+                  <p className="text-2xl font-extrabold">{loading ? "…" : pipeline.orders_clients}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">avec commandes en cours</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-kiku/20">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Dernière commande</p>
+                <div className="mt-1">
+                  <p className="text-2xl font-extrabold">
+                    {pipeline.last_order_date
+                      ? new Date(pipeline.last_order_date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })
+                      : "—"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {pipeline.last_order_date
+                      ? new Date(pipeline.last_order_date).toLocaleDateString("fr-FR", { year: "numeric" })
+                      : ""}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-kiku/20">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Panier moyen</p>
+                <div className="mt-1">
+                  <p className="text-2xl font-extrabold">
+                    {loading ? "…" : pipeline.orders_count > 0 ? formatCurrency(pipeline.orders_ca / pipeline.orders_count) : "—"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">par commande</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          {pipeline.recent_orders.length > 0 && (
+            <Card className="transition-all duration-200 hover:shadow-md border-kiku/20">
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {pipeline.recent_orders.slice(0, 5).map((o, i) => (
+                    <div
+                      key={o.piece_id}
+                      className="stagger-row flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
+                      style={{ animationDelay: `${i * 80}ms` }}
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${o.doc_type === "BC" ? "bg-kiku/10" : "bg-sora/10"}`}>
+                        {o.doc_type === "BC" ? (
+                          <FileText className="w-4 h-4 text-kiku" />
+                        ) : (
+                          <Truck className="w-4 h-4 text-sora" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {o.client_id ? (
+                          <Link href={`/clients/${o.client_id}`} className="text-sm font-medium truncate block hover:underline hover:text-primary transition-colors">
+                            {o.client_name}
+                          </Link>
+                        ) : (
+                          <p className="text-sm font-medium truncate">{o.client_name}</p>
+                        )}
+                        <p className="text-[11px] text-muted-foreground">
+                          <Badge variant="outline" className={`text-[10px] mr-1.5 h-4 px-1 py-0 ${o.doc_type === "BC" ? "text-kiku border-kiku/30" : "text-sora border-sora/30"}`}>{o.doc_type}</Badge>
+                          {o.piece_id} · {new Date(o.date).toLocaleDateString("fr-FR")} · {o.nb_lines} ligne{o.nb_lines > 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold">{formatCurrency(o.total_ht)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* 1d. STATS : Téléphonie */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-5 pb-4 text-center">
@@ -730,7 +923,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 5. TOP CLIENTS | TOP PRODUITS (côte à côte) */}
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-2 gap-4" key={`tops-${toISO(dateRange.from)}-${toISO(dateRange.to)}-${viewAs}`}>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
@@ -744,7 +937,12 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y">
                 {topClients.map((c, i) => (
-                  <Link key={c.client_id} href={`/clients/${c.client_id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors">
+                  <Link
+                    key={c.client_id}
+                    href={`/clients/${c.client_id}`}
+                    className="stagger-row flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  >
                     <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{c.client_name}</p>
@@ -774,7 +972,11 @@ export default function DashboardPage() {
             ) : (
               <div className="divide-y">
                 {topProducts.map((p, i) => (
-                  <div key={p.article_ref} className="flex items-center gap-3 px-4 py-2.5">
+                  <div
+                    key={p.article_ref}
+                    className="stagger-row flex items-center gap-3 px-4 py-2.5"
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  >
                     <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>

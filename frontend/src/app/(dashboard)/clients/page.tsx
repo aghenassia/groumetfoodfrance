@@ -132,6 +132,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [animKey, setAnimKey] = useState(0);
   const [filter, setFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [churnFilter, setChurnFilter] = useState<string>("all");
@@ -195,6 +196,7 @@ export default function ClientsPage() {
       .then((res) => {
         setClients(res.clients);
         setTotal(res.total);
+        setAnimKey((k) => k + 1);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -503,9 +505,9 @@ export default function ClientsPage() {
                     <TableHead className="w-[80px]"></TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {clients.map((client) => (
-                    <TableRow key={client.id} className="group">
+                <TableBody key={animKey}>
+                  {clients.map((client, _i) => (
+                    <TableRow key={client.id} className="stagger-row group" style={{ animationDelay: `${_i * 40}ms` }}>
                       {/* Client info */}
                       <TableCell>
                         <div>

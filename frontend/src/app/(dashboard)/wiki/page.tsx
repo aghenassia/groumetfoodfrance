@@ -60,6 +60,7 @@ type ArticleId =
   | "statuts"
   | "scoring"
   | "products"
+  | "orders"
   | "leaderboard"
   | "objectives"
   | "challenges"
@@ -176,8 +177,16 @@ const ARTICLES: ArticleMeta[] = [
     title: "Catalogue produits & stock",
     icon: Package,
     category: "sales",
-    summary: "Consultation du catalogue, fiches produit, niveaux de stock par dépôt et suggestions similaires.",
-    tags: ["produit", "stock", "famille", "prix", "marge"],
+    summary: "Consultation du catalogue, fiches produit, niveaux de stock par dépôt, suggestions similaires et historique des commandes par produit.",
+    tags: ["produit", "stock", "famille", "prix", "marge", "commande"],
+  },
+  {
+    id: "orders",
+    title: "Commandes",
+    icon: ShoppingCart,
+    category: "sales",
+    summary: "Liste globale de toutes les pièces commerciales (BC, BL, factures, avoirs) avec filtres par type, dates, commercial et recherche.",
+    tags: ["commande", "bc", "bl", "facture", "avoir", "pipeline", "filtre"],
   },
   {
     id: "leaderboard",
@@ -480,8 +489,18 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>Côte à côte : vos <L to="objectives">objectifs multi-KPI</L> avec jauges de progression, et les <L to="challenges">challenges en cours</L> avec le podium et votre position.</p>
           </Section>
 
+          <Section title="Pipeline en cours (BC / BL)">
+            <p>Le bloc &quot;Pipeline en cours&quot; affiche les <strong>bons de commande</strong> et <strong>bons de livraison</strong> non encore facturés :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>CA en commande</strong> et <strong>CA en livraison</strong> : montants HT des BC et BL en cours.</li>
+              <li>• <strong>Commandes en cours</strong> et <strong>Livraisons en cours</strong> : nombre de pièces.</li>
+              <li>• <strong>Dernières commandes</strong> : liste cliquable avec lien vers la fiche client.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Ces données reflètent l&apos;activité commerciale avant facturation, permettant aux sales d&apos;anticiper plutôt que d&apos;attendre les factures de fin de mois.</p>
+          </Section>
+
           <Section title="Top Clients & Produits">
-            <p>Classement des meilleurs clients et produits sur la période sélectionnée, avec CA et quantités.</p>
+            <p>Classement des meilleurs clients et produits sur la période sélectionnée, avec CA et quantités. Les articles de service (transport, remises) sont automatiquement exclus du top produits.</p>
           </Section>
 
           <Section title="Graphique d'évolution CA">
@@ -626,7 +645,8 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             </ul>
           </Section>
 
-          <Section title="Onglets : Ventes / Appels / Retours / Upsell / Historique modifications">
+          <Section title="Onglets : Ventes / Commandes en cours / Appels / Retours / Upsell / Historique modifications">
+            <p><strong>Commandes en cours</strong> : les Bons de Commande (BC) et Bons de Livraison (BL) pas encore facturés, avec CA pipeline et nombre de pièces. Permet d&apos;anticiper l&apos;activité avant la facturation.</p>
             <p><strong>Historique ventes</strong> : tableau de toutes les commandes avec date, numéro de pièce, articles, quantités, prix, montant HT et marge. Cliquez sur un numéro de pièce pour voir le détail complet de la commande.</p>
             <p><strong>Historique appels</strong> : les 30 derniers appels avec direction, durée, mood, outcome, et score IA affichés directement sur la ligne. Cliquez pour déplier et voir :</p>
             <ul className="text-sm space-y-1">
@@ -968,11 +988,12 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>Note de 0 à 100 qui mesure le risque qu&apos;un client cesse de commander. Plus le score est élevé, plus le risque est fort.</p>
             <p><strong>3 composantes :</strong></p>
             <ul className="text-sm space-y-2">
-              <li><strong>Récence (0-40 pts) :</strong> nombre de jours depuis la dernière commande. Plus c&apos;est ancien, plus ça monte.</li>
-              <li><strong>Déviation fréquence (0-35 pts) :</strong> compare le délai actuel à la fréquence habituelle. Si un client commande habituellement tous les 30 jours et que ça fait 90 jours, le ratio est de 3 → score élevé. Les clients &quot;one-shot&quot; (≤ 2 commandes) inactifs depuis 180+ jours reçoivent +20 pts.</li>
-              <li><strong>Tendance d&apos;activité (0-25 pts) :</strong> examine les commandes et le CA des 12 derniers mois comparés à la moyenne historique.</li>
+              <li><strong>Récence (0-40 pts) :</strong> nombre de jours depuis la dernière <strong>activité commerciale</strong> (BC, BL, factures, avoirs). Un client avec un bon de commande récent n&apos;est pas considéré comme inactif, même sans facture.</li>
+              <li><strong>Déviation fréquence (0-35 pts) :</strong> compare le délai actuel à la fréquence habituelle (basée sur les factures uniquement). Si un client commande habituellement tous les 30 jours et que ça fait 90 jours, le ratio est de 3 → score élevé. Les clients &quot;one-shot&quot; (≤ 2 commandes) inactifs depuis 180+ jours reçoivent +20 pts.</li>
+              <li><strong>Tendance d&apos;activité (0-25 pts) :</strong> examine les commandes et le CA des 12 derniers mois comparés à la moyenne historique (factures uniquement).</li>
             </ul>
             <p className="text-sm mt-2">Un bonus de +5 pts est ajouté si le panier moyen du client est supérieur au double de la médiane (client à forte valeur = risque plus impactant).</p>
+            <p className="text-sm text-muted-foreground mt-1"><strong>Important :</strong> la récence utilise tous les documents (BC, BL, FA, AV) tandis que les métriques financières (fréquence, tendance, CA) utilisent uniquement les factures pour éviter le double-comptage.</p>
             <div className="flex gap-3 mt-2">
               <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">0-29 Faible</Badge>
               <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">30-49 Modéré</Badge>
@@ -1005,11 +1026,19 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
       return (
         <div className="space-y-4">
           <Section title="Le catalogue produits">
-            <p>La page Produits affiche tous les articles synchronisés depuis Sage 100. Recherchez par nom, référence ou famille de produit.</p>
+            <p>La page Produits affiche tous les articles synchronisés depuis Sage 100. Recherchez par nom, référence ou famille de produit. Les <strong>articles de service</strong> (transport, remises, acomptes, etc.) sont automatiquement exclus de la liste.</p>
           </Section>
 
-          <Section title="Fiche produit">
-            <p>Chaque produit affiche : référence, désignation, famille, prix de vente, prix d&apos;achat, marge théorique, poids, code-barres.</p>
+          <Section title="Fiche produit — Onglet Aperçu">
+            <p>Chaque produit affiche : référence, désignation, famille, prix de vente, prix d&apos;achat, marge théorique, poids, code-barres. Si le produit a des BC/BL en cours, un badge &quot;Commandé&quot; est affiché.</p>
+          </Section>
+
+          <Section title="Fiche produit — Onglet Commandes">
+            <p>L&apos;onglet <strong>Commandes</strong> affiche l&apos;historique paginé de toutes les commandes (BC, BL, factures, avoirs) pour ce produit :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Type de document (icône + badge), date, client (lien vers la fiche), quantité, montant HT et marge.</li>
+              <li>• Chaque commande est cliquable et redirige vers la page <L to="orders">Commandes</L> globale avec le détail de la pièce.</li>
+            </ul>
           </Section>
 
           <Section title="Stock par dépôt">
@@ -1018,6 +1047,55 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
 
           <Section title="Clients acheteurs">
             <p>Sur chaque fiche produit, vous voyez quels clients ont acheté ce produit, combien de fois, et pour quel montant total. Utile pour identifier des prospects de cross-selling.</p>
+          </Section>
+
+          <Section title="Suggestions & co-achats">
+            <p>Les suggestions upsell et les produits &quot;souvent achetés avec&quot; excluent automatiquement les articles de service pour ne montrer que de vrais produits pertinents.</p>
+          </Section>
+        </div>
+      );
+
+    case "orders":
+      return (
+        <div className="space-y-4">
+          <Section title="Vue d'ensemble">
+            <p>La page Commandes centralise <strong>toutes les pièces commerciales</strong> de Sage : Bons de Commande (BC), Bons de Livraison (BL), Factures (FA) et Avoirs (AV). Elle offre une vision complète de l&apos;activité commerciale, pas seulement les factures.</p>
+          </Section>
+
+          <Section title="KPIs de synthèse">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>CA total</strong> : somme des montants HT (format K€/M€ si besoin).</li>
+              <li>• <strong>Commandes</strong> : nombre total de pièces.</li>
+              <li>• <strong>Clients</strong> : nombre de clients distincts.</li>
+              <li>• <strong>Marge moyenne</strong> : pourcentage moyen de marge sur les pièces.</li>
+            </ul>
+          </Section>
+
+          <Section title="Filtres disponibles">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Recherche</strong> : par numéro de pièce, nom de client ou désignation.</li>
+              <li>• <strong>Type de document</strong> : filtrez par BC, BL, FA, AV (combinables).</li>
+              <li>• <strong>Période</strong> : presets rapides (7j, 30j, 90j, YTD, All) + calendrier personnalisé.</li>
+              <li>• <strong>Commercial</strong> (admin/manager uniquement) : filtrez les commandes par commercial assigné.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Le compteur de filtres actifs s&apos;affiche sur le bouton &quot;Filtres&quot; et le bouton &quot;Réinitialiser&quot; remet tout à zéro.</p>
+          </Section>
+
+          <Section title="Détail d'une commande">
+            <p>Cliquez sur une ligne pour ouvrir le <strong>panel de détail</strong> à droite (même UX que la fiche produit). Le panel affiche :</p>
+            <ul className="text-sm space-y-1">
+              <li>• En-tête : n° de pièce, type, date, client (lien vers la fiche).</li>
+              <li>• KPIs : Total HT, quantité, nombre d&apos;articles, lignes, marge moyenne.</li>
+              <li>• <strong>Lignes détaillées</strong> : chaque ligne est cliquable et redirige vers la fiche du produit correspondant.</li>
+            </ul>
+          </Section>
+
+          <Section title="Lien avec les autres pages">
+            <p>La page Commandes est accessible depuis :</p>
+            <ul className="text-sm space-y-1">
+              <li>• La <strong>sidebar</strong> principale (icône Commandes).</li>
+              <li>• L&apos;onglet <strong>Commandes</strong> de la <L to="products">fiche produit</L> (clique sur une commande).</li>
+            </ul>
           </Section>
         </div>
       );
@@ -1188,7 +1266,8 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Les 4 types de sync Sage">
             <ul className="text-sm space-y-1">
               <li>• <strong>Clients</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_COMPTET</code> → coordonnées, contacts, numéros de téléphone.</li>
-              <li>• <strong>Ventes</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_DOCLIGNE</code> → factures et avoirs avec marge calculée. Déclenche les transitions automatiques de <L to="statuts">lifecycle</L> (prospect→client, lead→client, dormant→client). Auto-corrige les statuts incohérents (ex : un prospect avec des commandes).</li>
+              <li>• <strong>Ventes</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_DOCLIGNE</code> → <strong>4 types de documents</strong> : Bons de Commande (BC), Bons de Livraison (BL), Factures et Avoirs. Les KPIs financiers (CA, marge) restent basés sur les factures, mais la recency du churn utilise tous les types. Déclenche les transitions automatiques de <L to="statuts">lifecycle</L> (prospect→client, lead→client, dormant→client). Auto-corrige les statuts incohérents.</li>
+              <li>• <strong>Articles de service</strong> : les articles de type service (TRANSPORT, ARTDIVERS, ZREMISE, etc.) sont automatiquement taggés <code className="text-xs bg-muted px-1 py-0.5 rounded">is_service=true</code> lors de la sync produits et exclus des listings.</li>
               <li>• <strong>Produits</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_ARTICLE</code> → catalogue avec prix et familles.</li>
               <li>• <strong>Stock</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_ARTSTOCK</code> → niveaux par dépôt.</li>
             </ul>

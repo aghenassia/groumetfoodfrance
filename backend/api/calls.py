@@ -15,6 +15,8 @@ from models.contact import Contact
 from models.client_score import ClientScore
 from models.qualification import CallQualification
 from models.ai_analysis import AiAnalysis
+from models.phone_index import PhoneIndex
+from models.playlist import DailyPlaylist
 from schemas.call import CallResponse, QualifyCallRequest, QualificationResponse
 from connectors.ringover_connector import dial
 from ai.transcription import full_analysis
@@ -343,6 +345,7 @@ async def call_stats(
 @router.post("/dial")
 async def dial_number(
     body: DialRequest,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     from_number = body.from_number
@@ -356,6 +359,30 @@ async def dial_number(
     )
     if not result["success"]:
         raise HTTPException(status_code=502, detail=result.get("error", "Erreur Ringover"))
+
+    from connectors.phone_normalizer import normalize_phone
+    from datetime import timezone as tz
+    dialed_e164 = normalize_phone(body.to_number)
+    if dialed_e164:
+        pi = (await db.execute(
+            select(PhoneIndex.client_id).where(PhoneIndex.phone_e164 == dialed_e164).limit(1)
+        )).scalar_one_or_none()
+        if pi:
+            today = date.today()
+            entry = (await db.execute(
+                select(DailyPlaylist).where(
+                    DailyPlaylist.user_id == user.id,
+                    DailyPlaylist.client_id == pi,
+                    DailyPlaylist.generated_date == today,
+                    DailyPlaylist.status == "pending",
+                )
+            )).scalar_one_or_none()
+            if entry:
+                entry.status = "called"
+                entry.called_at = datetime.now(tz.utc)
+                await db.commit()
+                result["playlist_updated"] = True
+
     return result
 
 

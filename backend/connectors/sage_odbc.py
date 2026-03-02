@@ -50,19 +50,32 @@ class SageConnector:
         cursor.execute("SELECT COUNT(*) FROM F_COMPTET WHERE CT_Type = 0")
         client_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type IN (6, 7)")
+        cursor.execute("SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type IN (1, 3, 6, 7)")
         sales_count = cursor.fetchone()[0]
 
         cursor.execute("SELECT MAX(cbModification) FROM F_COMPTET")
         last_mod_clients = cursor.fetchone()[0]
 
-        cursor.execute("SELECT MAX(cbModification) FROM F_DOCLIGNE WHERE DO_Type IN (6,7)")
+        cursor.execute("SELECT MAX(cbModification) FROM F_DOCLIGNE WHERE DO_Type IN (1, 3, 6, 7)")
         last_mod_sales = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT DO_Type, COUNT(*) FROM F_DOCLIGNE
+            WHERE DO_Type IN (1, 3, 6, 7)
+            GROUP BY DO_Type
+        """)
+        type_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
         return {
             "status": "connected",
             "clients": client_count,
             "sales_lines": sales_count,
+            "sales_lines_by_type": {
+                "bc": type_counts.get(1, 0),
+                "bl": type_counts.get(3, 0),
+                "facture": type_counts.get(6, 0),
+                "avoir": type_counts.get(7, 0),
+            },
             "last_mod_clients": str(last_mod_clients) if last_mod_clients else None,
             "last_mod_sales": str(last_mod_sales) if last_mod_sales else None,
         }
@@ -95,7 +108,7 @@ class SageConnector:
         return results
 
     def get_sales_lines(self, since: Optional[datetime] = None) -> list[dict]:
-        """Récupère les lignes de ventes (factures + avoirs) avec nom du collaborateur."""
+        """Récupère les lignes de ventes (BC, BL, factures, avoirs) avec nom du collaborateur."""
         conn = self.connect()
         cursor = conn.cursor()
 
@@ -123,7 +136,7 @@ class SageConnector:
                 dl.cbModification
             FROM F_DOCLIGNE dl
             LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
-            WHERE dl.DO_Type IN (6, 7)
+            WHERE dl.DO_Type IN (1, 3, 6, 7)
         """
 
         if since:

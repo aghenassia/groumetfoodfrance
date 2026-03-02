@@ -18,6 +18,7 @@ class Product(Base):
     cost_price: Mapped[float | None] = mapped_column(Numeric(15, 4))
     weight: Mapped[float | None] = mapped_column(Numeric(15, 4))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_service: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     barcode: Mapped[str | None] = mapped_column(String(50))
     notes: Mapped[str | None] = mapped_column(Text)
 

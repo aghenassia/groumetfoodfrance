@@ -28,23 +28,44 @@ async def compute_all_scores(db: AsyncSession) -> dict:
     today = date.today()
     twelve_months_ago = today - timedelta(days=365)
 
+    INVOICE_TYPES = [6, 7]
+
+    # Recency: most recent activity across ALL document types (BC, BL, factures)
+    recency_stmt = select(
+        SalesLine.client_sage_id,
+        func.max(SalesLine.date).label("last_activity_date"),
+    ).group_by(SalesLine.client_sage_id)
+    recency_result = await db.execute(recency_stmt)
+    recency_map = {row.client_sage_id: row.last_activity_date for row in recency_result.all()}
+
+    # Financial metrics: invoices only (types 6, 7) to avoid double-counting with BC/BL
     stmt = select(
         SalesLine.client_sage_id,
         func.max(SalesLine.date).label("last_order_date"),
         func.count(distinct(SalesLine.sage_piece_id)).label("order_count_total"),
         func.sum(SalesLine.amount_ht).label("total_revenue_all"),
         func.sum(SalesLine.margin_value).label("total_margin_all"),
+    ).where(
+        SalesLine.sage_doc_type.in_(INVOICE_TYPES)
     ).group_by(SalesLine.client_sage_id)
 
     result = await db.execute(stmt)
     all_stats = {row.client_sage_id: row for row in result.all()}
+
+    # Ensure clients with only BC/BL (no invoices yet) are also scored
+    for sage_id in recency_map:
+        if sage_id not in all_stats:
+            all_stats[sage_id] = None
 
     stmt_12m = select(
         SalesLine.client_sage_id,
         func.count(distinct(SalesLine.sage_piece_id)).label("order_count_12m"),
         func.sum(SalesLine.amount_ht).label("total_revenue_12m"),
         func.sum(SalesLine.margin_value).label("total_margin_12m"),
-    ).where(SalesLine.date >= twelve_months_ago).group_by(SalesLine.client_sage_id)
+    ).where(
+        SalesLine.date >= twelve_months_ago,
+        SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+    ).group_by(SalesLine.client_sage_id)
 
     result_12m = await db.execute(stmt_12m)
     stats_12m = {row.client_sage_id: row for row in result_12m.all()}
@@ -71,9 +92,12 @@ async def compute_all_scores(db: AsyncSession) -> dict:
 
         s12 = stats_12m.get(sage_id)
 
-        order_count_total = stats.order_count_total or 0
-        total_rev_all = float(stats.total_revenue_all or 0)
-        last_order = stats.last_order_date
+        order_count_total = stats.order_count_total if stats else 0
+        total_rev_all = float(stats.total_revenue_all or 0) if stats else 0
+        last_invoice = stats.last_order_date if stats else None
+        # Use the most recent date across ALL types (BC, BL, factures) for churn
+        last_activity = recency_map.get(sage_id)
+        last_order = last_activity or last_invoice
         days_since = (today - last_order).days if last_order else 9999
 
         order_count_12m = s12.order_count_12m if s12 else 0

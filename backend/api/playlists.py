@@ -164,12 +164,20 @@ async def update_playlist_status(
 
 
 class UpsellProductItem(BaseModel):
-    article_ref: str
+    article_ref: str | None = None
     designation: str
     total_qty: float
     total_ht: float
     order_count: int
     last_order_date: str | None = None
+
+
+class UpsellRecommendation(BaseModel):
+    article_ref: str
+    designation: str
+    score: float
+    similar_clients_count: int
+    avg_revenue: float
 
 
 class UpsellInsight(BaseModel):
@@ -183,6 +191,7 @@ class UpsellInsight(BaseModel):
     ca_12m: float
     ca_total: float
     avg_basket: float
+    upsell_recommendations: list[UpsellRecommendation]
     top_products: list[UpsellProductItem]
     ai_suggestion: str | None = None
 
@@ -213,6 +222,9 @@ async def get_playlist_insight(
     )
     score = score_q.scalar_one_or_none()
 
+    from models.product import Product
+    service_refs = select(Product.article_ref).where(Product.is_service == True).scalar_subquery()
+
     top_prods_result = await db.execute(
         select(
             SalesLine.article_ref,
@@ -222,11 +234,16 @@ async def get_playlist_insight(
             sqlfunc.count(SalesLine.id).label("order_count"),
             sqlfunc.max(SalesLine.date).label("last_date"),
         )
-        .where(SalesLine.client_sage_id == client.sage_id)
+        .where(
+            SalesLine.client_sage_id == client.sage_id,
+            SalesLine.article_ref.isnot(None),
+            SalesLine.article_ref.notin_(service_refs),
+        )
         .group_by(SalesLine.article_ref)
         .order_by(sqlfunc.sum(SalesLine.amount_ht).desc())
         .limit(10)
     )
+    top_prods_rows = top_prods_result.all()
     top_products = [
         UpsellProductItem(
             article_ref=r.article_ref,
@@ -236,8 +253,60 @@ async def get_playlist_insight(
             order_count=r.order_count,
             last_order_date=str(r.last_date) if r.last_date else None,
         )
-        for r in top_prods_result.all()
+        for r in top_prods_rows
     ]
+
+    # --- Upsell recommendations via collaborative filtering ---
+    client_refs = {r.article_ref for r in top_prods_rows if r.article_ref}
+    upsell_recommendations: list[UpsellRecommendation] = []
+
+    if client_refs:
+        twelve_m_ago = date.today() - timedelta(days=365)
+
+        similar_clients_sq = (
+            select(SalesLine.client_sage_id)
+            .where(
+                SalesLine.article_ref.in_(client_refs),
+                SalesLine.client_sage_id != client.sage_id,
+                SalesLine.date >= twelve_m_ago,
+            )
+            .group_by(SalesLine.client_sage_id)
+            .having(sqlfunc.count(sqlfunc.distinct(SalesLine.article_ref)) >= 2)
+            .scalar_subquery()
+        )
+
+        reco_q = await db.execute(
+            select(
+                SalesLine.article_ref,
+                sqlfunc.max(SalesLine.designation).label("designation"),
+                sqlfunc.count(sqlfunc.distinct(SalesLine.client_sage_id)).label("nb_clients"),
+                sqlfunc.coalesce(
+                    sqlfunc.sum(SalesLine.amount_ht)
+                    / sqlfunc.nullif(sqlfunc.count(sqlfunc.distinct(SalesLine.client_sage_id)), 0),
+                    0,
+                ).label("avg_revenue"),
+            )
+            .where(
+                SalesLine.client_sage_id.in_(similar_clients_sq),
+                SalesLine.article_ref.isnot(None),
+                SalesLine.article_ref.notin_(client_refs),
+                SalesLine.article_ref.notin_(service_refs),
+                SalesLine.date >= twelve_m_ago,
+            )
+            .group_by(SalesLine.article_ref)
+            .order_by(sqlfunc.count(sqlfunc.distinct(SalesLine.client_sage_id)).desc())
+            .limit(5)
+        )
+        for r in reco_q.all():
+            upsell_recommendations.append(
+                UpsellRecommendation(
+                    article_ref=r.article_ref,
+                    designation=r.designation or "",
+                    score=round(float(r.nb_clients) / max(1, len(client_refs)) * 100, 0),
+                    similar_clients_count=r.nb_clients,
+                    avg_revenue=round(float(r.avg_revenue), 2),
+                )
+            )
 
     twelve_months_ago = date.today() - timedelta(days=365)
 
@@ -275,6 +344,7 @@ async def get_playlist_insight(
         ca_12m=round(ca_12m, 2),
         ca_total=round(ca_total, 2),
         avg_basket=round(avg_basket, 2),
+        upsell_recommendations=upsell_recommendations,
         top_products=top_products,
         ai_suggestion=None,
     )
@@ -303,6 +373,11 @@ async def _generate_ai_suggestion(insight: UpsellInsight, reason: str) -> str:
         for p in insight.top_products
     )
 
+    reco_text = "\n".join(
+        f"- {r.designation} (ref: {r.article_ref}) — acheté par {r.similar_clients_count} clients similaires, CA moyen {r.avg_revenue:.0f}€"
+        for r in insight.upsell_recommendations
+    ) if insight.upsell_recommendations else ""
+
     context_map = {
         "upsell": "Ce client a un potentiel de vente additionnelle. Analyse ses achats et suggère des produits complémentaires ou des montées en gamme.",
         "churn_risk": "Ce client risque de partir. Analyse ses achats passés et propose une stratégie de rétention personnalisée.",
@@ -330,7 +405,10 @@ CONTEXTE CLIENT :
 PRODUITS HABITUELLEMENT COMMANDÉS :
 {products_text if products_text else "Aucun historique de commande"}
 
-Donne une recommandation en 3-5 points maximum, concise et actionnable. Chaque point doit être une phrase courte. Sois direct et pragmatique."""
+PRODUITS RECOMMANDÉS (achetés par des clients similaires, pas encore par ce client) :
+{reco_text if reco_text else "Aucune recommandation disponible"}
+
+Donne une recommandation en 3-5 points maximum, concise et actionnable. Chaque point doit être une phrase courte. Si des produits recommandés sont pertinents, mentionne-les. Sois direct et pragmatique."""
 
     def _call_openai():
         client = OpenAI(api_key=settings.openai_api_key)

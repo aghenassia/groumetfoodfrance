@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Package,
+  ShoppingCart,
   UserCog,
   BookOpen,
   BarChart3,
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { href: "/contacts", label: "Contacts", icon: ContactRound },
   { href: "/calls", label: "Appels", icon: Phone },
   { href: "/products", label: "Produits", icon: Package },
+  { href: "/orders", label: "Commandes", icon: ShoppingCart },
   { href: "/leaderboard", label: "Classement", icon: Trophy },
   { href: "/wiki", label: "Wiki", icon: BookOpen },
 ];

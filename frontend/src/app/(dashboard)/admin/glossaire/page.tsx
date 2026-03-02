@@ -25,6 +25,11 @@ import {
   Search,
   Globe,
   Flame,
+  FileText,
+  Truck,
+  Receipt,
+  Package,
+  ShoppingCart,
 } from "lucide-react";
 
 const STATUSES = [
@@ -95,7 +100,8 @@ const CHURN_COMPONENTS = [
   {
     name: "Recency",
     range: "0 – 40",
-    description: "Temps absolu depuis la dernière commande",
+    description:
+      "Temps absolu depuis la dernière activité commerciale. Calculée sur TOUS les types de documents (BC, BL, Factures, Avoirs) pour refléter l'activité réelle — un client avec un bon de commande récent n'est pas inactif.",
     detail: [
       { seuil: "≤ 30 jours", pts: 0 },
       { seuil: "31 – 60 jours", pts: 10 },
@@ -103,12 +109,14 @@ const CHURN_COMPONENTS = [
       { seuil: "91 – 180 jours", pts: 30 },
       { seuil: "180+ jours", pts: 40 },
     ],
+    footnote:
+      "La recency prend en compte les BC et BL (pas uniquement les factures) pour détecter l'activité avant facturation.",
   },
   {
     name: "Déviation de fréquence",
     range: "0 – 35",
     description:
-      "Retard par rapport au rythme habituel du client (ratio = jours depuis dernière commande / fréquence moyenne). Nécessite ≥ 3 commandes historiques.",
+      "Retard par rapport au rythme habituel du client (ratio = jours depuis dernière commande / fréquence moyenne). Nécessite ≥ 3 commandes historiques. Basée sur les factures uniquement (types 6, 7).",
     detail: [
       { seuil: "≤ 1.2×", pts: 0 },
       { seuil: "1.2 – 1.8×", pts: 10 },
@@ -123,7 +131,7 @@ const CHURN_COMPONENTS = [
     name: "Tendance d'activité",
     range: "0 – 25",
     description:
-      "Déclin du volume de commandes et/ou du CA par rapport à l'historique. Nécessite ≥ 3 commandes historiques.",
+      "Déclin du volume de commandes et/ou du CA par rapport à l'historique. Nécessite ≥ 3 commandes historiques. Basée sur les factures uniquement (types 6, 7).",
     detail: [
       { seuil: "0 commande sur 12 mois", pts: 20 },
       { seuil: "Nb cmd 12m < 50% du rythme attendu", pts: 15 },
@@ -131,6 +139,47 @@ const CHURN_COMPONENTS = [
       { seuil: "CA 12m < 30% du CA annuel moyen", pts: 5 },
     ],
   },
+];
+
+const SAGE_DOC_TYPES = [
+  {
+    code: "1",
+    label: "BC — Bon de Commande",
+    icon: ShoppingCart,
+    color: "text-sora",
+    usage: "Pipeline. Inclus dans la recency du churn. Exclu des métriques financières (CA, marge).",
+  },
+  {
+    code: "3",
+    label: "BL — Bon de Livraison",
+    icon: Truck,
+    color: "text-kiku",
+    usage: "Pipeline. Inclus dans la recency du churn. Exclu des métriques financières (CA, marge).",
+  },
+  {
+    code: "6",
+    label: "FA — Facture",
+    icon: Receipt,
+    color: "text-sensai",
+    usage: "Source principale des métriques financières (CA, marge, panier moyen, order_count). Inclus dans la recency.",
+  },
+  {
+    code: "7",
+    label: "AV — Avoir (facture crédit)",
+    icon: FileText,
+    color: "text-ume",
+    usage: "Comptabilisé comme les factures (montants négatifs). Inclus dans la recency et les métriques financières.",
+  },
+];
+
+const SERVICE_ARTICLE_REFS = [
+  { ref: "TRANSPORT", description: "Participation frais de transport" },
+  { ref: "ARTDIVERS / ARTDIVERS5 / ARTDIVERS20", description: "Articles divers (TVA 5,5% / 20%)" },
+  { ref: "ZACOMPTE", description: "Acompte" },
+  { ref: "ZAVOIR", description: "Avoir sur facture" },
+  { ref: "ZESCOMPTE", description: "Escompte" },
+  { ref: "ZPORTSOUMIS / ZPORTNONSOUMIS", description: "Port soumis / non soumis à TVA" },
+  { ref: "ZREMISE", description: "Remise commerciale" },
 ];
 
 const SCORES = [
@@ -530,6 +579,116 @@ export default function GlossairePage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- SOURCES DE DONNÉES SAGE --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <FileText className="w-5 h-5 text-sora" />
+          Sources de données Sage (DO_Type)
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Le CRM synchronise <strong>4 types de documents</strong> depuis Sage 100.
+          Chaque type a un rôle précis dans les calculs. La distinction est essentielle
+          pour éviter le double-comptage (un BC sera facturé plus tard).
+        </p>
+
+        <div className="space-y-3">
+          {SAGE_DOC_TYPES.map((dt) => (
+            <Card key={dt.code}>
+              <CardContent className="pt-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-2 min-w-[60px]">
+                    <dt.icon className={`w-4 h-4 ${dt.color}`} />
+                    <Badge variant="secondary" className="text-xs font-mono">
+                      {dt.code}
+                    </Badge>
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">{dt.label}</p>
+                    <p className="text-xs text-muted-foreground">{dt.usage}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="mt-4 p-4 rounded-lg border bg-muted/30 space-y-2">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Règle de calcul :</strong>{" "}
+            La <strong>recency</strong> du score de churn utilise tous les types (BC, BL, FA, AV)
+            pour refléter l&apos;activité réelle du client. Les <strong>métriques financières</strong>{" "}
+            (CA, marge, panier moyen, order_count) sont calculées uniquement sur les
+            factures (6) et avoirs (7) pour éviter le double-comptage.
+          </p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Pipeline :</strong>{" "}
+            Les BC et BL forment le &quot;pipeline en cours&quot; visible sur le dashboard
+            et les fiches clients — ce sont les commandes pas encore facturées.
+          </p>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- ARTICLES DE SERVICE --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Package className="w-5 h-5 text-ume" />
+          Articles de service (is_service)
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Certaines références Sage ne sont pas de vrais produits mais des lignes
+          de service (transport, remises, acomptes). Elles sont flaggées{" "}
+          <code className="bg-muted px-1 py-0.5 rounded text-foreground">is_service = true</code>{" "}
+          et <strong>exclues automatiquement</strong> des listings produits,
+          suggestions upsell, co-achats et top produits.
+          Leur valeur financière reste comptabilisée dans le CA global.
+        </p>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                      Référence(s)
+                    </th>
+                    <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                      Description
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {SERVICE_ARTICLE_REFS.map((s) => (
+                    <tr key={s.ref}>
+                      <td className="px-3 py-1.5 font-mono text-sora whitespace-nowrap">
+                        {s.ref}
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {s.description}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="mt-4 p-4 rounded-lg border bg-muted/30">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Détection automatique :</strong>{" "}
+            lors de la synchronisation Sage, les articles dont la référence correspond
+            à la liste ci-dessus sont automatiquement marqués{" "}
+            <code className="bg-muted px-1 py-0.5 rounded text-foreground">is_service = true</code>.
+            Ce flag est persisté en base et utilisé par tous les endpoints produits.
+          </p>
         </div>
       </section>
 

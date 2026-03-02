@@ -192,6 +192,7 @@ const OUTCOMES = [
 export default function CallsPage() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
+  const [animKey, setAnimKey] = useState(0);
   const [tab, setTab] = useState<"all" | "unqualified">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const selectedCallRef = useRef<Call | null>(null);
@@ -229,6 +230,7 @@ export default function CallsPage() {
     const promise = tab === "unqualified" ? api.getUnqualifiedCalls() : api.getCalls(params);
     promise.then((freshCalls) => {
       setCalls(freshCalls);
+      setAnimKey((k) => k + 1);
       const current = selectedCallRef.current;
       if (current) {
         const updated = freshCalls.find((c: Call) => c.id === current.id);
@@ -239,9 +241,12 @@ export default function CallsPage() {
 
   useEffect(() => { fetchCalls(); }, [tab]);
 
+  const prevSearchRef = useRef(searchQuery);
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (tab === "all") fetchCalls();
+      const changed = prevSearchRef.current !== searchQuery;
+      prevSearchRef.current = searchQuery;
+      if (tab === "all" && changed) fetchCalls();
       if (searchQuery.trim().length >= 2) {
         setSearchingClients(true);
         Promise.all([
@@ -473,9 +478,9 @@ export default function CallsPage() {
   const panelOpen = selectedCall || (panelMode === "company" && selectedClient);
 
   return (
-    <div className="flex gap-0 relative">
+    <div className="relative">
       {/* ——— LEFT: Call list ——— */}
-      <div className={`space-y-4 ${panelOpen ? "flex-1 min-w-0 pr-4" : "w-full"}`}>
+      <div className={`space-y-4 ${panelOpen ? "lg:pr-[440px]" : ""}`}>
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -577,8 +582,8 @@ export default function CallsPage() {
             {tab === "unqualified" ? "Tous les appels sont qualifiés !" : "Aucun appel"}
           </div>
         ) : (
-          <div className="border rounded-lg divide-y bg-card overflow-hidden">
-            {calls.map((call) => {
+          <div className="border rounded-lg divide-y bg-card overflow-hidden" key={animKey}>
+            {calls.map((call, _i) => {
               const isSelected = selectedCall?.id === call.id;
               const cn = contactName(call);
               const cpn = companyName(call);
@@ -588,9 +593,10 @@ export default function CallsPage() {
               return (
                 <div
                   key={call.id}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                  className={`stagger-row flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
                     isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-accent/30 border-l-2 border-l-transparent"
                   }`}
+                  style={{ animationDelay: `${_i * 30}ms` }}
                   onClick={() => selectCall(call)}
                 >
                   {/* Direction + status indicator */}
@@ -673,7 +679,7 @@ export default function CallsPage() {
       {panelOpen && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => { setSelectedCall(null); setPanelMode("detail"); }} />
-          <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] bg-background border-l shadow-xl overflow-y-auto lg:relative lg:inset-auto lg:z-auto lg:w-[420px] lg:shrink-0 lg:border-l lg:shadow-none lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+          <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] lg:w-[420px] bg-background border-l shadow-xl lg:shadow-none overflow-y-auto lg:z-30">
             {/* Panel header */}
             <div className="sticky top-0 z-10 bg-background border-b px-4 py-3">
               <div className="flex items-center justify-between gap-2">
@@ -878,54 +884,72 @@ export default function CallsPage() {
                     </div>
                   )}
 
-                  {/* Qualification */}
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center justify-between">
-                        <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" />Qualification</span>
-                        {selectedCall.is_answered && (
-                          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={() => openQualify(selectedCall)}>
-                            {selectedCall.qualification ? "Modifier" : "Qualifier"}
-                          </Button>
-                        )}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      {selectedCall.qualification ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {selectedCall.qualification.outcome && (
-                              <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${outcomeColor(selectedCall.qualification.outcome)}`}>
-                                {selectedCall.qualification.outcome}
-                              </span>
+                  {/* Qualification — CTA proéminent si non qualifié */}
+                  {selectedCall.is_answered && !selectedCall.qualification ? (
+                    <div
+                      className="rounded-lg border-2 border-amber-400/60 bg-gradient-to-r from-amber-50 to-amber-100/60 p-4 cursor-pointer hover:shadow-md transition-all"
+                      onClick={() => openQualify(selectedCall)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-amber-400/20 flex items-center justify-center shrink-0">
+                          <MessageSquare className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-amber-800">À qualifier</p>
+                          <p className="text-xs text-amber-700/70 mt-0.5">Qualifiez cet appel pour suivre vos performances</p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-amber-500 shrink-0" />
+                      </div>
+                    </div>
+                  ) : (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center justify-between">
+                          <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" />Qualification</span>
+                          {selectedCall.is_answered && selectedCall.qualification && (
+                            <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={() => openQualify(selectedCall)}>
+                              Modifier
+                            </Button>
+                          )}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        {selectedCall.qualification ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {selectedCall.qualification.outcome && (
+                                <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${outcomeColor(selectedCall.qualification.outcome)}`}>
+                                  {selectedCall.qualification.outcome}
+                                </span>
+                              )}
+                              {selectedCall.qualification.mood && (
+                                <span className="text-xs">{moodEmoji(selectedCall.qualification.mood)} {moodLabel(selectedCall.qualification.mood)}</span>
+                              )}
+                            </div>
+                            {selectedCall.qualification.notes && (
+                              <p className="text-xs text-muted-foreground bg-accent rounded-lg p-2">{selectedCall.qualification.notes}</p>
                             )}
-                            {selectedCall.qualification.mood && (
-                              <span className="text-xs">{moodEmoji(selectedCall.qualification.mood)} {moodLabel(selectedCall.qualification.mood)}</span>
+                            {selectedCall.qualification.next_step && (
+                              <div className="flex items-center gap-1.5 text-xs">
+                                <ArrowRight className="w-3 h-3 text-sora" />
+                                <span>{selectedCall.qualification.next_step}</span>
+                              </div>
+                            )}
+                            {selectedCall.qualification.next_step_date && (
+                              <div className="flex items-center gap-1.5 text-xs text-sora">
+                                <Calendar className="w-3 h-3" />
+                                Rappel le {new Date(selectedCall.qualification.next_step_date).toLocaleDateString("fr-FR")}
+                              </div>
                             )}
                           </div>
-                          {selectedCall.qualification.notes && (
-                            <p className="text-xs text-muted-foreground bg-accent rounded-lg p-2">{selectedCall.qualification.notes}</p>
-                          )}
-                          {selectedCall.qualification.next_step && (
-                            <div className="flex items-center gap-1.5 text-xs">
-                              <ArrowRight className="w-3 h-3 text-sora" />
-                              <span>{selectedCall.qualification.next_step}</span>
-                            </div>
-                          )}
-                          {selectedCall.qualification.next_step_date && (
-                            <div className="flex items-center gap-1.5 text-xs text-sora">
-                              <Calendar className="w-3 h-3" />
-                              Rappel le {new Date(selectedCall.qualification.next_step_date).toLocaleDateString("fr-FR")}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          {selectedCall.is_answered ? "Cet appel n'a pas encore été qualifié." : "Appel non décroché — pas de qualification requise."}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            Appel non décroché — pas de qualification requise.
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Audio + AI Analysis */}
                   {selectedCall.record_url && (

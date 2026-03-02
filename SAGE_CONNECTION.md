@@ -1,7 +1,7 @@
 # Connexion Sage 100 — Guide Technique
 
 > Document de référence pour le développement du connecteur Sage 100
-> Dernière mise à jour : 24 février 2026
+> Dernière mise à jour : 1 mars 2026
 
 ---
 
@@ -138,7 +138,7 @@ WHERE CT_Type = 0  -- Clients uniquement
 | Colonne | Type | Description |
 |---------|------|-------------|
 | `DO_Piece` | VARCHAR(13) | N° de pièce |
-| `DO_Type` | SMALLINT | Type document (6=Facture, 7=Avoir) |
+| `DO_Type` | SMALLINT | Type document (1=BC, 3=BL, 6=Facture, 7=Avoir) |
 | `DO_Date` | DATETIME | Date du document |
 | `CT_NumPayeur` | VARCHAR(17) | N° client payeur |
 | `DO_TotalHT` | FLOAT | Total HT |
@@ -151,7 +151,7 @@ WHERE CT_Type = 0  -- Clients uniquement
 | Colonne | Type | Description | Mapping CRM |
 |---------|------|-------------|-------------|
 | `DO_Piece` | VARCHAR(13) | N° de pièce | `sage_piece_id` |
-| `DO_Type` | SMALLINT | Type document | Filtrer `IN (6, 7)` |
+| `DO_Type` | SMALLINT | Type document | `sage_doc_type` — Filtrer `IN (1, 3, 6, 7)` |
 | `DO_Date` | DATETIME | Date | `date` |
 | `CT_Num` | VARCHAR(17) | N° client | `client_sage_id` |
 | `AR_Ref` | VARCHAR(18) | Référence article | `article_ref` |
@@ -188,9 +188,11 @@ SELECT
     dl.CO_No,
     dl.cbModification
 FROM F_DOCLIGNE dl
-WHERE dl.DO_Type IN (6, 7)  -- Factures et avoirs
+WHERE dl.DO_Type IN (1, 3, 6, 7)  -- BC, BL, Factures et Avoirs
 ORDER BY dl.DO_Date DESC
 ```
+
+> **Note :** Le CRM synchronise les 4 types de documents. Les **métriques financières** (CA, marge, panier moyen) sont calculées uniquement sur les factures (6) et avoirs (7). La **recency** du churn utilise tous les types pour refléter l'activité réelle (un client avec un BC récent n'est pas inactif).
 
 ### F_COLLABORATEUR — Commerciaux / Représentants
 
@@ -350,7 +352,7 @@ async def full_sync_clients():
 
 async def full_sync_sales():
     query = """
-        SELECT * FROM F_DOCLIGNE WHERE DO_Type IN (6, 7)
+        SELECT * FROM F_DOCLIGNE WHERE DO_Type IN (1, 3, 6, 7)
     """
     # ... upsert dans table sales_lines
 ```
@@ -372,7 +374,7 @@ async def delta_sync_clients(last_sync: datetime):
 async def delta_sync_sales(last_sync: datetime):
     query = """
         SELECT * FROM F_DOCLIGNE
-        WHERE DO_Type IN (6, 7)
+        WHERE DO_Type IN (1, 3, 6, 7)
         AND cbModification > ?
     """
     # ... upsert uniquement les modifiés
@@ -488,9 +490,9 @@ def test_connection():
 
         # Test 3: Compter les lignes de ventes
         print("\n[4] Comptage des lignes de ventes...")
-        cursor.execute("SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type IN (6, 7)")
+        cursor.execute("SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type IN (1, 3, 6, 7)")
         count = cursor.fetchone()[0]
-        print(f"    ✅ {count} lignes de ventes trouvées")
+        print(f"    ✅ {count} lignes de ventes trouvées (BC+BL+FA+AV)")
 
         # Test 4: Dernière modification
         print("\n[5] Dernière modification...")
@@ -630,7 +632,7 @@ class SageConnector:
         return results
 
     def get_sales_lines(self, since: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Récupère les lignes de ventes."""
+        """Récupère les lignes de ventes (BC, BL, Factures, Avoirs)."""
         conn = self.connect()
         cursor = conn.cursor()
 
@@ -641,7 +643,7 @@ class SageConnector:
                 DL_PrixRU, DL_PoidsNet, CO_No, cbModification,
                 DL_MontantHT - (DL_PrixRU * DL_Qte) AS MargeValeur
             FROM F_DOCLIGNE
-            WHERE DO_Type IN (6, 7)
+            WHERE DO_Type IN (1, 3, 6, 7)
         """
 
         if since:

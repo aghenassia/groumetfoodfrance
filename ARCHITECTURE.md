@@ -234,7 +234,7 @@ WHERE c.CT_Type = 0  -- Clients uniquement
 | Colonne Sage | Table | Type | Description | Colonne CRM |
 |-------------|-------|------|-------------|-------------|
 | `DO_Piece` | ENTETE/LIGNE | VARCHAR(13) | N° de pièce | `sage_piece_id` |
-| `DO_Type` | ENTETE/LIGNE | SMALLINT | Type doc (6=Facture, 7=Avoir) | filtre |
+| `DO_Type` | ENTETE/LIGNE | SMALLINT | Type doc (1=BC, 3=BL, 6=Facture, 7=Avoir) | `sage_doc_type` |
 | `DO_Date` | LIGNE | DATETIME | Date du document | `date` |
 | `CT_Num` | LIGNE | VARCHAR(17) | N° tiers client | `client_sage_id` |
 | `AR_Ref` | LIGNE | VARCHAR(18) | Référence article | `article_ref` |
@@ -274,7 +274,7 @@ SELECT
 FROM F_DOCLIGNE dl
 INNER JOIN F_COMPTET ct ON dl.CT_Num = ct.CT_Num
 LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
-WHERE dl.DO_Type IN (6, 7)  -- Factures et avoirs uniquement
+WHERE dl.DO_Type IN (1, 3, 6, 7)  -- BC, BL, Factures et avoirs
 ORDER BY dl.DO_Date DESC
 ```
 
@@ -569,7 +569,7 @@ CREATE TABLE sales_lines (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sage_piece_id    VARCHAR(13) NOT NULL,
     sage_doc_type    SMALLINT NOT NULL,
-        -- 6=Facture, 7=Avoir
+        -- 1=BC (Bon de Commande), 3=BL (Bon de Livraison), 6=Facture, 7=Avoir
     client_sage_id   VARCHAR(17) NOT NULL,
     client_id        UUID REFERENCES clients(id),
     client_name      VARCHAR(100),
@@ -775,6 +775,9 @@ CREATE TABLE products (
     weight          DECIMAL(15,4),
     is_active       BOOLEAN DEFAULT TRUE,
     barcode         VARCHAR(50),
+    is_service      BOOLEAN DEFAULT FALSE,
+        -- TRUE pour les articles de service (TRANSPORT, ARTDIVERS, ZACOMPTE, etc.)
+        -- Exclus des listings produits, suggestions upsell et co-achats
     notes           TEXT,
 
     -- Stock (synced from F_ARTSTOCK, dépôt principal DE_No=1)
@@ -949,19 +952,23 @@ CREATE TABLE challenge_rankings (
 ### Algorithme RFM (Recency, Frequency, Monetary)
 
 Le scoring s'exécute chaque nuit après la sync Sage. Il analyse les `sales_lines`
-pour calculer des métriques par client :
+pour calculer des métriques par client.
+
+**Distinction clé BC/BL vs Factures :**
+- **Recency** (`last_order_date`, `days_since_last_order`) : calculée sur **tous les types de documents** (BC=1, BL=3, Factures=6, Avoirs=7) pour refléter l'activité réelle du client, y compris les commandes non encore facturées.
+- **Métriques financières** (CA, marge, order_count, avg_basket) : calculées uniquement sur les **factures et avoirs** (types 6, 7) pour éviter le double-comptage avec les BC/BL qui seront transformés en factures.
 
 ```
 Pour chaque client ayant au moins 1 commande :
 
-1. RECENCY (Dernière commande)
-   └─ days_since_last_order = TODAY - MAX(sales_lines.date)
+1. RECENCY (Dernière activité — TOUS types : BC, BL, Factures, Avoirs)
+   └─ days_since_last_order = TODAY - MAX(sales_lines.date WHERE sage_doc_type IN (1,3,6,7))
 
-2. FREQUENCY (Fréquence)
+2. FREQUENCY (Fréquence — Factures uniquement : types 6, 7)
    ├─ order_count_12m = COUNT(DISTINCT sage_piece_id) sur 12 mois
    └─ avg_frequency_days = 365 / order_count_12m
 
-3. MONETARY (Valeur)
+3. MONETARY (Valeur — Factures uniquement : types 6, 7)
    ├─ total_revenue_12m = SUM(amount_ht) sur 12 mois
    ├─ avg_basket = total_revenue_12m / order_count_12m
    └─ total_margin_12m = SUM(margin_value) sur 12 mois
@@ -1053,7 +1060,7 @@ Le score est la somme de trois composantes indépendantes, plafonnée à 100 :
 | **Tendance** | 0-25 | Déclin d'activité (volume et/ou CA vs historique) |
 
 ```
-Recency (jours depuis dernière commande)
+Recency (jours depuis dernière activité — BC, BL, Factures, Avoirs)
   ≤ 30j → 0  |  31-60j → 10  |  61-90j → 20  |  91-180j → 30  |  180+ → 40
 
 Frequency deviation (ratio = jours_depuis / freq_moyenne, si ≥ 3 commandes)
@@ -1749,7 +1756,8 @@ ringover-crm/
 │   │   ├── calls.py                   # GET /calls, /calls/{id}
 │   │   ├── sales.py                   # GET /sales, stats ventes
 │   │   ├── playlists.py               # GET /playlists, PATCH status, GET insight + IA
-│   │   ├── products.py                # GET /products, /products/{ref}, upsell, co-achats
+│   │   ├── products.py                # GET /products, /products/{ref}, upsell, co-achats, orders
+│   │   ├── orders.py                  # GET /orders (liste globale commandes, filtres type/date/commercial)
 │   │   ├── qualify.py                 # POST /qualify
 │   │   ├── enrich.py                  # POST /clients/{id}/enrich (enrichissement IA)
 │   │   ├── gamification.py            # GET /leaderboard, /my-xp
@@ -1843,7 +1851,9 @@ ringover-crm/
 │   │   │   ├── calls/
 │   │   │   │   └── page.tsx
 │   │   │   ├── products/
-│   │   │   │   └── page.tsx           # Catalogue produits + panel détail
+│   │   │   │   └── page.tsx           # Catalogue produits + panel détail + onglet commandes
+│   │   │   ├── orders/
+│   │   │   │   └── page.tsx           # Liste globale commandes + panel détail + filtres
 │   │   │   ├── leaderboard/
 │   │   │   │   └── page.tsx
 │   │   │   └── admin/
@@ -2070,18 +2080,25 @@ JWT_REFRESH_DAYS=7
 ### Produits
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| GET | `/api/products` | **Liste produits** avec search, tri (CA, qté, clients, commandes, marge), filtre has_sales |
+| GET | `/api/products` | **Liste produits** avec search, tri (CA, qté, clients, commandes, marge), filtre has_sales. Exclut les articles de service (`is_service=true`). Inclut pipeline (BC/BL) |
 | GET | `/api/products/families` | **Familles de produits** distinctes |
-| GET | `/api/products/{article_ref}` | **Détail produit** : stats, top 10 clients, ventes mensuelles, co-achats |
-| GET | `/api/products/orders/{sage_piece_id}` | **Détail commande** : toutes les lignes d'une facture/avoir |
-| GET | `/api/products/upsell/{client_id}` | **Suggestions upsell** : produits achetés par des clients similaires |
+| GET | `/api/products/{article_ref}` | **Détail produit** : stats, top 10 clients, ventes mensuelles, co-achats. Articles de service exclus des suggestions |
+| GET | `/api/products/orders?article_ref=&limit=&offset=` | **Historique commandes produit** : liste paginée des commandes (tous types) pour un article |
+| GET | `/api/products/orders/{sage_piece_id}` | **Détail commande** : toutes les lignes d'une pièce commerciale |
+| GET | `/api/products/upsell/{client_id}` | **Suggestions upsell** : produits achetés par des clients similaires (articles de service exclus) |
+
+### Commandes (global)
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/orders?doc_type=&date_from=&date_to=&user_id=&search=&sort_by=&sort_dir=&limit=&offset=` | **Liste commandes** : paginée, tous types de documents (BC, BL, FA, AV). Filtres par type, dates, commercial, recherche. KPIs de synthèse |
 
 ### Dashboard personnel
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| GET | `/api/me/stats?date_from=&date_to=` | **KPIs personnels** : CA, commandes, appels, score IA, évolution %, progression objectif, CA mensuel 12 mois |
+| GET | `/api/me/stats?date_from=&date_to=` | **KPIs personnels** : CA, commandes, appels, score IA, évolution %, progression objectif, CA mensuel 12 mois (factures uniquement) |
 | GET | `/api/me/clients?limit=&offset=` | **Mes clients** : liste des clients assignés au commercial connecté |
-| GET | `/api/me/top-products?limit=` | **Mes top produits** : produits les plus vendus par ce commercial |
+| GET | `/api/me/top-products?limit=` | **Mes top produits** : produits les plus vendus par ce commercial (articles de service exclus) |
+| GET | `/api/me/pipeline?date_from=&date_to=` | **Pipeline** : KPIs des commandes en cours (BC/BL), top commandes récentes |
 
 ### Admin — Gestion utilisateurs
 | Méthode | Route | Description |
@@ -2296,7 +2313,7 @@ JWT_REFRESH_DAYS=7
 **Connecteur Sage 100 ODBC (connexion directe) :**
 - **`SageConnector` class** (`backend/connectors/sage_odbc.py`) : connexion ODBC directe vers SQL Server Sage via Tailscale VPN
   - `get_clients(since?)` : récupère F_COMPTET (1827 clients)
-  - `get_sales_lines(since?)` : récupère F_DOCLIGNE (factures + avoirs)
+  - `get_sales_lines(since?)` : récupère F_DOCLIGNE (BC=1, BL=3, Factures=6, Avoirs=7)
   - `get_collaborateurs()` : récupère F_COLLABORATEUR
   - `test_connection()` : vérifie l'accès et compte les enregistrements
 - **`sage_sync.py`** : logique de synchronisation vers PostgreSQL
@@ -2527,6 +2544,36 @@ SAGE_ODBC_PASSWORD=CRM2026secure!
 **Bugs corrigés :**
 - `.env` non sauvegardé sur disque → clé `OPENAI_API_KEY` vide au runtime, fichier réécrit
 - Bug download audio : données MP3 lues après fermeture du client httpx → lecture dans le context manager
+
+### v1.6 — 1 Mars 2026
+
+**Pipeline commercial (BC / BL) :**
+- **Élargissement de la sync Sage** : `get_sales_lines()` récupère désormais 4 types de documents : Bons de Commande (DO_Type=1), Bons de Livraison (DO_Type=3), Factures (DO_Type=6) et Avoirs (DO_Type=7)
+- **Pipeline dashboard** : nouveau bloc « Pipeline en cours » sur le dashboard avec KPIs (CA en commande, en livraison, commandes en cours, livraisons en cours) et liste des dernières commandes avec liens cliquables vers les fiches clients
+- **Pipeline fiche client** : nouvel onglet « Commandes en cours » sur la fiche client 360° affichant les BC/BL en cours
+- **Distinction scoring Recency / Financier** : la composante Recency du score de churn utilise **tous les types** (BC, BL, FA, AV) pour refléter l'activité réelle, tandis que les métriques financières (CA, marge, order_count) restent basées uniquement sur les factures (types 6, 7) pour éviter le double-comptage
+
+**Articles de service :**
+- **Flag `is_service`** sur le modèle `Product` : les articles de service (TRANSPORT, ARTDIVERS, ZACOMPTE, ZREMISE, etc.) sont automatiquement taggés lors de la sync Sage
+- **Exclusion automatique** : les articles de service sont exclus des listings produits, des suggestions upsell, des co-achats et du top produits du dashboard
+- **Migration** : script `apply_service_flag_migration.py` pour ajouter la colonne et tagger les articles existants
+
+**Page Commandes (global) :**
+- **Nouvelle page `/orders`** dans la navigation principale : liste paginée de toutes les pièces commerciales (BC, BL, FA, AV) avec KPIs de synthèse, recherche, tri et filtres
+- **Filtres avancés** : par type de document, plage de dates (presets + calendrier), et **par commercial** (admin/manager uniquement)
+- **Panel de détail** à droite (même UX que la fiche produit) avec les lignes de la commande, chaque ligne cliquable vers la fiche produit correspondante
+- **Endpoint API** : `GET /api/orders` avec paramètres `doc_type`, `date_from`, `date_to`, `user_id`, `search`, `sort_by`, `sort_dir`, `limit`, `offset`
+- **Formatage K€/M€** pour les KPIs de CA sur la page commandes
+
+**Onglet Commandes sur fiche produit :**
+- **Nouvel onglet « Commandes »** dans le panel de détail produit : historique paginé des commandes (tous types) pour cet article
+- Chaque commande est un lien vers la page `/orders?piece_id=xxx`
+- Client cliquable (navigation vers la fiche client)
+
+**Corrections :**
+- `article_ref` NULL : correction du bug où les valeurs `None` de Sage étaient stockées en tant que chaîne `"None"` au lieu de `NULL` en base
+- Noms de clients « Inconnu » : utilisation systématique de `func.coalesce(Client.name, SalesLine.client_name)` pour prioriser le nom de la table clients
+- Erreur HTML nested `<a>` tags : remplacement des `Link` imbriqués par des `<button>` avec navigation programmatique
 
 ### v1.1 — 23 Février 2026
 

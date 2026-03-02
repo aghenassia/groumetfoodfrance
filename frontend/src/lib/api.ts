@@ -124,6 +124,10 @@ class ApiClient {
     return this.put<Client>(`/api/clients/${clientId}`, data);
   }
 
+  deleteClient(clientId: string) {
+    return this.delete<{ deleted: boolean; name: string }>(`/api/clients/${clientId}`);
+  }
+
   enrichClient(clientId: string) {
     return this.post<EnrichSuggestion>(`/api/clients/${clientId}/enrich`);
   }
@@ -414,6 +418,17 @@ class ApiClient {
     return this.get<ProductDetailResponse>(`/api/products/detail?ref=${encodeURIComponent(articleRef)}`);
   }
 
+  getProductOrders(articleRef: string, params?: Record<string, string>) {
+    const base = `/api/products/orders?ref=${encodeURIComponent(articleRef)}`;
+    const extra = params ? "&" + new URLSearchParams(params).toString() : "";
+    return this.get<ProductOrderHistoryResponse>(base + extra);
+  }
+
+  getOrders(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<OrderListResponse>(`/api/orders${qs}`);
+  }
+
   getOrderDetail(sagePieceId: string) {
     return this.get<OrderDetailResponse>(`/api/products/orders/${encodeURIComponent(sagePieceId)}`);
   }
@@ -491,6 +506,11 @@ class ApiClient {
   getMyMargins(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return this.get<MyMargins>(`/api/me/margins${qs}`);
+  }
+
+  getMyPipeline(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<PipelineStats>(`/api/me/pipeline${qs}`);
   }
 }
 
@@ -582,6 +602,7 @@ export interface ClientScore {
 export interface SalesLineBrief {
   date: string;
   sage_piece_id: string;
+  sage_doc_type?: number;
   designation?: string;
   article_ref?: string;
   quantity?: number;
@@ -590,6 +611,30 @@ export interface SalesLineBrief {
   margin_percent?: number;
   margin_value?: number;
   sales_rep?: string;
+}
+
+export interface PipelineStats {
+  orders_count: number;
+  orders_ca: number;
+  orders_clients: number;
+  last_order_date: string | null;
+  recent_orders: RecentOrder[];
+}
+
+export interface RecentOrder {
+  piece_id: string;
+  date: string;
+  client_name: string;
+  client_id: string | null;
+  total_ht: number;
+  nb_lines: number;
+  doc_type: string;
+}
+
+export interface PipelineSummary {
+  orders_count: number;
+  orders_ca: number;
+  last_order_date: string | null;
 }
 
 export interface CallQualificationBrief {
@@ -705,6 +750,8 @@ export interface ClientDetail extends Client {
   top_products: TopProduct[];
   monthly_sales: MonthlySales[];
   recent_sales: SalesLineBrief[];
+  recent_orders: SalesLineBrief[];
+  pipeline?: PipelineSummary;
   recent_calls: CallBrief[];
   last_qualification_mood?: string;
   last_qualification_outcome?: string;
@@ -837,6 +884,14 @@ export interface UpsellProductItem {
   last_order_date?: string;
 }
 
+export interface UpsellRecommendation {
+  article_ref: string;
+  designation: string;
+  score: number;
+  similar_clients_count: number;
+  avg_revenue: number;
+}
+
 export interface PlaylistInsight {
   client_name: string;
   client_city?: string;
@@ -848,6 +903,7 @@ export interface PlaylistInsight {
   ca_12m: number;
   ca_total: number;
   avg_basket: number;
+  upsell_recommendations: UpsellRecommendation[];
   top_products: UpsellProductItem[];
   ai_suggestion?: string;
 }
@@ -1009,6 +1065,8 @@ export interface ProductListItem {
   stock_max?: number;
   stock_value?: number;
   stock_synced_at?: string;
+  pipeline_qty?: number;
+  pipeline_ca?: number;
 }
 
 export interface ProductListResponse {
@@ -1056,6 +1114,60 @@ export interface ProductDetailResponse extends ProductListItem {
     co_ca: number;
   }[];
   stock_depots: StockDepotItem[];
+}
+
+export interface ProductOrderHistoryItem {
+  piece_id: string;
+  date: string | null;
+  client_name: string;
+  client_id?: string;
+  qty: number;
+  total_ht: number;
+  unit_price?: number;
+  margin_pct?: number;
+  doc_type: string;
+  doc_type_raw: number;
+}
+
+export interface ProductOrderHistoryResponse {
+  total: number;
+  summary: {
+    total_ca: number;
+    total_qty: number;
+    nb_clients: number;
+    avg_price?: number;
+    avg_margin?: number;
+  };
+  orders: ProductOrderHistoryItem[];
+}
+
+export interface OrderListItem {
+  piece_id: string;
+  date: string | null;
+  client_name: string;
+  client_id?: string;
+  client_sage_id?: string;
+  total_ht: number;
+  nb_lines: number;
+  nb_articles: number;
+  total_qty: number;
+  avg_margin?: number;
+  doc_type: string;
+  doc_type_raw: number;
+  sales_rep?: string;
+}
+
+export interface OrderListResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  summary: {
+    total_ca: number;
+    total_orders: number;
+    total_clients: number;
+    avg_margin?: number;
+  };
+  orders: OrderListItem[];
 }
 
 export interface OrderDetailResponse {
@@ -1224,6 +1336,15 @@ export interface MyStats {
     progress_pct: number | null;
   };
   monthly_ca: { month: string; ca: number; orders: number }[];
+  weekly_trends: {
+    week: string;
+    ca: number;
+    orders: number;
+    clients: number;
+    avg_basket: number;
+    weight_kg: number;
+    margin_gross: number;
+  }[];
 }
 
 export interface MyClient {

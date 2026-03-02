@@ -156,6 +156,20 @@ async def create_contact(
 
     phone_e164 = normalize_phone(body.phone) if body.phone else None
 
+    if phone_e164:
+        dup_q = await db.execute(
+            select(Contact.name, Client.name.label("company_name"))
+            .outerjoin(Client, Contact.company_id == Client.id)
+            .where(Contact.phone_e164 == phone_e164)
+            .limit(1)
+        )
+        dup_row = dup_q.first()
+        if dup_row:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ce numéro ({phone_e164}) est déjà utilisé par le contact « {dup_row.name} » sur le client « {dup_row.company_name or 'inconnu'} »",
+            )
+
     contact = Contact(
         name=body.name,
         first_name=body.first_name,
@@ -241,6 +255,18 @@ async def update_contact(
     if "phone" in changes and changes["phone"]:
         new_e164 = normalize_phone(changes["phone"])
         if new_e164 and new_e164 != contact.phone_e164:
+            dup_q = await db.execute(
+                select(Contact.name, Client.name.label("company_name"))
+                .outerjoin(Client, Contact.company_id == Client.id)
+                .where(Contact.phone_e164 == new_e164, Contact.id != contact_id)
+                .limit(1)
+            )
+            dup_row = dup_q.first()
+            if dup_row:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Ce numéro ({new_e164}) est déjà utilisé par le contact « {dup_row.name} » sur le client « {dup_row.company_name or 'inconnu'} »",
+                )
             contact.phone_e164 = new_e164
 
     if "first_name" in changes or "last_name" in changes:
@@ -435,8 +461,24 @@ async def delete_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact introuvable")
 
-    if contact.is_primary:
-        raise HTTPException(status_code=400, detail="Impossible de supprimer le contact principal. Désignez d'abord un autre contact comme principal.")
+    if contact.is_primary and contact.company_id:
+        other_primary = (await db.execute(
+            select(Contact.id).where(
+                Contact.company_id == contact.company_id,
+                Contact.id != contact.id,
+                Contact.is_primary == True,
+            ).limit(1)
+        )).scalar_one_or_none()
+
+        if not other_primary:
+            next_contact = (await db.execute(
+                select(Contact).where(
+                    Contact.company_id == contact.company_id,
+                    Contact.id != contact.id,
+                ).order_by(Contact.created_at).limit(1)
+            )).scalar_one_or_none()
+            if next_contact:
+                next_contact.is_primary = True
 
     db.add(ClientAuditLog(
         client_id=contact.company_id,

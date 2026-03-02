@@ -81,6 +81,7 @@ export default function ContactsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [animKey, setAnimKey] = useState(0);
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [commercialFilter, setCommercialFilter] = useState<string>("all");
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
@@ -125,6 +126,7 @@ export default function ContactsPage() {
       .then((res) => {
         setContacts(res.contacts);
         setTotal(res.total);
+        setAnimKey((k) => k + 1);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -280,9 +282,9 @@ export default function ContactsPage() {
       </div>
 
       {/* Main layout: table + side panel */}
-      <div className="flex gap-4 items-start">
+      <div className={selectedContact ? "lg:pr-[380px]" : ""}>
         {/* Table */}
-        <div className={`flex-1 min-w-0 transition-all ${selectedContact ? "max-w-[calc(100%-380px)]" : ""}`}>
+        <div>
           <Card>
             <CardContent className="p-0">
               {loading ? (
@@ -332,11 +334,12 @@ export default function ContactsPage() {
                         <TableHead className="w-[60px]"></TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
-                      {contacts.map((ct) => (
+                    <TableBody key={animKey}>
+                      {contacts.map((ct, _i) => (
                         <TableRow
                           key={ct.id}
-                          className={`group cursor-pointer transition-colors ${selectedContact?.id === ct.id ? "bg-accent" : "hover:bg-accent/50"}`}
+                          className={`stagger-row group cursor-pointer transition-colors ${selectedContact?.id === ct.id ? "bg-accent" : "hover:bg-accent/50"}`}
+                          style={{ animationDelay: `${_i * 40}ms` }}
                           onClick={() => selectContact(ct)}
                         >
                           <TableCell>
@@ -465,10 +468,9 @@ export default function ContactsPage() {
             {/* Mobile overlay */}
             <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={closePanel} />
 
-            {/* Panel: fullscreen on mobile, sidebar on desktop */}
-            <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] bg-background border-l shadow-xl overflow-y-auto lg:relative lg:inset-auto lg:z-auto lg:w-[360px] lg:shrink-0 lg:border-l-0 lg:shadow-none">
-              <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
-                <Card className="border-0 lg:border shadow-none lg:shadow-md rounded-none lg:rounded-lg">
+            {/* Panel: fullscreen on mobile, fixed sidebar on desktop */}
+            <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] lg:w-[360px] bg-background border-l shadow-xl lg:shadow-none overflow-y-auto lg:z-30">
+                <Card className="border-0 shadow-none rounded-none">
                   <CardContent className="p-0">
                     {/* Panel header */}
                     <div className="flex items-start justify-between p-4 border-b bg-muted/30">
@@ -630,7 +632,6 @@ export default function ContactsPage() {
                     )}
                   </CardContent>
                 </Card>
-              </div>
             </div>
           </>
         )}
