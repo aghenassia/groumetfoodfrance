@@ -6,7 +6,7 @@ Logique merge : les champs non-null Sage mettent à jour,
 les données CRM manuelles ne sont jamais écrasées.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pyodbc
 from sqlalchemy import select, update as sqlalchemy_update
@@ -306,7 +306,7 @@ async def sync_sales_from_sage(
         sage_lines = connector.get_sales_lines(since=since)
         log.records_found = len(sage_lines)
 
-        created, errors = 0, 0
+        created, errors, skipped = 0, 0, 0
         clients_with_new_sales: set[str] = set()
 
         for sl in sage_lines:
@@ -314,12 +314,22 @@ async def sync_sales_from_sage(
                 piece_id = _clean(str(sl.get("DO_Piece", "")))
                 client_sage_id = _clean(str(sl.get("CT_Num", "")))
                 if not piece_id or not client_sage_id:
+                    skipped += 1
                     continue
 
                 raw_date = sl.get("DO_Date")
                 if isinstance(raw_date, datetime):
                     line_date = raw_date.date()
+                elif isinstance(raw_date, date):
+                    line_date = raw_date
+                elif raw_date is not None:
+                    try:
+                        line_date = datetime.fromisoformat(str(raw_date)[:10]).date()
+                    except (ValueError, TypeError):
+                        skipped += 1
+                        continue
                 else:
+                    skipped += 1
                     continue
 
                 raw_ref = sl.get("AR_Ref")
@@ -426,13 +436,14 @@ async def sync_sales_from_sage(
 
         logger.info(
             f"Sync Sage ventes ({sync_type}): "
-            f"{created} traités, {errors} erreurs sur {len(sage_lines)} trouvés"
+            f"{created} traités, {skipped} ignorés, {errors} erreurs sur {len(sage_lines)} trouvés"
         )
 
         return {
             "sync_type": sync_type,
             "found": len(sage_lines),
             "synced": created,
+            "skipped": skipped,
             "errors": errors,
         }
 
@@ -701,13 +712,16 @@ async def sync_stock_from_sage(
         connector.close()
 
 
-async def get_last_sync_time(db: AsyncSession, source: str = "sage_odbc") -> datetime | None:
-    """Retourne le timestamp de la dernière sync Sage réussie."""
-    result = await db.execute(
+async def get_last_sync_time(db: AsyncSession, source: str = "sage_odbc", sync_type: str | None = None) -> datetime | None:
+    """Retourne le timestamp de la dernière sync Sage réussie, optionnellement filtrée par type."""
+    q = (
         select(SyncLog.finished_at)
         .where(SyncLog.source == source, SyncLog.status == "completed")
         .order_by(SyncLog.finished_at.desc())
         .limit(1)
     )
+    if sync_type:
+        q = q.where(SyncLog.sync_type.like(f"%{sync_type}%"))
+    result = await db.execute(q)
     row = result.scalar_one_or_none()
     return row

@@ -138,7 +138,7 @@ async def trigger_sage_sales_sync(
     """Sync lignes de ventes depuis Sage via ODBC."""
     since = None
     if mode in ("delta", "auto"):
-        since = await get_last_sync_time(db, "sage_odbc")
+        since = await get_last_sync_time(db, "sage_odbc", sync_type="sales")
 
     result = await sync_sales_from_sage(db, since=since)
     return result
@@ -153,7 +153,7 @@ async def trigger_sage_products_sync(
     """Sync articles/produits depuis Sage via ODBC."""
     since = None
     if mode in ("delta", "auto"):
-        since = await get_last_sync_time(db, "sage_odbc")
+        since = await get_last_sync_time(db, "sage_odbc", sync_type="products")
 
     result = await sync_products_from_sage(db, since=since)
     return result
@@ -168,7 +168,7 @@ async def trigger_sage_stock_sync(
     """Sync stock depuis F_ARTSTOCK via ODBC."""
     since = None
     if mode in ("delta", "auto"):
-        since = await get_last_sync_time(db, "sage_odbc")
+        since = await get_last_sync_time(db, "sage_odbc", sync_type="stock")
 
     result = await sync_stock_from_sage(db, since=since)
     return result

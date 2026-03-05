@@ -48,15 +48,18 @@ async def job_sage_delta_sync():
     from connectors.sage_sync import sync_clients_from_sage, sync_sales_from_sage, sync_products_from_sage, sync_stock_from_sage, get_last_sync_time
     async with async_session() as db:
         try:
-            since = await get_last_sync_time(db, "sage_odbc")
-            if since is None:
+            since_clients = await get_last_sync_time(db, "sage_odbc", sync_type="clients")
+            since_sales = await get_last_sync_time(db, "sage_odbc", sync_type="sales")
+            since_products = await get_last_sync_time(db, "sage_odbc", sync_type="products")
+            since_stock = await get_last_sync_time(db, "sage_odbc", sync_type="stock")
+            if not any([since_clients, since_sales, since_products, since_stock]):
                 logger.info("Delta sync Sage ignoré : pas de full sync précédent")
                 return
 
-            clients = await sync_clients_from_sage(db, since=since)
-            sales = await sync_sales_from_sage(db, since=since)
-            products = await sync_products_from_sage(db, since=since)
-            stock = await sync_stock_from_sage(db, since=since)
+            clients = await sync_clients_from_sage(db, since=since_clients)
+            sales = await sync_sales_from_sage(db, since=since_sales)
+            products = await sync_products_from_sage(db, since=since_products)
+            stock = await sync_stock_from_sage(db, since=since_stock)
             logger.info(f"Delta sync Sage: clients={clients}, sales={sales}, products={products}, stock={stock}")
         except Exception as e:
             logger.error(f"Delta sync Sage erreur: {e}")
