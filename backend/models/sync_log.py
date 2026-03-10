@@ -10,7 +10,7 @@ class SyncLog(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     source: Mapped[str] = mapped_column(String(20), nullable=False)
-    sync_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    sync_type: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
     records_found: Mapped[int] = mapped_column(Integer, default=0)
     records_created: Mapped[int] = mapped_column(Integer, default=0)
