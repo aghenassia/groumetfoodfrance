@@ -2,8 +2,8 @@
 APScheduler — Jobs automatisés.
 
 - Full sync Sage : tous les jours à 02h00
-- Delta sync Sage : toutes les 15min entre 7h et 20h
-- Sync Ringover : toutes les 10min entre 7h et 20h
+- Delta sync Sage : toutes les 15min entre 6h et 22h
+- Sync Ringover : toutes les 3min entre 6h et 22h
 - Scoring + playlists : tous les jours à 06h30
 """
 import logging
@@ -100,24 +100,30 @@ def setup_scheduler():
         id="sage_full_sync",
         name="Sage Full Sync (nuit)",
         replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
     )
 
-    # Delta sync Sage : toutes les 15min entre 7h et 20h
+    # Delta sync Sage : toutes les 15min entre 6h et 22h
     scheduler.add_job(
         job_sage_delta_sync,
-        CronTrigger(minute="*/15", hour="7-20"),
+        CronTrigger(minute="*/15", hour="6-22"),
         id="sage_delta_sync",
         name="Sage Delta Sync (journée)",
         replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )
 
-    # Sync Ringover : toutes les 10min entre 7h et 20h
+    # Sync Ringover : toutes les 3min entre 6h et 22h
     scheduler.add_job(
         job_ringover_sync,
-        CronTrigger(minute="*/10", hour="7-20"),
+        CronTrigger(minute="*/3", hour="6-22"),
         id="ringover_sync",
         name="Ringover Sync (journée)",
         replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=30,
     )
 
     # Scoring + playlists : 06h30 tous les jours
@@ -127,6 +133,8 @@ def setup_scheduler():
         id="scoring_playlists",
         name="Scoring & Playlists (matin)",
         replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
     )
 
     scheduler.start()

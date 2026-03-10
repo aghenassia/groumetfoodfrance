@@ -1,0 +1,16 @@
+[Unit]
+Description=Sales Machine CRM Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ringover-crm/frontend
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+ExecStart=/usr/bin/node node_modules/.bin/next start -p 3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

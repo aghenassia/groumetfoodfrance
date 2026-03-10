@@ -1,0 +1,16 @@
+[Unit]
+Description=Sales Machine CRM Backend
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ringover-crm/backend
+EnvironmentFile=/opt/ringover-crm/.env
+ExecStart=/opt/ringover-crm/backend/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
