@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { api, CallStats, PlaylistItem, Reminder, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient, PipelineStats } from "@/lib/api";
+import { api, CallStats, PlaylistItem, Reminder, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient, PipelineStats, SalesDashboardResponse, SalesRepStats } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -53,6 +53,10 @@ import {
   Package,
   FileText,
   Truck,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  PhoneOutgoing,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
@@ -167,6 +171,7 @@ export default function DashboardPage() {
   const [topProducts, setTopProducts] = useState<MyTopProduct[]>([]);
   const [topClients, setTopClients] = useState<MyTopClient[]>([]);
   const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
+  const [salesDashboard, setSalesDashboard] = useState<SalesDashboardResponse | null>(null);
 
   const [preset, setPreset] = useState<DatePreset>("30d");
   const [dateRange, setDateRange] = useState(presetRange("30d"));
@@ -192,13 +197,22 @@ export default function DashboardPage() {
       date_to: toISO(dateRange.to),
     };
 
+    if (viewAs === "all") {
+      const rankParams: Record<string, string> = { ...params, limit: "5", user_id: "all" };
+      api.getSalesDashboard("custom", toISO(dateRange.from), toISO(dateRange.to))
+        .then(setSalesDashboard)
+        .catch(() => {})
+        .finally(() => setLoading(false));
+      api.getMyTopProducts(rankParams).then(setTopProducts).catch(() => {});
+      api.getMyTopClients(rankParams).then(setTopClients).catch(() => {});
+      return;
+    }
+
     const callParams = { ...params };
     const statsParams = { ...params };
     const marginParams = { ...params };
     if (viewAs === "me") {
       callParams.mine = "true";
-    } else if (viewAs === "all") {
-      marginParams.user_id = "all";
     } else {
       callParams.user_id = viewAs;
       statsParams.user_id = viewAs;
@@ -206,39 +220,24 @@ export default function DashboardPage() {
     }
 
     const rankParams: Record<string, string> = { ...params, limit: "5" };
-    if (viewAs !== "me" && viewAs !== "all") {
+    if (viewAs !== "me") {
       rankParams.user_id = viewAs;
-    } else if (viewAs === "all") {
-      rankParams.user_id = "all";
     }
 
     const pipelineParams = { ...params };
-    if (viewAs !== "me" && viewAs !== "all") {
+    if (viewAs !== "me") {
       pipelineParams.user_id = viewAs;
-    } else if (viewAs === "all") {
-      pipelineParams.user_id = "all";
     }
 
-    Promise.all([
-      api.getCallStats(callParams),
-      api.getMyStats(statsParams),
-      api.getMyMargins(marginParams),
-      api.getMyTopProducts(rankParams),
-      api.getMyTopClients(rankParams),
-      api.getMyPipeline(pipelineParams),
-    ])
-      .then(([callStats, myStatsData, marginsData, prods, clients, pipelineData]) => {
-        setStats(callStats);
-        setMyStats(myStatsData);
-        setMargins(marginsData);
-        setTopProducts(prods);
-        setTopClients(clients);
-        setPipeline(pipelineData);
-      })
-      .catch(() => {})
+    api.getCallStats(callParams).then(setStats).catch(() => {});
+    api.getMyStats(statsParams).then(setMyStats).catch(() => {});
+    api.getMyMargins(marginParams).then(setMargins).catch(() => {});
+    api.getMyTopProducts(rankParams).then(setTopProducts).catch(() => {});
+    api.getMyTopClients(rankParams).then(setTopClients).catch(() => {});
+    api.getMyPipeline(pipelineParams).then(setPipeline).catch(() => {})
       .finally(() => setLoading(false));
 
-    const objUserId = viewAs !== "me" && viewAs !== "all" ? viewAs : currentUser?.id;
+    const objUserId = viewAs !== "me" ? viewAs : currentUser?.id;
     if (objUserId) {
       api.getObjectiveProgress(objUserId).then(setObjProgress).catch(() => {});
     }
@@ -310,7 +309,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {isAdmin && viewAs === "all" ? "Dashboard global" : "Mon tableau de bord"}
+            {isAdmin && viewAs === "all" ? "Pilotage commercial" : "Mon tableau de bord"}
           </h2>
           <p className="text-muted-foreground text-xs sm:text-sm">
             {currentUser?.name} · {preset !== "custom"
@@ -375,6 +374,16 @@ export default function DashboardPage() {
         </Popover>
       </div>
 
+      {/* Admin global view */}
+      {isAdmin && viewAs === "all" ? (
+        <AdminPilotingView
+          data={salesDashboard}
+          loading={loading}
+          topClients={topClients}
+          topProducts={topProducts}
+        />
+      ) : (
+      <>
       {/* 1. STATS : Business */}
       {myStats && (() => {
         const wt = myStats.weekly_trends || [];
@@ -1008,6 +1017,8 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+      </>
+      )}
     </div>
   );
 }
@@ -1126,6 +1137,387 @@ function DashboardCAChart({
             )}
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+
+type SortKey = "name" | "invoiced_ca" | "pipeline_ca" | "margin_rate" | "invoiced_orders" | "calls_total" | "answer_rate" | "total_talk_time" | "ai_overall" | "playlist_rate";
+
+function AdminPilotingView({
+  data,
+  loading,
+  topClients,
+  topProducts,
+}: {
+  data: SalesDashboardResponse | null;
+  loading: boolean;
+  topClients: MyTopClient[];
+  topProducts: MyTopProduct[];
+}) {
+  const [sortKey, setSortKey] = useState<SortKey>("invoiced_ca");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "name" ? "asc" : "desc");
+    }
+  };
+
+  const sortedReps = useMemo(() => {
+    if (!data) return [];
+    const reps = [...data.reps];
+    reps.sort((a, b) => {
+      let va: number | string, vb: number | string;
+      switch (sortKey) {
+        case "name": va = a.name.toLowerCase(); vb = b.name.toLowerCase(); break;
+        case "invoiced_ca": va = a.invoiced_ca; vb = b.invoiced_ca; break;
+        case "pipeline_ca": va = a.pipeline_ca; vb = b.pipeline_ca; break;
+        case "margin_rate": va = a.margin_rate; vb = b.margin_rate; break;
+        case "invoiced_orders": va = a.invoiced_orders; vb = b.invoiced_orders; break;
+        case "calls_total": va = a.calls_total; vb = b.calls_total; break;
+        case "answer_rate": va = a.answer_rate; vb = b.answer_rate; break;
+        case "total_talk_time": va = a.total_talk_time; vb = b.total_talk_time; break;
+        case "ai_overall": va = a.ai_scores.overall; vb = b.ai_scores.overall; break;
+        case "playlist_rate": va = a.playlist_rate; vb = b.playlist_rate; break;
+        default: va = 0; vb = 0;
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return reps;
+  }, [data, sortKey, sortDir]);
+
+  const SortHeader = ({ label, k, className }: { label: string; k: SortKey; className?: string }) => (
+    <th
+      className={`px-3 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none transition-colors ${className || ""}`}
+      onClick={() => handleSort(k)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortKey === k ? (
+          sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-30" />
+        )}
+      </span>
+    </th>
+  );
+
+  const team = data?.team;
+  const marginPct = team && team.total_invoiced_ca > 0 ? (team.total_invoiced_margin / team.total_invoiced_ca * 100) : 0;
+
+  const rowBg = (rep: SalesRepStats) => {
+    if (rep.target_progress != null && rep.target_progress >= 100) return "bg-green-50/60 dark:bg-green-950/20";
+    if (rep.calls_total === 0 && rep.invoiced_ca === 0 && rep.pipeline_ca === 0) return "bg-red-50/40 dark:bg-red-950/15";
+    return "";
+  };
+
+  const rateColor = (v: number, good: number, mid: number) =>
+    v >= good ? "text-green-600 dark:text-green-400" : v >= mid ? "text-amber-600 dark:text-amber-400" : "text-red-500";
+
+  if (loading && !data) {
+    return (
+      <div className="space-y-4">
+        {[...Array(3)].map((_, i) => (
+          <Card key={i}><CardContent className="p-6"><div className="h-16 bg-muted animate-pulse rounded" /></CardContent></Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (!data || !team) return null;
+
+  return (
+    <div className="space-y-5">
+      {/* Section A: Team KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+          <CardContent className="pt-5 pb-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">CA Facturé</p>
+            <p className="text-2xl font-extrabold mt-1">{formatCurrency(team.total_invoiced_ca)}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-[11px] font-semibold text-sora bg-sora/10 px-1.5 py-0.5 rounded-full">
+                Marge {marginPct.toFixed(1)}%
+              </span>
+              <span className="text-[11px] text-muted-foreground">{formatCurrency(team.total_invoiced_margin)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-kiku/20">
+          <CardContent className="pt-5 pb-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pipeline en cours</p>
+            <p className="text-2xl font-extrabold mt-1">{formatCurrency(team.total_pipeline_ca)}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <Badge variant="outline" className="text-[10px] text-kiku border-kiku/30 h-5">
+                <Package className="w-3 h-3 mr-1" />
+                {team.total_pipeline_orders} BC/BL
+              </Badge>
+              <span className="text-[11px] text-muted-foreground">{team.total_invoiced_orders} factures</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+          <CardContent className="pt-5 pb-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Appels</p>
+            <p className="text-2xl font-extrabold mt-1">{team.calls_answered} <span className="text-base font-bold text-muted-foreground">/ {team.calls_total}</span></p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${team.answer_rate >= 80 ? "text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30" : team.answer_rate >= 60 ? "text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30" : "text-red-500 bg-red-100 dark:text-red-400 dark:bg-red-900/30"}`}>
+                {team.answer_rate}% décroché
+              </span>
+              <span className="text-[11px] text-muted-foreground">{formatDurationHM(team.total_talk_time)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+          <CardContent className="pt-5 pb-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Qualité</p>
+            <p className="text-2xl font-extrabold mt-1">{team.avg_ai_score > 0 ? `${team.avg_ai_score}/10` : "—"}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-[11px] text-muted-foreground">Qualif. {team.qualification_rate}%</span>
+              <span className="text-[11px] text-muted-foreground">Playlist {team.playlist_rate}%</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Section B: Per-rep table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Performance par commercial
+            <Badge variant="secondary" className="text-[10px] ml-1">{data.reps.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <SortHeader label="Commercial" k="name" className="text-left sticky left-0 bg-muted/30" />
+                  <SortHeader label="CA Facturé" k="invoiced_ca" className="text-right" />
+                  <SortHeader label="Pipeline" k="pipeline_ca" className="text-right" />
+                  <SortHeader label="Marge" k="margin_rate" className="text-right" />
+                  <SortHeader label="Factures" k="invoiced_orders" className="text-right" />
+                  <SortHeader label="Appels" k="calls_total" className="text-right" />
+                  <SortHeader label="Décroché" k="answer_rate" className="text-right" />
+                  <SortHeader label="Temps tél." k="total_talk_time" className="text-right" />
+                  <SortHeader label="Score IA" k="ai_overall" className="text-right" />
+                  <SortHeader label="Playlist" k="playlist_rate" className="text-right" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {sortedReps.map((rep) => {
+                  const targetPct = rep.target_progress ?? 0;
+                  return (
+                    <tr
+                      key={rep.user_id}
+                      className={`hover:bg-accent/40 transition-colors ${rowBg(rep)}`}
+                    >
+                      {/* Name */}
+                      <td className="px-3 py-2.5 font-medium whitespace-nowrap sticky left-0 bg-background">
+                        <div>
+                          <span className="text-sm">{rep.name}</span>
+                          {rep.portfolio.total > 0 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {rep.portfolio.active} actifs · {rep.portfolio.dormant} dormants
+                            </p>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* CA Facturé + target progress */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <p className="text-sm font-bold tabular-nums">{formatCurrency(rep.invoiced_ca)}</p>
+                        {rep.target_ca != null && rep.target_ca > 0 && (
+                          <div className="flex items-center gap-1.5 justify-end mt-0.5">
+                            <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${targetPct >= 100 ? "bg-green-500" : targetPct >= 70 ? "bg-sora" : targetPct >= 40 ? "bg-amber-500" : "bg-red-500"}`}
+                                style={{ width: `${Math.min(targetPct, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground tabular-nums">{targetPct.toFixed(0)}%</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Pipeline */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        {rep.pipeline_ca > 0 ? (
+                          <>
+                            <p className="text-sm tabular-nums">{formatCurrency(rep.pipeline_ca)}</p>
+                            <Badge variant="outline" className="text-[9px] h-4 px-1 text-kiku border-kiku/30 mt-0.5">
+                              {rep.pipeline_orders} doc
+                            </Badge>
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      {/* Marge */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <span className={`text-sm font-semibold tabular-nums ${rateColor(rep.margin_rate, 25, 15)}`}>
+                          {rep.invoiced_ca > 0 ? `${rep.margin_rate.toFixed(1)}%` : "—"}
+                        </span>
+                        {rep.invoiced_margin > 0 && (
+                          <p className="text-[10px] text-muted-foreground tabular-nums">{formatCurrency(rep.invoiced_margin)}</p>
+                        )}
+                      </td>
+
+                      {/* Factures */}
+                      <td className="px-3 py-2.5 text-right tabular-nums">
+                        {rep.invoiced_orders || "—"}
+                      </td>
+
+                      {/* Appels */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <p className="text-sm tabular-nums">{rep.calls_total}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          <span title="Sortants">{rep.calls_outbound}↑</span>
+                          {" "}
+                          <span title="Entrants">{rep.calls_inbound}↓</span>
+                        </p>
+                      </td>
+
+                      {/* Taux décroché */}
+                      <td className="px-3 py-2.5 text-right">
+                        <span className={`text-sm font-semibold tabular-nums ${rateColor(rep.answer_rate, 80, 60)}`}>
+                          {rep.calls_total > 0 ? `${rep.answer_rate}%` : "—"}
+                        </span>
+                      </td>
+
+                      {/* Temps tel */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-sm">
+                        {rep.total_talk_time > 0 ? formatDurationHM(rep.total_talk_time) : "—"}
+                      </td>
+
+                      {/* Score IA */}
+                      <td className="px-3 py-2.5 text-right">
+                        {rep.ai_scores.overall > 0 ? (
+                          <span className={`text-sm font-semibold tabular-nums ${rateColor(rep.ai_scores.overall, 7, 5)}`}>
+                            {rep.ai_scores.overall}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      {/* Playlist */}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        {rep.playlist_total > 0 ? (
+                          <>
+                            <span className={`text-sm font-semibold tabular-nums ${rateColor(rep.playlist_rate, 80, 50)}`}>
+                              {rep.playlist_rate.toFixed(0)}%
+                            </span>
+                            <p className="text-[10px] text-muted-foreground tabular-nums">{rep.playlist_completed}/{rep.playlist_total}</p>
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {/* Totals footer */}
+              <tfoot>
+                <tr className="border-t-2 bg-muted/40 font-semibold">
+                  <td className="px-3 py-2.5 text-sm sticky left-0 bg-muted/40">Total équipe</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatCurrency(team.total_invoiced_ca)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatCurrency(team.total_pipeline_ca)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{marginPct.toFixed(1)}%</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{team.total_invoiced_orders}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{team.calls_total}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{team.answer_rate}%</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatDurationHM(team.total_talk_time)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{team.avg_ai_score > 0 ? team.avg_ai_score : "—"}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{team.playlist_rate}%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section C: Top clients / Top products */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4 text-sora" />
+              Top clients
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topClients.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
+            ) : (
+              <div className="divide-y">
+                {topClients.map((c, i) => (
+                  <Link
+                    key={c.client_id}
+                    href={`/clients/${c.client_id}`}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
+                  >
+                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{c.client_name}</p>
+                      <p className="text-[11px] text-muted-foreground">{c.nb_orders} cmd · {c.nb_products} réf.</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold">{formatCurrency(c.total_ca)}</p>
+                      <p className="text-[11px] text-muted-foreground">Marge {formatCurrency(c.total_margin)}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <ShoppingCart className="w-4 h-4 text-sora" />
+              Top produits
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {topProducts.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
+            ) : (
+              <div className="divide-y">
+                {topProducts.map((p, i) => (
+                  <div
+                    key={p.article_ref}
+                    className="flex items-center gap-3 px-4 py-2.5"
+                  >
+                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">{p.article_ref}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold">{formatCurrency(p.total_ca)}</p>
+                      <p className="text-[11px] text-muted-foreground">{p.total_qty.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} u. · {p.nb_clients} clients</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

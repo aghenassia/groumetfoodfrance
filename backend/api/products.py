@@ -448,7 +448,9 @@ async def get_product(
 
     resp = ProductDetail.model_validate(product)
 
-    # Stats globales
+    INVOICE_TYPES = [6, 7]
+
+    # Stats globales (factures + avoirs uniquement)
     stats = await db.execute(
         select(
             func.coalesce(func.sum(SalesLine.amount_ht), 0),
@@ -458,7 +460,7 @@ async def get_product(
             func.max(SalesLine.date),
             func.avg(SalesLine.margin_percent),
         )
-        .where(SalesLine.article_ref == article_ref)
+        .where(SalesLine.article_ref == article_ref, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
     )
     s = stats.one()
     resp.total_ca = float(s[0])
@@ -468,7 +470,7 @@ async def get_product(
     resp.last_sale_date = s[4]
     resp.avg_margin_percent = round(float(s[5]), 1) if s[5] else None
 
-    # Top 10 clients pour ce produit
+    # Top 10 clients pour ce produit (factures + avoirs uniquement)
     top_clients_q = await db.execute(
         select(
             SalesLine.client_sage_id,
@@ -480,7 +482,7 @@ async def get_product(
             func.max(SalesLine.date).label("last_date"),
         )
         .outerjoin(Client, Client.sage_id == SalesLine.client_sage_id)
-        .where(SalesLine.article_ref == article_ref)
+        .where(SalesLine.article_ref == article_ref, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
         .group_by(SalesLine.client_sage_id)
         .order_by(func.sum(SalesLine.amount_ht).desc())
         .limit(10)
@@ -498,7 +500,7 @@ async def get_product(
         for r in top_clients_q.all()
     ]
 
-    # Ventes mensuelles
+    # Ventes mensuelles (factures + avoirs uniquement)
     month_label = func.to_char(SalesLine.date, "YYYY-MM")
     monthly_q = await db.execute(
         select(
@@ -507,7 +509,7 @@ async def get_product(
             func.sum(SalesLine.quantity).label("qty"),
             func.count(distinct(SalesLine.client_sage_id)).label("clients"),
         )
-        .where(SalesLine.article_ref == article_ref)
+        .where(SalesLine.article_ref == article_ref, SalesLine.sage_doc_type.in_(INVOICE_TYPES))
         .group_by(month_label)
         .order_by(month_label)
     )

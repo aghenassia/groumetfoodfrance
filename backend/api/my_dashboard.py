@@ -54,7 +54,8 @@ async def my_stats(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """KPIs personnels. Admin peut filtrer par user_id."""
+    """KPIs personnels. Admin peut filtrer par user_id ou 'all' pour vue globale."""
+    is_global = user_id == "all" and user.role in ("admin", "manager")
     target_user = user
     if user_id and user_id not in (user.id, "all"):
         if user.role in ("admin", "manager"):
@@ -70,8 +71,16 @@ async def my_stats(
     prev_from = d_from - timedelta(days=prev_length)
     prev_to = d_from - timedelta(days=1)
 
-    calls_filter = _user_calls_filter(target_user)
-    sales_filter = _user_sales_filter(target_user)
+    call_date_filters = [
+        func.date(Call.start_time) >= d_from,
+        func.date(Call.start_time) <= d_to,
+    ]
+    if not is_global:
+        call_date_filters.insert(0, _user_calls_filter(target_user))
+
+    sales_base_filters = [SalesLine.sage_doc_type.in_(INVOICE_TYPES)]
+    if not is_global:
+        sales_base_filters.insert(0, _user_sales_filter(target_user))
 
     # --- Call stats current period ---
     call_q = await db.execute(
@@ -83,33 +92,21 @@ async def my_stats(
             func.count(case((and_(Call.is_answered == False, Call.direction.in_(["in", "inbound", "IN"])), 1))),
             func.count(case((and_(Call.is_answered == False, Call.direction.in_(["out", "outbound", "OUT"])), 1))),
         )
-        .where(
-            calls_filter,
-            func.date(Call.start_time) >= d_from,
-            func.date(Call.start_time) <= d_to,
-        )
+        .where(*call_date_filters)
     )
     cr = call_q.one()
 
     qualif_q = await db.execute(
         select(func.count(CallQualification.id))
         .join(Call, Call.id == CallQualification.call_id)
-        .where(
-            calls_filter,
-            func.date(Call.start_time) >= d_from,
-            func.date(Call.start_time) <= d_to,
-        )
+        .where(*call_date_filters)
     )
     qualified = qualif_q.scalar() or 0
 
     ai_q = await db.execute(
         select(func.avg(AiAnalysis.overall_score))
         .join(Call, Call.id == AiAnalysis.call_id)
-        .where(
-            calls_filter,
-            func.date(Call.start_time) >= d_from,
-            func.date(Call.start_time) <= d_to,
-        )
+        .where(*call_date_filters)
     )
     avg_ai = ai_q.scalar()
 
@@ -122,8 +119,7 @@ async def my_stats(
             func.coalesce(func.avg(SalesLine.margin_percent), 0),
         )
         .where(
-            sales_filter,
-            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            *sales_base_filters,
             SalesLine.date >= d_from,
             SalesLine.date <= d_to,
         )
@@ -134,8 +130,7 @@ async def my_stats(
     prev_sales_q = await db.execute(
         select(func.coalesce(func.sum(SalesLine.amount_ht), 0))
         .where(
-            sales_filter,
-            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            *sales_base_filters,
             SalesLine.date >= prev_from,
             SalesLine.date <= prev_to,
         )
@@ -157,8 +152,7 @@ async def my_stats(
             func.count(distinct(SalesLine.sage_piece_id)).label("orders"),
         )
         .where(
-            sales_filter,
-            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            *sales_base_filters,
             SalesLine.date >= today - timedelta(days=365),
         )
         .group_by(month_label)
@@ -182,8 +176,7 @@ async def my_stats(
             func.sum(SalesLine.margin_value).label("margin_gross"),
         )
         .where(
-            sales_filter,
-            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            *sales_base_filters,
             SalesLine.date >= week_start,
         )
         .group_by(week_label)
@@ -204,7 +197,8 @@ async def my_stats(
             "margin_gross": round(float(r[5] or 0), 2),
         })
 
-    target = float(user.target_ca_monthly) if user.target_ca_monthly else None
+    target_source = target_user if not is_global else None
+    target = float(target_source.target_ca_monthly) if target_source and target_source.target_ca_monthly else None
     target_progress = None
     if target and target > 0:
         target_progress = round((current_ca / target) * 100, 1)
@@ -402,11 +396,12 @@ async def my_margins(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Marges brute et nette sur la période. Admin peut filtrer par user_id."""
+    """Marges brute et nette sur la période. Admin peut filtrer par user_id ou 'all'."""
     from api.margin_rules import rule_applies_to_client
 
+    is_global = user_id == "all" and user.role in ("admin", "manager")
     target_user = user
-    if user_id and user_id != user.id:
+    if user_id and user_id not in (user.id, "all"):
         if user.role not in ("admin", "manager"):
             from fastapi import HTTPException
             raise HTTPException(403, "Admin requis pour voir les marges d'un autre utilisateur")
@@ -418,7 +413,6 @@ async def my_margins(
     rules_result = await db.execute(select(MarginRule))
     all_rules = rules_result.scalars().all()
 
-    base_filter = _user_sales_filter(target_user) if user_id != "all" else True
     stmt = (
         select(
             SalesLine.amount_ht,
@@ -430,8 +424,8 @@ async def my_margins(
         .outerjoin(Client, Client.id == SalesLine.client_id)
         .where(SalesLine.sage_doc_type.in_(INVOICE_TYPES))
     )
-    if user_id != "all":
-        stmt = stmt.where(base_filter)
+    if not is_global:
+        stmt = stmt.where(_user_sales_filter(target_user))
     if date_from:
         stmt = stmt.where(SalesLine.date >= date_from)
     if date_to:

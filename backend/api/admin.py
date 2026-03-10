@@ -538,8 +538,101 @@ async def check_sage_stock_table(
         return connector.check_stock_table()
     except Exception as e:
         return {"exists": False, "error": str(e)}
+
+
+@router.get("/sage/diagnostic-bdc")
+async def sage_diagnostic_bdc(
+    since: date = Query(default=None, description="Date de début (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Compare les BDC dans Sage vs CRM pour diagnostiquer les écarts."""
+    from datetime import date as _date
+    d = since or _date(2025, 3, 9)
+
+    connector = SageConnector()
+    try:
+        conn = connector.connect()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?
+        """, d)
+        sage_bdc_lines = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(DISTINCT DO_Piece) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?
+        """, d)
+        sage_bdc_docs = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT DO_Piece, DO_Date, CT_Num, DL_Design, DL_MontantHT, CO_No,
+                   ISNULL(co.CO_Nom, '') + ' ' + ISNULL(co.CO_Prenom, '') AS RepName
+            FROM F_DOCLIGNE dl
+            LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
+            WHERE dl.DO_Type = 1 AND dl.DO_Date >= ?
+            ORDER BY dl.DO_Date DESC
+        """, d)
+        cols = [c[0] for c in cursor.description]
+        sage_bdc_detail = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+        for row in sage_bdc_detail:
+            for k, v in row.items():
+                if isinstance(v, (datetime, _date)):
+                    row[k] = str(v)
+    except Exception as e:
+        return {"error": f"Sage query failed: {e}"}
     finally:
         connector.close()
+
+    crm_q = await db.execute(
+        select(
+            func.count(SalesLine.id),
+            func.count(distinct(SalesLine.sage_piece_id)),
+        ).where(SalesLine.sage_doc_type == 1, SalesLine.date >= d)
+    )
+    crm_row = crm_q.one()
+
+    crm_detail_q = await db.execute(
+        select(
+            SalesLine.sage_piece_id,
+            SalesLine.date,
+            SalesLine.client_sage_id,
+            SalesLine.designation,
+            SalesLine.amount_ht,
+            SalesLine.sage_collaborator_id,
+            SalesLine.sales_rep,
+            SalesLine.user_id,
+        )
+        .where(SalesLine.sage_doc_type == 1, SalesLine.date >= d)
+        .order_by(SalesLine.date.desc())
+    )
+    crm_bdc = [
+        {
+            "piece_id": r[0], "date": str(r[1]), "client": r[2],
+            "designation": r[3], "amount_ht": float(r[4] or 0),
+            "co_no": r[5], "sales_rep": r[6], "user_id": r[7],
+        }
+        for r in crm_detail_q.all()
+    ]
+
+    return {
+        "since": str(d),
+        "sage": {
+            "bdc_lines": sage_bdc_lines,
+            "bdc_documents": sage_bdc_docs,
+            "detail": sage_bdc_detail[:50],
+        },
+        "crm": {
+            "bdc_lines": crm_row[0],
+            "bdc_documents": crm_row[1],
+            "detail": crm_bdc[:50],
+        },
+        "gap": {
+            "lines": sage_bdc_lines - crm_row[0],
+            "documents": sage_bdc_docs - crm_row[1],
+        },
+    }
 
 
 # ── Sync Logs ─────────────────────────────────────────────────────
@@ -757,6 +850,8 @@ async def sales_dashboard(
         "calls_outbound_answered": 0, "calls_inbound_answered": 0,
         "total_talk_time": 0, "total_ca": 0.0, "total_orders": 0,
         "total_margin": 0.0, "avg_ai_score": 0.0,
+        "total_invoiced_ca": 0.0, "total_invoiced_margin": 0.0, "total_invoiced_orders": 0,
+        "total_pipeline_ca": 0.0, "total_pipeline_orders": 0,
         "playlist_total": 0, "playlist_completed": 0,
     }
     ai_scores_accum: list[float] = []
@@ -812,16 +907,25 @@ async def sales_dashboard(
             .where(user_filter, *date_filter)
         )).one()
 
-        # -- Revenue --
+        # -- Revenue (split invoiced vs pipeline) --
         sconds = [SalesLine.user_id == u.id]
         if u.sage_rep_name:
             sconds.append(SalesLine.sales_rep == u.sage_rep_name)
-        sr = (await db.execute(
+        user_date_filter = [or_(*sconds), SalesLine.date >= d_start, SalesLine.date <= d_end]
+
+        sr_inv = (await db.execute(
             select(
                 func.coalesce(func.sum(SalesLine.amount_ht), 0),
                 func.count(distinct(SalesLine.sage_piece_id)),
                 func.coalesce(func.sum(SalesLine.margin_value), 0),
-            ).where(or_(*sconds), SalesLine.date >= d_start, SalesLine.date <= d_end)
+            ).where(*user_date_filter, SalesLine.sage_doc_type.in_([6, 7]))
+        )).one()
+
+        sr_pipe = (await db.execute(
+            select(
+                func.coalesce(func.sum(SalesLine.amount_ht), 0),
+                func.count(distinct(SalesLine.sage_piece_id)),
+            ).where(*user_date_filter, SalesLine.sage_doc_type.in_([1, 3]))
         )).one()
 
         # -- Portfolio (snapshot, not period-dependent) --
@@ -857,8 +961,13 @@ async def sales_dashboard(
         calls_outbound_answered = cr[6] or 0
         calls_inbound_answered = cr[7] or 0
         calls_qualified = qr[0] or 0
-        ca = float(sr[0])
-        margin = float(sr[2])
+        inv_ca = float(sr_inv[0])
+        inv_orders = sr_inv[1] or 0
+        inv_margin = float(sr_inv[2])
+        pipe_ca = float(sr_pipe[0])
+        pipe_orders = sr_pipe[1] or 0
+        ca = inv_ca + pipe_ca
+        margin = inv_margin
         ai_overall = round(float(ar[0]), 1)
         playlist_total = plr[0] or 0
         playlist_done = plr[1] or 0
@@ -879,11 +988,16 @@ async def sales_dashboard(
             "total_talk_time": cr[2] or 0,
             "avg_call_duration": round(float(cr[3])),
             "total_ca": round(ca, 2),
-            "total_orders": sr[1] or 0,
+            "total_orders": inv_orders + pipe_orders,
             "total_margin": round(margin, 2),
-            "margin_rate": round(margin / ca * 100, 1) if ca > 0 else 0,
+            "margin_rate": round(margin / inv_ca * 100, 1) if inv_ca > 0 else 0,
+            "invoiced_ca": round(inv_ca, 2),
+            "invoiced_orders": inv_orders,
+            "invoiced_margin": round(inv_margin, 2),
+            "pipeline_ca": round(pipe_ca, 2),
+            "pipeline_orders": pipe_orders,
             "target_ca": float(u.target_ca_monthly) if u.target_ca_monthly else None,
-            "target_progress": round(ca / float(u.target_ca_monthly) * 100, 1) if u.target_ca_monthly and float(u.target_ca_monthly) > 0 else None,
+            "target_progress": round(inv_ca / float(u.target_ca_monthly) * 100, 1) if u.target_ca_monthly and float(u.target_ca_monthly) > 0 else None,
             "ai_scores": {
                 "overall": ai_overall,
                 "politeness": round(float(ar[1]), 1),
@@ -916,22 +1030,52 @@ async def sales_dashboard(
         team["calls_inbound_answered"] += calls_inbound_answered
         team["calls_qualified"] += calls_qualified
         team["total_talk_time"] += cr[2] or 0
-        team["total_ca"] += ca
-        team["total_orders"] += sr[1] or 0
-        team["total_margin"] += margin
+        # per-user CA/orders/margin are still accumulated for reference but
+        # team totals for invoiced/pipeline are overridden by global queries below
         team["playlist_total"] += playlist_total
         team["playlist_completed"] += playlist_done
         if ai_overall > 0:
             ai_scores_accum.append(ai_overall)
 
-    team["total_ca"] = round(team["total_ca"], 2)
-    team["total_margin"] = round(team["total_margin"], 2)
+    # Global pipeline query (counts ALL BDC/BL regardless of user mapping)
+    global_pipe = (await db.execute(
+        select(
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+            func.count(distinct(SalesLine.sage_piece_id)),
+        ).where(
+            SalesLine.sage_doc_type.in_([1, 3]),
+            SalesLine.date >= d_start,
+            SalesLine.date <= d_end,
+        )
+    )).one()
+    team["total_pipeline_ca"] = round(float(global_pipe[0]), 2)
+    team["total_pipeline_orders"] = global_pipe[1] or 0
+
+    # Global invoiced query (counts ALL FA/AV regardless of user mapping)
+    global_inv = (await db.execute(
+        select(
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+            func.count(distinct(SalesLine.sage_piece_id)),
+            func.coalesce(func.sum(SalesLine.margin_value), 0),
+        ).where(
+            SalesLine.sage_doc_type.in_([6, 7]),
+            SalesLine.date >= d_start,
+            SalesLine.date <= d_end,
+        )
+    )).one()
+    team["total_invoiced_ca"] = round(float(global_inv[0]), 2)
+    team["total_invoiced_orders"] = global_inv[1] or 0
+    team["total_invoiced_margin"] = round(float(global_inv[2]), 2)
+
+    team["total_orders"] = team["total_invoiced_orders"] + team["total_pipeline_orders"]
+    team["total_ca"] = round(team["total_invoiced_ca"] + team["total_pipeline_ca"], 2)
+    team["total_margin"] = round(team["total_invoiced_margin"], 2)
     team["answer_rate"] = round(team["calls_answered"] / team["calls_total"] * 100, 1) if team["calls_total"] else 0
     team["qualification_rate"] = round(team["calls_qualified"] / team["calls_total"] * 100, 1) if team["calls_total"] else 0
     team["avg_ai_score"] = round(sum(ai_scores_accum) / len(ai_scores_accum), 1) if ai_scores_accum else 0
     team["playlist_rate"] = round(team["playlist_completed"] / team["playlist_total"] * 100, 1) if team["playlist_total"] else 0
 
-    reps.sort(key=lambda r: r["total_ca"], reverse=True)
+    reps.sort(key=lambda r: r["invoiced_ca"], reverse=True)
 
     return {
         "period": {"start": str(d_start), "end": str(d_end), "label": period},

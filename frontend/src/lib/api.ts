@@ -1269,6 +1269,8 @@ export interface SalesDashboardResponse {
     total_talk_time: number; total_ca: number; total_orders: number;
     total_margin: number; answer_rate: number; qualification_rate: number;
     avg_ai_score: number;
+    total_invoiced_ca: number; total_invoiced_margin: number; total_invoiced_orders: number;
+    total_pipeline_ca: number; total_pipeline_orders: number;
     playlist_total: number; playlist_completed: number; playlist_rate: number;
   };
   reps: SalesRepStats[];
@@ -1282,6 +1284,8 @@ export interface SalesRepStats {
   answer_rate: number; qualification_rate: number;
   total_talk_time: number; avg_call_duration: number;
   total_ca: number; total_orders: number; total_margin: number; margin_rate: number;
+  invoiced_ca: number; invoiced_orders: number; invoiced_margin: number;
+  pipeline_ca: number; pipeline_orders: number;
   target_ca: number | null; target_progress: number | null;
   ai_scores: { overall: number; politeness: number; objection: number; closing: number; product: number; listening: number };
   analyzed_calls: number;
