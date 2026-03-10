@@ -243,9 +243,11 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
         )
     )
     for call in unanswered_out.scalars().all():
+        if not call.user_id:
+            continue
         qualif = CallQualification(
             call_id=call.id,
-            user_id=call.user_id or "system",
+            user_id=call.user_id,
             mood="neutral",
             outcome="Injoignable",
             notes="Qualification automatique — appel sortant sans réponse du client",
