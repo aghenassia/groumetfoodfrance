@@ -480,6 +480,50 @@ async def get_client(
         )
         recent_calls.append(cb)
 
+    # Impayés : factures avec reste à payer > 0
+    from schemas.client import UnpaidSummary
+    unpaid_q = await db.execute(
+        select(
+            sqlfunc.count(distinct(SalesLine.sage_piece_id)),
+            sqlfunc.coalesce(sqlfunc.max(SalesLine.doc_total_ttc), 0),
+            sqlfunc.min(SalesLine.date),
+        )
+        .where(
+            client_match,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            SalesLine.doc_total_ttc != None,
+            SalesLine.doc_amount_paid != None,
+            (SalesLine.doc_total_ttc - SalesLine.doc_amount_paid) > 0.01,
+        )
+    )
+    uq = unpaid_q.one()
+
+    unpaid_detail_q = await db.execute(
+        select(
+            SalesLine.sage_piece_id,
+            sqlfunc.max(SalesLine.doc_total_ttc).label("ttc"),
+            sqlfunc.max(SalesLine.doc_amount_paid).label("paid"),
+        )
+        .where(
+            client_match,
+            SalesLine.sage_doc_type.in_(INVOICE_TYPES),
+            SalesLine.doc_total_ttc != None,
+            SalesLine.doc_amount_paid != None,
+            (SalesLine.doc_total_ttc - SalesLine.doc_amount_paid) > 0.01,
+        )
+        .group_by(SalesLine.sage_piece_id)
+    )
+    unpaid_rows = unpaid_detail_q.all()
+    unpaid_remaining = sum(float((r.ttc or 0) - (r.paid or 0)) for r in unpaid_rows)
+    unpaid_total_ttc = sum(float(r.ttc or 0) for r in unpaid_rows)
+
+    unpaid = UnpaidSummary(
+        unpaid_count=len(unpaid_rows),
+        unpaid_total_ttc=round(unpaid_total_ttc, 2),
+        unpaid_remaining=round(unpaid_remaining, 2),
+        oldest_unpaid_date=uq[2],
+    ) if unpaid_rows else None
+
     return ClientDetailResponse(
         id=client.id,
         sage_id=client.sage_id,
@@ -513,6 +557,7 @@ async def get_client(
         recent_sales=recent_sales,
         recent_orders=recent_orders,
         pipeline=pipeline,
+        unpaid=unpaid,
         recent_calls=recent_calls,
         last_qualification_mood=client.last_qualification_mood,
         last_qualification_outcome=client.last_qualification_outcome,

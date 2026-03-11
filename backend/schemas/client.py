@@ -102,6 +102,7 @@ class ClientDetailResponse(ClientResponse):
     recent_sales: list["SalesLineBrief"] = []
     recent_orders: list["SalesLineBrief"] = []
     pipeline: "PipelineSummary | None" = None
+    unpaid: "UnpaidSummary | None" = None
     recent_calls: list["CallBrief"] = []
     last_qualification_mood: str | None = None
     last_qualification_outcome: str | None = None
@@ -151,6 +152,8 @@ class SalesLineBrief(BaseModel):
     margin_percent: float | None = None
     margin_value: float | None = None
     sales_rep: str | None = None
+    doc_total_ttc: float | None = None
+    doc_amount_paid: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -159,6 +162,13 @@ class PipelineSummary(BaseModel):
     orders_count: int = 0
     orders_ca: float = 0
     last_order_date: date | None = None
+
+
+class UnpaidSummary(BaseModel):
+    unpaid_count: int = 0
+    unpaid_total_ttc: float = 0
+    unpaid_remaining: float = 0
+    oldest_unpaid_date: date | None = None
 
 
 class CallQualificationBrief(BaseModel):

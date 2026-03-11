@@ -29,6 +29,8 @@ class SalesLine(Base):
     user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
     margin_value: Mapped[float | None] = mapped_column(Numeric(15, 2))
     margin_percent: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    doc_total_ttc: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    doc_amount_paid: Mapped[float | None] = mapped_column(Numeric(15, 2))
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     client = relationship("Client", back_populates="sales_lines")

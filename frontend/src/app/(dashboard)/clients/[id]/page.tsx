@@ -64,6 +64,7 @@ import {
   Users,
   FileText,
   Truck,
+  AlertCircle,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { toast } from "sonner";
@@ -810,6 +811,19 @@ export default function ClientDetailPage() {
               </p>
             </CardContent>
           </Card>
+          {client.unpaid && client.unpaid.unpaid_count > 0 && (
+            <Card className="border-red-200 bg-red-50/30">
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                </div>
+                <p className="text-xl font-bold text-red-700">{formatCurrency(client.unpaid.unpaid_remaining)}</p>
+                <p className="text-xs text-muted-foreground">
+                  impayés · {client.unpaid.unpaid_count} factures
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

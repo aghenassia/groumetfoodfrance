@@ -611,6 +611,8 @@ export interface SalesLineBrief {
   margin_percent?: number;
   margin_value?: number;
   sales_rep?: string;
+  doc_total_ttc?: number;
+  doc_amount_paid?: number;
 }
 
 export interface PipelineStats {
@@ -635,6 +637,13 @@ export interface PipelineSummary {
   orders_count: number;
   orders_ca: number;
   last_order_date: string | null;
+}
+
+export interface UnpaidSummary {
+  unpaid_count: number;
+  unpaid_total_ttc: number;
+  unpaid_remaining: number;
+  oldest_unpaid_date: string | null;
 }
 
 export interface CallQualificationBrief {
@@ -752,6 +761,7 @@ export interface ClientDetail extends Client {
   recent_sales: SalesLineBrief[];
   recent_orders: SalesLineBrief[];
   pipeline?: PipelineSummary;
+  unpaid?: UnpaidSummary;
   recent_calls: CallBrief[];
   last_qualification_mood?: string;
   last_qualification_outcome?: string;

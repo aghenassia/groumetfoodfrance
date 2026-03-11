@@ -461,6 +461,31 @@ async def sync_sales_from_sage(
         if reclassified:
             logger.info(f"Reclassification: {reclassified} factures comptabilisées (7→6)")
 
+        # Enrichissement paiement : récupérer DO_TotalTTC et DO_MontantRegle par pièce
+        try:
+            payment_rows = await asyncio.to_thread(connector.get_invoices_payment_status)
+            payment_updated = 0
+            for pr in payment_rows:
+                piece = _clean(str(pr.get("DO_Piece", "")))
+                if not piece:
+                    continue
+                upd = await db.execute(
+                    sqlalchemy_update(SalesLine)
+                    .where(SalesLine.sage_piece_id == piece)
+                    .values(
+                        doc_total_ttc=pr.get("DO_TotalTTC") or 0,
+                        doc_amount_paid=pr.get("DO_MontantRegle") or 0,
+                    )
+                )
+                if upd.rowcount > 0:
+                    payment_updated += 1
+                if payment_updated % 500 == 0:
+                    await db.commit()
+            await db.commit()
+            logger.info(f"Paiement: {payment_updated} pièces enrichies avec statut paiement")
+        except Exception as e:
+            logger.warning(f"Enrichissement paiement échoué (non bloquant): {e}")
+
         await db.commit()
 
         log.records_created = created

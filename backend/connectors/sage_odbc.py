@@ -238,6 +238,28 @@ class SageConnector:
         logger.info(f"Sage: {len(results)} lignes de stock récupérées ({'delta' if since else 'full'})")
         return results
 
+    def get_invoices_payment_status(self) -> list[dict]:
+        """Récupère le statut de paiement de chaque facture depuis F_DOCENTETE."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                DO_Piece,
+                DO_TotalHT,
+                DO_TotalTTC,
+                DO_MontantRegle,
+                (DO_TotalTTC - DO_MontantRegle) AS ResteAPayer,
+                DO_Tiers,
+                DO_Date,
+                cbModification
+            FROM F_DOCENTETE
+            WHERE DO_Domaine = 0 AND DO_Type IN (6, 7)
+        """)
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor]
+        logger.info(f"Sage: {len(results)} factures avec statut paiement récupérées")
+        return results
+
     def check_stock_table(self) -> dict:
         """
         Vérifie si F_ARTSTOCK existe et est accessible.
