@@ -27,18 +27,32 @@ class SageConnector:
             f"UID={s.sage_odbc_user};"
             f"PWD={s.sage_odbc_password};"
             f"TrustServerCertificate=yes;"
+            f"Encrypt=no;"
         )
         self._conn: Optional[pyodbc.Connection] = None
 
     def connect(self) -> pyodbc.Connection:
-        if self._conn is None:
-            self._conn = pyodbc.connect(self.connection_string, timeout=30)
-            logger.info("Connexion Sage ODBC établie")
+        if self._conn is not None:
+            try:
+                self._conn.execute("SELECT 1")
+                return self._conn
+            except Exception:
+                logger.warning("Connexion Sage ODBC stale, reconnexion...")
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+        self._conn = pyodbc.connect(self.connection_string, timeout=60)
+        logger.info("Connexion Sage ODBC établie")
         return self._conn
 
     def close(self):
         if self._conn:
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
             self._conn = None
             logger.info("Connexion Sage ODBC fermée")
 
