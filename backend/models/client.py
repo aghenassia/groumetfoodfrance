@@ -67,6 +67,10 @@ class Client(Base):
     calls = relationship("Call", back_populates="client")
     score = relationship("ClientScore", back_populates="client", uselist=False)
     playlist_entries = relationship("DailyPlaylist", back_populates="client")
+    supplier_associations = relationship("ClientSupplier", back_populates="client", cascade="all, delete-orphan")
+    competitor_associations = relationship("ClientCompetitor", back_populates="client", cascade="all, delete-orphan")
+    product_interests = relationship("ClientProductInterest", back_populates="client", cascade="all, delete-orphan")
+    call_sessions = relationship("CallSession", back_populates="client", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_clients_phone_e164", "phone_e164"),

@@ -445,6 +445,51 @@ class ApiClient {
     return this.get<{ depot_id: number; depot_name: string; nb_articles: number }[]>("/api/products/depots");
   }
 
+  // ── Intel commerciale ──────────────────────────────────────
+
+  searchSuppliers(search = "") {
+    return this.get<NameItem[]>(`/api/intel/suppliers?search=${encodeURIComponent(search)}`);
+  }
+  createSupplier(name: string) {
+    return this.post<NameItem>("/api/intel/suppliers", { name });
+  }
+  searchCompetitors(search = "") {
+    return this.get<NameItem[]>(`/api/intel/competitors?search=${encodeURIComponent(search)}`);
+  }
+  createCompetitor(name: string) {
+    return this.post<NameItem>("/api/intel/competitors", { name });
+  }
+  getClientIntel(clientId: string) {
+    return this.get<ClientIntelResponse>(`/api/intel/clients/${clientId}`);
+  }
+  saveClientIntel(clientId: string, data: { supplier_ids?: string[]; competitor_ids?: string[]; product_interests?: { article_ref?: string | null; product_name: string; notes?: string | null }[] }) {
+    return this.post<ClientIntelResponse>(`/api/intel/clients/${clientId}`, data);
+  }
+  removeClientSupplier(clientId: string, supplierId: string) {
+    return this.delete(`/api/intel/clients/${clientId}/suppliers/${supplierId}`);
+  }
+  removeClientCompetitor(clientId: string, competitorId: string) {
+    return this.delete(`/api/intel/clients/${clientId}/competitors/${competitorId}`);
+  }
+  removeClientProductInterest(clientId: string, interestId: string) {
+    return this.delete(`/api/intel/clients/${clientId}/product-interests/${interestId}`);
+  }
+
+  // ── Call Sessions ──────────────────────────────────────────
+
+  createCallSession(clientId: string, phoneNumber?: string) {
+    return this.post<CallSessionResponse>("/api/call-sessions", { client_id: clientId, phone_number: phoneNumber });
+  }
+  updateCallSession(sessionId: string, data: { mood?: string; outcome?: string; notes?: string; next_step?: string; next_step_date?: string }) {
+    return this.put<CallSessionResponse>(`/api/call-sessions/${sessionId}`, data);
+  }
+  getPendingSessions() {
+    return this.get<CallSessionResponse[]>("/api/call-sessions/pending");
+  }
+  getClientSessions(clientId: string) {
+    return this.get<CallSessionResponse[]>(`/api/call-sessions/client/${clientId}`);
+  }
+
   // User management (admin)
   getUsers() {
     return this.get<UserDetail[]>("/api/admin/users");
@@ -1531,4 +1576,57 @@ export interface ChallengeRankingEntry {
   current_value: number;
   rank: number;
   progress_pct?: number | null;
+}
+
+// ── Intel commerciale ─────────────────────────────────────────
+
+export interface NameItem {
+  id: string;
+  name: string;
+}
+
+export interface ClientSupplierEntry {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface ClientCompetitorEntry {
+  id: string;
+  competitor_id: string;
+  competitor_name: string;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface ClientProductInterestEntry {
+  id: string;
+  article_ref?: string | null;
+  product_name: string;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface ClientIntelResponse {
+  suppliers: ClientSupplierEntry[];
+  competitors: ClientCompetitorEntry[];
+  product_interests: ClientProductInterestEntry[];
+}
+
+export interface CallSessionResponse {
+  id: string;
+  client_id: string;
+  client_name?: string | null;
+  user_id: string;
+  phone_number?: string | null;
+  mood?: string | null;
+  outcome?: string | null;
+  notes?: string | null;
+  next_step?: string | null;
+  next_step_date?: string | null;
+  matched_call_id?: string | null;
+  started_at: string;
+  ended_at?: string | null;
 }

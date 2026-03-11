@@ -17,6 +17,10 @@ from models.client_audit import ClientAuditLog
 from models.margin_rule import MarginRule
 from models.user_objective import UserObjective
 from models.challenge import Challenge, ChallengeRanking
+from models.supplier import Supplier
+from models.competitor import Competitor
+from models.client_intel import ClientSupplier, ClientCompetitor, ClientProductInterest
+from models.call_session import CallSession
 
 __all__ = [
     "User", "Client", "Contact", "PhoneIndex", "SalesLine", "Call",
@@ -24,4 +28,6 @@ __all__ = [
     "Gamification", "AiAnalysis", "SyncLog", "Product",
     "ProductStockDepot", "PlaylistConfig", "ClientAuditLog",
     "MarginRule", "UserObjective", "Challenge", "ChallengeRanking",
+    "Supplier", "Competitor", "ClientSupplier", "ClientCompetitor",
+    "ClientProductInterest", "CallSession",
 ]
