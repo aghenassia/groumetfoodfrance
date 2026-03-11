@@ -2,7 +2,7 @@
 
 > CRM "Phone-First" sur mesure pour Gourmet Food France
 > Connecté à Sage 100 (ERP/Compta) + Ringover (Téléphonie)
-> Version : 3.1 — Mars 2026
+> Version : 3.2 — Mars 2026
 
 ---
 
@@ -952,11 +952,13 @@ CREATE TABLE challenges (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(150) NOT NULL,
     description     TEXT,
-    article_ref     VARCHAR(18),
+    article_ref     VARCHAR(18),        -- legacy : produit unique
+    article_refs    TEXT,               -- multi-ref (CSV : "REF1,REF2,REF3")
+    article_family  VARCHAR(50),        -- ou ciblage par famille entière
     article_name    VARCHAR(100),
     metric          VARCHAR(30) NOT NULL, -- 'quantity_kg','quantity_units','ca','margin_gross'
     target_value    DECIMAL(15,2),
-    reward          VARCHAR(200), -- Récompense (ex: "iPhone 16", "Bon d'achat 200€")
+    reward          VARCHAR(200),
     start_date      DATE NOT NULL,
     end_date        DATE NOT NULL,
     status          VARCHAR(15) DEFAULT 'draft', -- 'draft' | 'active' | 'completed'
@@ -976,6 +978,100 @@ CREATE TABLE challenge_rankings (
     current_value   DECIMAL(15,2) DEFAULT 0,
     rank            INTEGER DEFAULT 0,
     updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### `suppliers` — Base globale des fournisseurs (intel commerciale)
+
+```sql
+CREATE TABLE suppliers (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(200) UNIQUE NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### `competitors` — Base globale des concurrents (intel commerciale)
+
+```sql
+CREATE TABLE competitors (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        VARCHAR(200) UNIQUE NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### `client_suppliers` — Association client ↔ fournisseur
+
+```sql
+CREATE TABLE client_suppliers (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID NOT NULL REFERENCES clients(id),
+    supplier_id UUID NOT NULL REFERENCES suppliers(id),
+    notes       TEXT,
+    added_by    UUID REFERENCES users(id),
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(client_id, supplier_id)
+);
+```
+
+#### `client_competitors` — Association client ↔ concurrent
+
+```sql
+CREATE TABLE client_competitors (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID NOT NULL REFERENCES clients(id),
+    competitor_id UUID NOT NULL REFERENCES competitors(id),
+    notes       TEXT,
+    added_by    UUID REFERENCES users(id),
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(client_id, competitor_id)
+);
+```
+
+#### `client_product_interests` — Produits d'intérêt d'un client
+
+```sql
+CREATE TABLE client_product_interests (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID NOT NULL REFERENCES clients(id),
+    article_ref VARCHAR(18),           -- réf catalogue (nullable pour saisie libre)
+    product_name VARCHAR(200) NOT NULL, -- nom affiché
+    notes       TEXT,
+    added_by    UUID REFERENCES users(id),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### `call_sessions` — Sessions Call Companion (pré-qualification)
+
+```sql
+CREATE TABLE call_sessions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id       UUID NOT NULL REFERENCES clients(id),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    phone_number    VARCHAR(30),
+    mood            VARCHAR(20),        -- 'positive' | 'neutral' | 'negative'
+    outcome         VARCHAR(30),        -- 'interested' | 'callback' | 'order' | 'nrp' | 'not_interested' | 'quote_sent'
+    notes           TEXT,
+    next_step       VARCHAR(200),
+    next_step_date  DATE,
+    matched_call_id UUID REFERENCES calls(id), -- appairé après sync Ringover
+    started_at      TIMESTAMPTZ DEFAULT NOW(),
+    ended_at        TIMESTAMPTZ
+);
+```
+
+#### `client_notes` — Notes libres sur un client
+
+```sql
+CREATE TABLE client_notes (
+    id          VARCHAR(36) PRIMARY KEY,
+    client_id   VARCHAR(50) NOT NULL REFERENCES clients(id),
+    user_id     VARCHAR(36) REFERENCES users(id),
+    user_name   VARCHAR(100),
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -1300,7 +1396,10 @@ Les challenges sont des **concours ponctuels** pour motiver les commerciaux sur 
 
 Chaque challenge définit :
 - **Nom** et **description** du challenge
-- **Produit ciblé** (optionnel — filtre sur `article_ref`)
+- **Ciblage produit** (3 modes) :
+  - **Tous les produits** : pas de filtre
+  - **Multi-ref** : liste de références articles (`article_refs`, stocké en CSV)
+  - **Par famille** : famille de produits (`article_family`) — inclut automatiquement toutes les refs de la famille
 - **Métrique** : kg vendus, unités, CA ou marge brute
 - **Objectif** : valeur cible (optionnel)
 - **Récompense** : texte libre visible par les commerciaux (ex: "iPhone 16", "Week-end spa")
@@ -1310,7 +1409,7 @@ Chaque challenge définit :
 ### Classement live
 
 Le classement est calculé en temps réel à partir des lignes de vente Sage :
-- Filtré par produit (si `article_ref` défini) et par période
+- Filtré par `article_refs` (multi-ref), `article_family` (famille entière) ou `article_ref` (legacy single-ref) et par période
 - Agrégation par commercial selon la métrique choisie
 - Affiché sur le **dashboard** (top 3 compact + position personnelle) et la **page classement** (détail complet avec barres de progression)
 
@@ -1446,10 +1545,11 @@ Les scores IA apparaissent aussi directement dans la liste des appels
                                   Graphique CA,
                                   Sélecteur "Voir en tant que" pour les admins (filtre TOUTES les données)
 /playlist                       → Playlist du jour (clients à appeler)
-/clients                        → Liste des clients (recherche, filtres, tri multi-critères)
-/clients/[id]                   → Fiche client 360° (ventes, appels, upsell, détail commandes)
-/calls                          → Historique des appels (panel client intégré, recherche entreprise)
-/products                       → Catalogue produits (stats, co-achats, détails)
+/clients                        → Liste des clients (recherche, filtres, tri, **filtres fournisseur/concurrent/produit**)
+/clients/[id]                   → Fiche client 360° (ventes, appels, upsell, **intel commerciale, notes, retours unifiés**)
+/calls                          → Historique des appels (panel client intégré, **dédup qualification companion**)
+/orders                         → Liste des commandes (filtres type, dates, statut paiement impayé/partiel/payé)
+/products                       → Catalogue produits (stats, co-achats, **filtre par entrepôt**)
 /leaderboard                    → Classement gamification
 /admin                          → Dashboard admin (tour de contrôle)
 /admin/users                    → Gestion des utilisateurs (CRUD, Ringover, Sage, objectifs)
@@ -1507,44 +1607,39 @@ Les scores IA apparaissent aussi directement dans la liste des appels
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  LA FRINGALE                               Sage #10618014      │
-│  Contact : David  │  📞 06 74 72 87 59  │  📧 david@colorz.fr │
-│  38 Avenue Thiers, 93340 LE RAINCY                              │
 │  Rep: PAPIN  │  Cat: Restauration  │  Client depuis 2021       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─ INDICATEURS ───────────────────────────────────────┐       │
-│  │ CA 12 mois    │ Marge moy.   │ Dernière cmd │ Freq │       │
-│  │ 12 450€       │ 34.2%        │ il y a 67j   │ 28j  │       │
+│  │ CA 12 mois │ Marge moy. │ Dernière cmd │ Freq │ ⚠ │       │
+│  │ 12 450€    │ 34.2%      │ il y a 67j   │ 28j  │ 80│       │
+│  │ 🔴 Impayés : 2 factures — 1 234€ restant dû        │       │
+│  └──────────────────────────────────────────────────────┘       │
+│                                                                 │
+│  ┌─ INTEL COMMERCIALE (éditable en direct) ────────────┐       │
+│  │ Fournisseurs   │ Concurrents      │ Produits         │       │
+│  │ [Metro] [x]    │ [Brake] [x]      │ [Entrecôte] [x]  │       │
+│  │ [+ Rechercher] │ [+ Rechercher]   │ [+ Rechercher]   │       │
+│  └──────────────────────────────────────────────────────┘       │
+│                                                                 │
+│  Onglets : Ventes │ Commandes │ Appels │ Retours │ Upsell │   │
+│                    │           │        │ Audit   │        │   │
+│                                                                 │
+│  ┌─ RETOURS (timeline unifiée) ────────────────────────┐       │
+│  │ [Ajouter une note sur ce client...          ] [+]   │       │
 │  │                                                      │       │
-│  │ ⚠ RISQUE CHURN : 80/100                             │       │
-│  │ Ce client commandait tous les 28 jours et n'a rien   │       │
-│  │ commandé depuis 67 jours.                            │       │
-│  └──────────────────────────────────────────────────────┘       │
-│                                                                 │
-│  ┌─ DERNIÈRES COMMANDES (Sage) ────────────────────────┐       │
-│  │ Date       │ Pièce  │ Articles │ Montant │ Marge   │       │
-│  │ 2025-12-18 │ FA-892 │ 3 lignes │ 456.80€ │ 38.2%  │       │
-│  │ 2025-11-20 │ FA-845 │ 2 lignes │ 297.50€ │ 32.1%  │       │
-│  │ ...                                                  │       │
-│  └──────────────────────────────────────────────────────┘       │
-│                                                                 │
-│  ┌─ HISTORIQUE APPELS (Ringover) ──────────────────────┐       │
-│  │ Date       │ Dir │ Durée  │ Agent    │ Qualif      │       │
-│  │ 2026-02-20 │ OUT │ 2m34   │ Mathieu  │ 🟡 Warm    │       │
-│  │ 2026-02-14 │ IN  │ 0m45   │ Cecilia  │ Voicemail  │       │
-│  │ ...                                                  │       │
-│  │                                      [🔊 Écouter]   │       │
-│  └──────────────────────────────────────────────────────┘       │
-│                                                                 │
-│  ┌─ PRODUITS ACHETÉS (Top) ────────────────────────────┐       │
-│  │ Striploin Croco Congelé    │ 15x │ 2 172€  │ 43%  │       │
-│  │ Striploin Kangourou Cong   │ 12x │ 1 828€  │ 55%  │       │
-│  │ ⚡ Jamais acheté : Wagyu A4, Picanha, Chuck Ribs   │       │
-│  └──────────────────────────────────────────────────────┘       │
-│                                                                 │
-│  ┌─ NOTES ─────────────────────────────────────────────┐       │
-│  │ 20/02 Mathieu : Client hésite, veut promo sur       │       │
-│  │       le Wagyu. Rappeler vendredi avec offre.       │       │
+│  │ 🟣 Note  11 mar 19:52 · Admin                       │       │
+│  │   "Client très intéressé par le Wagyu A4"           │       │
+│  │                                                      │       │
+│  │ 🟢 Companion  11 mar 14:30  +33612345678            │       │
+│  │   Positif │ Intéressé                                │       │
+│  │   "Veut un devis pour 50kg de Wagyu"                │       │
+│  │   📅 Rappel vendredi                                 │       │
+│  │                                                      │       │
+│  │ 🔵 Appel  10 mar 10:23 · Mathieu                    │       │
+│  │   Neutre │ Callback                                  │       │
+│  │   "Demande catalogue mis à jour"                    │       │
+│  │   IA : Client hésite entre 2 fournisseurs...        │       │
 │  └──────────────────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -1577,6 +1672,33 @@ Les scores IA apparaissent aussi directement dans la liste des appels
 │  └──────────────────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Call Companion (widget flottant)
+
+Le Call Companion est un panneau flottant qui s'ouvre automatiquement au clic sur "Appeler" (ClickToCall). Il **persiste lors de la navigation** entre les pages grâce à un React Context au niveau du layout.
+
+**Architecture :**
+
+- `CallCompanionProvider` (context) → état global (isOpen, isMinimized, sessionId, clientId, intel)
+- `CallCompanionWidget` → panneau flottant fixe (desktop: coin bas-droit, mobile: fullscreen)
+- `ClickToCall` → appelle `companion.openCompanion()` après `api.dial()` réussi
+
+**Workflow :**
+
+1. Le sales clique sur "Appeler" → Ringover lance l'appel + le Companion s'ouvre
+2. Pendant/après l'appel, le sales renseigne : mood, outcome, notes, fournisseurs, concurrents, produits d'intérêt
+3. Le sales peut naviguer sur le CRM pendant que le Companion reste ouvert (minimisable)
+4. À la soumission, une `CallSession` est créée en base
+5. À la prochaine sync Ringover, la session est **automatiquement appairée** au CDR correspondant (matching par user_id + phone + fenêtre temporelle ±2min/30min)
+6. Si un appel est qualifié via le Companion, il n'apparaît plus dans "À qualifier" sur la page Appels
+
+**Composants intel (réutilisables) :**
+
+- `SupplierPicker` — recherche/ajout fournisseurs (base globale partagée entre tous les clients)
+- `CompetitorPicker` — recherche/ajout concurrents (idem)
+- `ProductInterestPicker` — recherche produit dans le catalogue Sage + saisie libre
+
+Ces composants sont utilisés à la fois dans le Call Companion (mode compact) et dans la section "Intel Commerciale" de la fiche client (mode full).
 
 ---
 
@@ -1788,13 +1910,15 @@ ringover-crm/
 │   ├── api/                           # Routes API
 │   │   ├── __init__.py
 │   │   ├── auth.py                    # POST /login, /logout, /me
-│   │   ├── clients.py                 # GET /clients, /clients/{id}
+│   │   ├── clients.py                 # GET /clients, /clients/{id}, notes
 │   │   ├── contacts.py                # CRUD contacts, assign, move
-│   │   ├── calls.py                   # GET /calls, /calls/{id}
+│   │   ├── calls.py                   # GET /calls, /calls/{id}, unqualified (dédup companion)
 │   │   ├── sales.py                   # GET /sales, stats ventes
 │   │   ├── playlists.py               # GET /playlists, PATCH status, GET insight + IA
 │   │   ├── products.py                # GET /products, /products/{ref}, upsell, co-achats, orders
-│   │   ├── orders.py                  # GET /orders (liste globale commandes, filtres type/date/commercial)
+│   │   ├── orders.py                  # GET /orders (filtres type/date/commercial/paiement)
+│   │   ├── intel.py                   # CRUD fournisseurs, concurrents, intel client
+│   │   ├── call_sessions.py           # CRUD sessions Call Companion
 │   │   ├── qualify.py                 # POST /qualify
 │   │   ├── enrich.py                  # POST /clients/{id}/enrich (enrichissement IA)
 │   │   ├── gamification.py            # GET /leaderboard, /my-xp
@@ -1802,7 +1926,7 @@ ringover-crm/
 │   │   ├── my_dashboard.py            # GET /me/stats, /me/clients, /me/top-products
 │   │   ├── margin_rules.py            # CRUD règles de marge + stats marge nette
 │   │   ├── objectives.py              # CRUD objectifs multi-KPI + progression
-│   │   ├── challenges.py              # CRUD challenges + classement live
+│   │   ├── challenges.py              # CRUD challenges multi-ref/famille + classement live
 │   │   ├── webhooks.py                # POST /webhooks/ringover
 │   │   └── sse.py                     # GET /events (Server-Sent Events)
 │   │
@@ -1832,7 +1956,10 @@ ringover-crm/
 │   │   ├── client.py
 │   │   ├── contact.py                 # Contact (rattaché à clients/company)
 │   │   ├── client_audit.py            # ClientAuditLog (journal d'audit clients)
+│   │   ├── client_intel.py            # ClientSupplier, ClientCompetitor, ClientProductInterest
+│   │   ├── client_note.py             # ClientNote (notes libres)
 │   │   ├── call.py
+│   │   ├── call_session.py            # CallSession (pré-qualification via Companion)
 │   │   ├── sales_line.py
 │   │   ├── qualification.py
 │   │   ├── playlist.py
@@ -1840,9 +1967,11 @@ ringover-crm/
 │   │   ├── gamification.py
 │   │   ├── product.py
 │   │   ├── ai_analysis.py
+│   │   ├── supplier.py                # Supplier (base globale fournisseurs)
+│   │   ├── competitor.py              # Competitor (base globale concurrents)
 │   │   ├── margin_rule.py             # MarginRule (règles de déduction marge)
 │   │   ├── user_objective.py          # UserObjective (objectifs multi-KPI)
-│   │   ├── challenge.py               # Challenge + ChallengeRanking
+│   │   ├── challenge.py               # Challenge + ChallengeRanking (multi-ref, famille)
 │   │   └── sync_log.py
 │   │
 │   ├── schemas/                       # Pydantic schemas (request/response)
@@ -1918,6 +2047,18 @@ ringover-crm/
 │   │
 │   ├── components/
 │   │   ├── ui/                        # Composants génériques (shadcn/ui)
+│   │   │   ├── textarea.tsx           # Shadcn textarea
+│   │   │   ├── spark-line.tsx         # Mini graphique sparkline
+│   │   │   └── ...
+│   │   ├── call-companion/            # Call Companion (widget flottant)
+│   │   │   ├── context.tsx            # CallCompanionProvider + useCallCompanion hook
+│   │   │   └── widget.tsx             # Panneau flottant (mood, outcome, intel, notes)
+│   │   ├── intel/                     # Composants intel commerciale (réutilisables)
+│   │   │   ├── supplier-picker.tsx    # Recherche/ajout fournisseurs
+│   │   │   ├── competitor-picker.tsx  # Recherche/ajout concurrents
+│   │   │   └── product-interest-picker.tsx # Recherche produit catalogue + saisie libre
+│   │   ├── click-to-call.tsx          # Bouton appel → ouvre le Companion
+│   │   ├── status-badge.tsx           # Badge statut client
 │   │   ├── dashboard/
 │   │   │   ├── StatsCards.tsx
 │   │   │   ├── TodoCallsList.tsx
@@ -2069,15 +2210,17 @@ JWT_REFRESH_DAYS=7
 ### Clients
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| GET | `/api/clients` | Liste avec filtres (search, sales_rep, is_prospect, is_dormant) |
-| GET | `/api/clients/{id}` | Fiche 360° (score, ventes, appels, **tous les numéros phone_index**) |
+| GET | `/api/clients` | Liste avec filtres (search, sales_rep, is_prospect, is_dormant, **supplier_id, competitor_id, product_ref**) |
+| GET | `/api/clients/{id}` | Fiche 360° (score, ventes, appels, **tous les numéros phone_index**, **impayés**) |
 | POST | `/api/clients` | **Créer un prospect** (nom, tel, email, ville — pas dans Sage) |
 | PUT | `/api/clients/{id}` | **Modifier un client** (UpdateClientRequest — champs éditables avec audit trail par champ) |
 | POST | `/api/clients/{id}/phones` | **Ajouter un numéro** (phone, label) à un client |
 | DELETE | `/api/clients/{id}/phones/{phone_id}` | **Supprimer un numéro** (interdit pour source sage) |
-| POST | `/api/clients/{id}/enrich` | **Enrichissement IA** — pipeline 4 phases : SIRET → Google Places (tel) → Google Places (nom) → recherche web légale. Retourne `EnrichSuggestion` |
-| POST | `/api/clients/{source_id}/merge-into/{target_id}` | **Fusionner** source dans target (transfert PhoneIndex, Calls, audit, suppression source) |
-| GET | `/api/clients/{id}/audit` | **Historique d'audit** — toutes les modifications du client (ClientAuditLog) |
+| POST | `/api/clients/{id}/enrich` | **Enrichissement IA** |
+| POST | `/api/clients/{source_id}/merge-into/{target_id}` | **Fusionner** source dans target |
+| GET | `/api/clients/{id}/audit` | **Historique d'audit** |
+| GET | `/api/clients/{id}/notes` | **Notes libres** du client (timeline) |
+| POST | `/api/clients/{id}/notes` | **Ajouter une note** (content → user_name + created_at) |
 
 ### API Contacts (`/api/contacts`)
 
@@ -2091,11 +2234,32 @@ JWT_REFRESH_DAYS=7
 | POST | `/api/contacts/{id}/move/{company_id}` | Déplacer un contact vers une autre entreprise |
 | DELETE | `/api/contacts/{id}` | Supprimer un contact (sauf principal) |
 
+### Intel commerciale (`/api/intel`)
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/api/intel/suppliers?q=` | Rechercher un fournisseur (autocomplete global) |
+| POST | `/api/intel/suppliers` | Créer un fournisseur (ajout à la base globale) |
+| GET | `/api/intel/competitors?q=` | Rechercher un concurrent (autocomplete global) |
+| POST | `/api/intel/competitors` | Créer un concurrent (ajout à la base globale) |
+| GET | `/api/intel/clients/{id}/intel` | Intel d'un client (fournisseurs, concurrents, produits d'intérêt) |
+| POST | `/api/intel/clients/{id}/intel` | Ajouter en batch (suppliers, competitors, product_interests) |
+| DELETE | `/api/intel/clients/{id}/suppliers/{supplier_id}` | Retirer un fournisseur d'un client |
+| DELETE | `/api/intel/clients/{id}/competitors/{competitor_id}` | Retirer un concurrent d'un client |
+| DELETE | `/api/intel/clients/{id}/product-interests/{interest_id}` | Retirer un produit d'intérêt |
+
+### Call Sessions (`/api/call-sessions`)
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| POST | `/api/call-sessions` | Créer une session (ouverture du Call Companion) |
+| PUT | `/api/call-sessions/{id}` | Mettre à jour une session (mood, outcome, notes, next_step) |
+| GET | `/api/call-sessions/pending` | Sessions non terminées de l'utilisateur courant |
+| GET | `/api/call-sessions/client/{client_id}` | Historique des sessions pour un client |
+
 ### Appels
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| GET | `/api/calls` | Liste avec filtres + ai_analysis brief + **client_name, client_ca_total** |
-| GET | `/api/calls/unqualified` | Appels non qualifiés (to-do list) |
+| GET | `/api/calls` | Liste avec filtres + ai_analysis brief + **client_name, client_ca_total, has_session_qualification** |
+| GET | `/api/calls/unqualified` | Appels non qualifiés (exclut ceux qualifiés via Call Companion) |
 | GET | `/api/calls/stats?date_from=&date_to=&user_id=&mine=` | KPIs **filtrés par période et par utilisateur** (total, answered, missed, avg duration, outbound/inbound, qualified) |
 | POST | `/api/calls/dial` | Click-to-call via Ringover Callback API |
 | GET | `/api/calls/reminders` | Rappels à venir (next_step_date) |
@@ -2187,8 +2351,65 @@ JWT_REFRESH_DAYS=7
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-11 | v3.2 | Call Companion, Intel commerciale, Notes client, Retours unifiés, Challenges multi-ref, Filtre entrepôt, Statut paiement commandes |
 | 2026-03-11 | v3.1 | Déploiement VPS, CI/CD, filtrage données Sage, reclassification avoirs, suivi impayés |
 | 2026-02-23 | Refonte Company/Contact | Séparation Client → Company + Contact. Nouvelle table contacts, nouveaux endpoints API, adaptation sync Sage/Ringover, lifecycle engine, frontend fiche 360 et page appels. |
+
+### v3.2 — 11 Mars 2026
+
+**Call Companion (widget flottant de collecte d'info) :**
+
+- **Widget persistant** : panneau flottant qui s'ouvre au clic sur "Appeler" et persiste lors de la navigation CRM (React Context dans le layout)
+- **Qualification intégrée** : mood (positif/neutre/négatif), outcome (intéressé/rappel/commande/NRP/devis envoyé/pas intéressé), notes, prochaine étape + date
+- **Intel commerciale** : fournisseurs, concurrents et produits d'intérêt renseignables pendant l'appel (mode compact)
+- **Matching automatique** : à chaque sync Ringover, les `call_sessions` sont appairées aux CDR correspondants (user_id + phone + fenêtre temporelle ±2min/30min)
+- **Déduplication qualification** : un appel qualifié via le Companion n'apparaît plus dans "À qualifier" (backend + frontend)
+
+**Intel commerciale (nouvelle section permanente sur la fiche client) :**
+
+- **Fournisseurs** : base globale partagée, recherche autocomplete, ajout de nouveaux fournisseurs
+- **Concurrents** : même système que les fournisseurs
+- **Produits d'intérêt** : recherche dans le catalogue Sage + saisie libre pour produits hors catalogue
+- **Filtres sur la liste clients** : filtrage par fournisseur, concurrent ou produit d'intérêt
+- **Nouvelles tables** : `suppliers`, `competitors`, `client_suppliers`, `client_competitors`, `client_product_interests`
+
+**Notes client (onglet Retours unifié) :**
+
+- **Notes libres** : tout utilisateur peut ajouter une note sur un client sans lien à un appel
+- **Timeline unifiée** : l'onglet "Retours" fusionne 3 sources dans une chronologie unique :
+  - Qualifications d'appels (badge bleu "Appel")
+  - Sessions Call Companion (badge vert "Companion")
+  - Notes libres (badge violet "Note")
+- Chaque entrée affiche le nom de l'utilisateur, la date/heure et les détails associés
+- **Nouvelle table** : `client_notes`
+
+**Challenges commerciaux multi-référence :**
+
+- **Multi-ref** : un challenge peut cibler plusieurs références articles (stockées en CSV)
+- **Par famille** : un challenge peut cibler une famille entière de produits (toutes les refs de la famille sont prises en compte)
+- **UI enrichie** : sélection par radio (Tous / Produits choisis / Par famille) dans l'admin challenges
+
+**Filtre par entrepôt (page produits) :**
+
+- Nouveau filtre `depot_id` sur la page catalogue produits
+- Charge dynamiquement la liste des dépôts disponibles
+
+**Statut paiement sur les commandes :**
+
+- Colonnes `doc_total_ttc` et `doc_amount_paid` sur `sales_lines` (alimentées depuis `F_DOCENTETE`)
+- **Filtres paiement** sur la page commandes : Tous / Impayé / Partiel / Payé
+- Badge coloré (rouge/ambre/vert) dans le tableau et le panneau de détail commande
+- Endpoint `/api/orders` enrichi avec `payment_status`, `remaining_due`
+
+**Corrections techniques :**
+
+- Fix `logger` non importé dans `ringover_connector.py` (crash silencieux du matching de sessions)
+- Fix crash du scoring engine quand un client n'a que des BDC/BL sans factures (`stats is None`)
+- Fix TypeScript `useRef` sans argument initial dans les pickers intel
+- Fix `PlaylistItem` props (`id`/`name` au lieu de `client_id`/`client_name`)
+- Fix taille colonne `client_notes.client_id` (VARCHAR(20) → VARCHAR(50) pour UUID)
+
+---
 
 ### v3.1 — 11 Mars 2026
 
