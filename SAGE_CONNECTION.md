@@ -1,7 +1,7 @@
 # Connexion Sage 100 — Guide Technique
 
 > Document de référence pour le développement du connecteur Sage 100
-> Dernière mise à jour : 1 mars 2026
+> Dernière mise à jour : 11 mars 2026
 
 ---
 
@@ -20,13 +20,17 @@ Nom du serveur      : NP-SRV
 ### Connexion SQL Server
 
 ```
-Driver   : ODBC Driver 17 for SQL Server
-Server   : 100.117.57.116\SAGE100
+Driver   : ODBC Driver 18 for SQL Server
+Server   : 100.117.57.116,1433  (connexion TCP directe, pas d'instance nommée)
 Database : NP_DEVELOPPEMENT
 Username : crm_readonly
 Password : CRM2026secure!
 Port     : 1433 (TCP)
 ```
+
+> **Note importante** : on utilise `SERVER=ip,port` (virgule) au lieu de
+> `SERVER=ip\SAGE100` (instance nommée) pour éviter les problèmes de
+> résolution SQL Server Browser via UDP 1434 (bloqué sur certains VPN/VPS).
 
 ### Connection string Python (pyodbc)
 
@@ -34,16 +38,22 @@ Port     : 1433 (TCP)
 import pyodbc
 
 CONNECTION_STRING = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=100.117.57.116\\SAGE100;"
+    "DRIVER={ODBC Driver 18 for SQL Server};"
+    "SERVER=100.117.57.116,1433;"
     "DATABASE=NP_DEVELOPPEMENT;"
     "UID=crm_readonly;"
     "PWD=CRM2026secure!;"
     "TrustServerCertificate=yes;"
+    "Encrypt=no;"
+    "timeout=60;"
 )
 
-conn = pyodbc.connect(CONNECTION_STRING)
+conn = pyodbc.connect(CONNECTION_STRING, timeout=30)
 ```
+
+> Le paramètre `Encrypt=no;` est requis car le serveur Sage n'a pas de
+> certificat SSL configuré. Le `timeout=60` évite les timeouts sur les
+> requêtes lourdes (full sync).
 
 ### Connection string SQLAlchemy (async)
 
@@ -51,9 +61,10 @@ conn = pyodbc.connect(CONNECTION_STRING)
 # Pour SQLAlchemy avec aioodbc
 SAGE_DATABASE_URL = (
     "mssql+pyodbc://crm_readonly:CRM2026secure!@"
-    "100.117.57.116\\SAGE100/NP_DEVELOPPEMENT"
-    "?driver=ODBC+Driver+17+for+SQL+Server"
+    "100.117.57.116,1433/NP_DEVELOPPEMENT"
+    "?driver=ODBC+Driver+18+for+SQL+Server"
     "&TrustServerCertificate=yes"
+    "&Encrypt=no"
 )
 ```
 
@@ -135,16 +146,39 @@ WHERE CT_Type = 0  -- Clients uniquement
 
 ### F_DOCENTETE — Entêtes de documents (factures, devis, etc.)
 
-| Colonne | Type | Description |
-|---------|------|-------------|
-| `DO_Piece` | VARCHAR(13) | N° de pièce |
-| `DO_Type` | SMALLINT | Type document (1=BC, 3=BL, 6=Facture, 7=Avoir) |
-| `DO_Date` | DATETIME | Date du document |
-| `CT_NumPayeur` | VARCHAR(17) | N° client payeur |
-| `DO_TotalHT` | FLOAT | Total HT |
-| `DO_TotalTTC` | FLOAT | Total TTC |
-| `CO_No` | INTEGER | N° collaborateur |
-| `cbModification` | DATETIME | Dernière modification |
+| Colonne | Type | Description | Mapping CRM |
+|---------|------|-------------|-------------|
+| `DO_Piece` | VARCHAR(13) | N° de pièce | Clé de jointure → `sage_piece_id` |
+| `DO_Type` | SMALLINT | Type document (1=BC, 3=BL, 6=Facture, 7=Avoir) | — |
+| `DO_Domaine` | SMALLINT | Domaine (0=Ventes, 1=Achats) | Filtrer `= 0` |
+| `DO_Date` | DATETIME | Date du document | — |
+| `CT_NumPayeur` | VARCHAR(17) | N° client payeur | — |
+| `DO_TotalHT` | FLOAT | Total HT | — |
+| `DO_TotalTTC` | FLOAT | Total TTC | `doc_total_ttc` |
+| `DO_MontantRegle` | FLOAT | Montant réglé | `doc_amount_paid` |
+| `CO_No` | INTEGER | N° collaborateur | — |
+| `cbModification` | DATETIME | Dernière modification | — |
+
+**Requête statut de paiement des factures :**
+
+```sql
+SELECT
+    DO_Piece,
+    DO_TotalHT,
+    DO_TotalTTC,
+    DO_MontantRegle,
+    (DO_TotalTTC - DO_MontantRegle) AS ResteAPayer,
+    DO_Tiers,
+    DO_Date,
+    cbModification
+FROM F_DOCENTETE
+WHERE DO_Domaine = 0          -- Ventes uniquement
+  AND DO_Type IN (6, 7)       -- Factures et avoirs
+```
+
+> **Calcul des impayés** : une facture est considérée impayée si
+> `(DO_TotalTTC - DO_MontantRegle) > 0.01`. Le CRM enrichit chaque
+> `SalesLine` avec `doc_total_ttc` et `doc_amount_paid` après la sync.
 
 ### F_DOCLIGNE — Lignes de documents (détail des ventes)
 
@@ -189,10 +223,22 @@ SELECT
     dl.cbModification
 FROM F_DOCLIGNE dl
 WHERE dl.DO_Type IN (1, 3, 6, 7)  -- BC, BL, Factures et Avoirs
+  AND dl.AR_Ref IS NOT NULL        -- Exclure les lignes commentaire
+  AND LTRIM(RTRIM(dl.AR_Ref)) != '' -- Exclure les refs vides
 ORDER BY dl.DO_Date DESC
 ```
 
-> **Note :** Le CRM synchronise les 4 types de documents. Les **métriques financières** (CA, marge, panier moyen) sont calculées uniquement sur les factures (6) et avoirs (7). La **recency** du churn utilise tous les types pour refléter l'activité réelle (un client avec un BC récent n'est pas inactif).
+> **Filtrage des données :**
+> - **Lignes commentaire exclues** : les lignes sans `AR_Ref` (MAD = Mise À Disposition,
+>   commentaires libres, notes internes) sont ignorées à l'import. Seules les lignes
+>   avec une référence article valide qualifient une ligne de commande/facture.
+> - **Reclassification DO_Type=7** : Sage regroupe factures comptabilisées et avoirs
+>   sous `DO_Type=7`. Le CRM reclassifie selon le préfixe de `DO_Piece` :
+>   - `xxA...` (ex: `23A00123`) → Avoir (type 7)
+>   - Autres (ex: `23F06207`) → Facture comptabilisée (reclassifié en type 6)
+> - **Métriques financières** (CA, marge, panier moyen) calculées uniquement sur
+>   les factures (6) et avoirs (7). La **recency** du churn utilise tous les types
+>   pour refléter l'activité réelle (un client avec un BC récent n'est pas inactif).
 
 ### F_COLLABORATEUR — Commerciaux / Représentants
 
@@ -397,10 +443,10 @@ async def delta_sync_stock(last_sync: datetime):
 ### macOS (développement local)
 
 ```bash
-# Driver ODBC Microsoft
+# Driver ODBC Microsoft (v18)
 brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
 brew update
-brew install msodbcsql17 mssql-tools
+brew install msodbcsql18 mssql-tools18
 
 # Dépendances Python
 pip install pyodbc
@@ -412,16 +458,16 @@ brew install --cask tailscale
 ### Linux / VPS (production)
 
 ```bash
-# Ubuntu/Debian
-curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
-curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
+# Ubuntu (testé sur 25.04)
+curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc
+curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | tee /etc/apt/sources.list.d/mssql-release.list
 apt-get update
-ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
 
 # Dépendances Python
 pip install pyodbc
 
-# Tailscale
+# Tailscale (requis pour la connexion VPN vers le serveur Sage)
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
 ```
@@ -442,8 +488,8 @@ from datetime import datetime
 
 # Configuration
 CONFIG = {
-    "driver": "{ODBC Driver 17 for SQL Server}",
-    "server": "100.117.57.116\\SAGE100",
+    "driver": "{ODBC Driver 18 for SQL Server}",
+    "server": "100.117.57.116,1433",
     "database": "NP_DEVELOPPEMENT",
     "username": "crm_readonly",
     "password": "CRM2026secure!",
@@ -457,6 +503,8 @@ def get_connection_string():
         f"UID={CONFIG['username']};"
         f"PWD={CONFIG['password']};"
         f"TrustServerCertificate=yes;"
+        f"Encrypt=no;"
+        f"timeout=60;"
     )
 
 def test_connection():
@@ -561,19 +609,21 @@ if __name__ == "__main__":
 backend/
 ├── connectors/
 │   ├── __init__.py
-│   ├── sage_connector.py      # Connexion et requêtes Sage
-│   ├── sage_sync.py           # Logique de synchronisation
+│   ├── sage_odbc.py           # Connexion ODBC et requêtes Sage (SageConnector)
+│   ├── sage_sync.py           # Logique de synchronisation Sage → PostgreSQL
+│   ├── sage_connector.py      # Import Excel Sage (fallback)
+│   ├── ringover_connector.py  # API Ringover v2 (appels, contacts, transcription IA)
 │   └── phone_normalizer.py    # Normalisation E.164
 │
 ├── models/
 │   ├── client.py              # Modèle SQLAlchemy clients
-│   ├── sales_line.py          # Modèle SQLAlchemy ventes
-│   ├── article.py             # Modèle SQLAlchemy articles
-│   ├── depot.py               # Modèle SQLAlchemy dépôts
-│   └── stock.py               # Modèle SQLAlchemy stock (par article + dépôt)
+│   ├── sales_line.py          # Modèle SQLAlchemy ventes (+doc_total_ttc, doc_amount_paid)
+│   ├── product.py             # Modèle SQLAlchemy articles/produits
+│   ├── product_stock_depot.py # Stock par article et par dépôt
+│   └── sync_log.py            # Journal des synchronisations
 │
 └── core/
-    └── scheduler.py           # APScheduler pour les syncs
+    └── scheduler.py           # APScheduler (sage delta 15min, ringover 3min)
 ```
 
 ### Exemple sage_connector.py
@@ -592,6 +642,16 @@ class SageConnector:
         self._conn: Optional[pyodbc.Connection] = None
 
     def connect(self) -> pyodbc.Connection:
+        if self._conn is not None:
+            try:
+                self._conn.cursor().execute("SELECT 1")
+            except Exception:
+                logger.warning("Sage: stale connection, reconnecting...")
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
         if self._conn is None:
             self._conn = pyodbc.connect(self.connection_string, timeout=30)
         return self._conn
@@ -632,7 +692,8 @@ class SageConnector:
         return results
 
     def get_sales_lines(self, since: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Récupère les lignes de ventes (BC, BL, Factures, Avoirs)."""
+        """Récupère les lignes de ventes (BC, BL, Factures, Avoirs).
+        Exclut les lignes commentaire (AR_Ref NULL ou vide)."""
         conn = self.connect()
         cursor = conn.cursor()
 
@@ -644,6 +705,8 @@ class SageConnector:
                 DL_MontantHT - (DL_PrixRU * DL_Qte) AS MargeValeur
             FROM F_DOCLIGNE
             WHERE DO_Type IN (1, 3, 6, 7)
+              AND AR_Ref IS NOT NULL
+              AND LTRIM(RTRIM(AR_Ref)) != ''
         """
 
         if since:
@@ -658,6 +721,28 @@ class SageConnector:
             results.append(dict(zip(columns, row)))
 
         logger.info(f"Récupéré {len(results)} lignes de ventes depuis Sage")
+        return results
+
+    def get_invoices_payment_status(self) -> List[Dict[str, Any]]:
+        """Récupère le statut de paiement de chaque facture depuis F_DOCENTETE."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                DO_Piece,
+                DO_TotalHT,
+                DO_TotalTTC,
+                DO_MontantRegle,
+                (DO_TotalTTC - DO_MontantRegle) AS ResteAPayer,
+                DO_Tiers,
+                DO_Date,
+                cbModification
+            FROM F_DOCENTETE
+            WHERE DO_Domaine = 0 AND DO_Type IN (6, 7)
+        """)
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor]
+        logger.info(f"Sage: {len(results)} factures avec statut paiement récupérées")
         return results
 
     def get_depots(self) -> List[Dict[str, Any]]:
@@ -771,8 +856,8 @@ class SageConnector:
 # .env
 
 # Sage 100 (via Tailscale)
-SAGE_ODBC_DRIVER={ODBC Driver 17 for SQL Server}
-SAGE_ODBC_SERVER=100.117.57.116\SAGE100
+SAGE_ODBC_DRIVER={ODBC Driver 18 for SQL Server}
+SAGE_ODBC_SERVER=100.117.57.116,1433
 SAGE_ODBC_DATABASE=NP_DEVELOPPEMENT
 SAGE_ODBC_USER=crm_readonly
 SAGE_ODBC_PASSWORD=CRM2026secure!
@@ -780,8 +865,8 @@ SAGE_ODBC_PASSWORD=CRM2026secure!
 # Sync schedule
 SAGE_FULL_SYNC_HOUR=2
 SAGE_DELTA_SYNC_MINUTES=15
-SAGE_SYNC_START_HOUR=7
-SAGE_SYNC_END_HOUR=20
+SAGE_SYNC_START_HOUR=6
+SAGE_SYNC_END_HOUR=22
 ```
 
 ---
@@ -828,24 +913,45 @@ Contacter le client pour vérifier que le serveur est allumé.
 
 ```bash
 # macOS
-brew install msodbcsql17
+brew install msodbcsql18
 
 # Linux
-ACCEPT_EULA=Y apt-get install -y msodbcsql17
+ACCEPT_EULA=Y apt-get install -y msodbcsql18
+```
+
+### Erreur "Login timeout expired" (VPS / uvicorn)
+
+```
+Si la connexion fonctionne en script standalone mais échoue dans uvicorn :
+1. Vérifier qu'on utilise SERVER=ip,port (pas ip\instance)
+2. Vérifier que Tailscale tourne dans le contexte du service systemd
+3. S'assurer que uvicorn tourne avec 1 seul worker (--workers 1)
+   pour éviter les connexions ODBC concurrentes
+4. Ajouter Encrypt=no; et timeout=60 à la connection string
+```
+
+### Erreur "StringDataRightTruncation" sur sync_logs
+
+```
+Le champ sync_type doit être VARCHAR(30) minimum
+(pour supporter des valeurs comme 'full_products').
+ALTER TABLE sync_logs ALTER COLUMN sync_type TYPE VARCHAR(30);
 ```
 
 ---
 
 ## 11. Checklist déploiement VPS
 
-- [ ] Installer Tailscale sur le VPS
-- [ ] Se connecter avec le même compte Tailscale
-- [ ] Vérifier que 100.117.57.116 est accessible
-- [ ] Installer ODBC Driver 17 for SQL Server
-- [ ] Tester la connexion avec le script de test
-- [ ] Configurer les variables d'environnement
-- [ ] Lancer le premier full sync
-- [ ] Configurer les crons (APScheduler ou crontab)
+- [x] Installer Tailscale sur le VPS (`curl -fsSL https://tailscale.com/install.sh | sh && tailscale up`)
+- [x] Se connecter avec le même compte Tailscale
+- [x] Vérifier que 100.117.57.116 est accessible (`ping` ou `/dev/tcp/100.117.57.116/1433`)
+- [x] Installer ODBC Driver 18 for SQL Server (`ACCEPT_EULA=Y apt install msodbcsql18`)
+- [x] Tester la connexion avec le script de test
+- [x] Configurer les variables d'environnement (`.env` sur le VPS)
+- [x] Lancer le premier full sync (via l'admin ou `full_sync.py`)
+- [x] Configurer les crons (APScheduler intégré au backend, 1 worker uvicorn)
+- [x] HTTPS via Let's Encrypt + Nginx
+- [x] CI/CD GitHub Actions (push main → déploiement automatique)
 
 ---
 

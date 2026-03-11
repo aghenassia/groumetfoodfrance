@@ -2,7 +2,7 @@
 
 > CRM "Phone-First" sur mesure pour Gourmet Food France
 > Connecté à Sage 100 (ERP/Compta) + Ringover (Téléphonie)
-> Version : 3.0 — Février 2026
+> Version : 3.1 — Mars 2026
 
 ---
 
@@ -136,34 +136,54 @@ pydantic-settings>=2.1.0
 
 ## 3. Infrastructure & Déploiement
 
-### Architecture serveur (VPS Linux)
+### Architecture serveur (VPS OVH — Production)
 
 ```
-VPS (Ubuntu 22.04 LTS) — 4 vCPU / 8 Go RAM / 80 Go SSD
+VPS OVH (Ubuntu 25.04) — gff.wrz.fr (51.83.69.51)
 │
-├── Docker Compose
-│   ├── app          → FastAPI (uvicorn, 4 workers)
-│   ├── frontend     → Next.js (node, port 3000)
-│   ├── postgres     → PostgreSQL 16 (port 5432, volume persistant)
-│   ├── redis        → Redis 7 (port 6379)
-│   └── nginx        → Reverse proxy (ports 80/443)
+├── Services systemd
+│   ├── crm-backend.service   → FastAPI (uvicorn, 1 worker, port 8000)
+│   ├── crm-frontend.service  → Next.js (node, port 3000)
+│   └── Docker Compose (deploy/)
+│       ├── postgres           → PostgreSQL 16 (port 5432, volume persistant)
+│       └── redis              → Redis 7 (port 6379)
 │
-├── Volumes
-│   ├── /data/postgres    → Données PostgreSQL
-│   ├── /data/redis       → Persistance Redis
-│   └── /data/recordings  → Cache local des enregistrements Ringover
+├── Nginx (reverse proxy)
+│   ├── HTTPS (443)            → Let's Encrypt SSL (gff.wrz.fr)
+│   ├── /                      → proxy_pass http://127.0.0.1:3000 (frontend)
+│   ├── /api/                  → proxy_pass http://127.0.0.1:8000 (backend)
+│   └── HTTP (80)              → redirect 301 → HTTPS
 │
-└── Accès réseau
-    ├── HTTPS (443)       → Nginx → Next.js / FastAPI
-    ├── ODBC (1433)       → SQL Server Sage (réseau local uniquement)
-    └── SSH (22)          → Administration
+├── Tailscale VPN
+│   └── Connexion sécurisée vers le serveur Sage 100 (100.117.57.116)
+│
+└── CI/CD
+    └── GitHub Actions → deploy.yml → /opt/deploy-crm.sh
+        (push main → pull + build + restart auto)
 ```
 
 ### Connexion au réseau Sage
 
-Le VPS doit être sur le même réseau local que le serveur Sage 100,
-ou accessible via VPN si le VPS est distant. L'accès ODBC se fait en
-lecture seule via un utilisateur SQL dédié avec des droits SELECT uniquement.
+Le VPS se connecte au serveur Sage 100 via **Tailscale** (VPN mesh).
+Tailscale est installé sur le VPS et sur le serveur Windows du client.
+L'accès ODBC se fait en lecture seule via un utilisateur SQL dédié
+(`crm_readonly`, droits SELECT uniquement).
+
+**Connexion directe par port** : pour contourner les problèmes de résolution
+d'instance nommée (SQL Server Browser / UDP 1434), la connexion utilise
+`SERVER=100.117.57.116,1433` (port TCP direct) au lieu de `SERVER=ip\SAGE100`.
+
+### CI/CD — Déploiement automatique
+
+À chaque `push` sur la branche `main`, un workflow GitHub Actions SSH dans le
+VPS et exécute `/opt/deploy-crm.sh` :
+
+1. `git fetch origin main && git reset --hard origin/main`
+2. Si `requirements.txt` modifié → `pip install -r requirements.txt`
+3. Si `frontend/` modifié → `npm install && npm run build` + restart frontend
+4. Restart backend (toujours)
+
+Secrets GitHub requis : `VPS_HOST`, `VPS_SSH_KEY`.
 
 ---
 
@@ -325,25 +345,37 @@ FROM F_ARTICLE
 │  Mode 1 — FULL SYNC (1x/nuit à 02h00)                  │
 │  ├── Tous les clients (F_COMPTET WHERE CT_Type=0)       │
 │  ├── Toutes les lignes de ventes (F_DOCLIGNE)           │
+│  │   ├── Filtre AR_Ref NOT NULL (exclut commentaires)   │
+│  │   ├── Reclassification FA/AV sur DO_Type=7           │
+│  │   └── Enrichissement paiement depuis F_DOCENTETE     │
 │  ├── Tous les articles/produits (F_ARTICLE)             │
+│  ├── Stock multi-dépôts (F_ARTSTOCK)                    │
 │  └── Upsert dans PostgreSQL (ON CONFLICT)               │
 │                                                          │
-│  Mode 2 — DELTA SYNC (toutes les 15 min, 7h-20h)       │
+│  Mode 2 — DELTA SYNC (toutes les 15 min, 6h-22h)       │
 │  ├── Utilise cbModification (timestamp Sage)             │
 │  ├── Ne récupère que les enregistrements modifiés        │
-│  ├── Clients + Ventes + Produits                         │
-│  └── Plus léger, quasi temps-réel                        │
+│  ├── Clients + Ventes + Produits + Stock                 │
+│  ├── Chaque type a son propre last_sync_time             │
+│  └── max_instances=1 (pas de chevauchement)              │
+│                                                          │
+│  Post-sync :                                             │
+│  ├── Suppression lignes commentaire en base              │
+│  ├── Reclassification factures/avoirs (DO_Type=7)       │
+│  └── Enrichissement paiement (doc_total_ttc/paid)       │
 │                                                          │
 │  Sécurité :                                              │
-│  ├── Connexion ODBC lecture seule                        │
+│  ├── Connexion ODBC lecture seule via Tailscale VPN     │
 │  ├── Utilisateur SQL dédié (SELECT only)                │
+│  ├── Appels ODBC wrappés dans asyncio.to_thread()       │
 │  └── Aucune écriture sur Sage, jamais                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
 Le champ `cbModification` (DATETIME) présent sur toutes les tables Sage 100
 permet de faire du delta sync : on ne récupère que les lignes modifiées
-depuis le dernier sync réussi.
+depuis le dernier sync réussi. Chaque type de sync (clients, sales, products,
+stock) maintient son propre `last_sync_time` dans la table `sync_logs`.
 
 ---
 
@@ -588,6 +620,8 @@ CREATE TABLE sales_lines (
     user_id          UUID REFERENCES users(id),  -- lien direct vers le commercial CRM
     margin_value     DECIMAL(15,2),
     margin_percent   DECIMAL(5,2),
+    doc_total_ttc    DECIMAL(15,2),          -- total TTC du document (F_DOCENTETE)
+    doc_amount_paid  DECIMAL(15,2),          -- montant réglé du document (F_DOCENTETE)
     synced_at        TIMESTAMPTZ DEFAULT NOW(),
 
     UNIQUE(sage_piece_id, article_ref, client_sage_id, date)
@@ -1719,15 +1753,18 @@ Sync Sage (sync_sales_from_sage) :
 
 | Job | Fréquence | Horaire | Description |
 |-----|-----------|---------|-------------|
-| `sage_full_sync` | 1x/jour | 02:00 | Sync complète clients + ventes + produits depuis Sage |
-| `sage_delta_sync` | /15 min | 07:00-20:00 | Sync incrémentale clients + ventes + produits (cbModification) |
+| `sage_full_sync` | 1x/jour | 02:00 | Sync complète clients + ventes + produits + stock depuis Sage |
+| `sage_delta_sync` | /15 min | 06:00-22:00 | Sync incrémentale clients + ventes + produits + stock (cbModification). `max_instances=1` pour éviter les doublons |
 | `scoring_engine` | 1x/jour | 06:00 | Calcul RFM + churn risk + upsell scores |
 | `playlist_generator` | 1x/jour | 06:30 | Génère les playlists quotidiennes |
 | `gamification_daily` | 1x/jour | 23:00 | Consolide les XP du jour, crée les weekly/monthly |
-| `ringover_poll_calls` | /2 min | 24/7 | Fallback polling appels (si webhooks down) |
-| `ringover_poll_presence` | /30 sec | 24/7 | Présences en temps réel |
-| `ringover_sync_contacts` | 1x/jour | 03:00 | Sync contacts Ringover |
+| `ringover_sync` | /3 min | 06:00-22:00 | Sync appels + contacts + auto-qualification + auto-transcription IA. `max_instances=1` |
 | `cleanup_old_playlists` | 1x/semaine | Dim 04:00 | Archivage playlists > 30 jours |
+
+**Notes sur le scheduler :**
+- Tous les jobs utilisent `max_instances=1` et `misfire_grace_time` pour éviter les exécutions parallèles
+- Le backend tourne avec **1 seul worker uvicorn** pour garantir une seule instance APScheduler
+- Les appels ODBC bloquants sont wrappés dans `asyncio.to_thread()` pour ne pas bloquer l'event loop
 
 ---
 
@@ -1993,10 +2030,10 @@ DATABASE_URL=postgresql+asyncpg://crm_user:password@localhost:5432/crm_db
 # --- Redis ---
 REDIS_URL=redis://localhost:6379/0
 
-# --- Sage 100 (ODBC) ---
-SAGE_ODBC_DRIVER={ODBC Driver 17 for SQL Server}
-SAGE_ODBC_SERVER=192.168.1.xx
-SAGE_ODBC_DATABASE=nom_base_sage
+# --- Sage 100 (ODBC via Tailscale) ---
+SAGE_ODBC_DRIVER={ODBC Driver 18 for SQL Server}
+SAGE_ODBC_SERVER=100.117.57.116,1433
+SAGE_ODBC_DATABASE=NP_DEVELOPPEMENT
 SAGE_ODBC_USER=crm_readonly
 SAGE_ODBC_PASSWORD=<password>
 
@@ -2137,6 +2174,7 @@ JWT_REFRESH_DAYS=7
 | POST | `/api/admin/clients/reassign` | Réassigner des clients en masse (`client_ids[]`, `target_user_id`) |
 | GET | `/api/admin/sync-logs` | Historique des synchronisations (30 dernières) |
 | GET | `/api/admin/leaderboard` | Classement commerciaux + scores IA |
+| GET | `/api/admin/sage/diagnostic-bdc?since=` | **Diagnostic BDC** : compare le nombre de BC dans Sage vs CRM pour une date donnée (écarts de sync) |
 
 ### Santé
 | Méthode | Route | Description |
@@ -2149,7 +2187,54 @@ JWT_REFRESH_DAYS=7
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-11 | v3.1 | Déploiement VPS, CI/CD, filtrage données Sage, reclassification avoirs, suivi impayés |
 | 2026-02-23 | Refonte Company/Contact | Séparation Client → Company + Contact. Nouvelle table contacts, nouveaux endpoints API, adaptation sync Sage/Ringover, lifecycle engine, frontend fiche 360 et page appels. |
+
+### v3.1 — 11 Mars 2026
+
+**Déploiement en production (VPS OVH) :**
+
+- **Infrastructure** : VPS OVH Ubuntu 25.04, PostgreSQL 16 + Redis 7 (Docker Compose), Nginx reverse proxy, HTTPS via Let's Encrypt (gff.wrz.fr)
+- **Tailscale VPN** : connexion sécurisée entre le VPS et le serveur Sage 100 du client
+- **CI/CD** : workflow GitHub Actions (`deploy.yml`) pour déploiement automatique sur push vers `main`
+- **Services systemd** : `crm-backend.service` (uvicorn, 1 worker) et `crm-frontend.service` (Next.js)
+- **Connexion Sage optimisée** : passage à ODBC Driver 18, connexion TCP directe par port (`SERVER=ip,1433`) au lieu de l'instance nommée, `Encrypt=no;`, `timeout=60`, retry automatique sur connexion stale
+
+**Filtrage et nettoyage des données Sage :**
+
+- **Exclusion des lignes commentaire** : les lignes de `F_DOCLIGNE` sans `AR_Ref` (MAD, commentaires, frais de port en texte libre) sont exclues de l'import. Seules les lignes avec une référence article valide sont synchronisées
+- **Nettoyage post-sync** : suppression automatique des lignes commentaire existantes en base (`AR_Ref IS NULL` ou vide)
+- **Reclassification factures / avoirs** : les documents `DO_Type=7` sont reclassifiés selon le préfixe du `DO_Piece` :
+  - Préfixe `xxA` → Avoir (type 7)
+  - Autres préfixes → Facture comptabilisée (reclassifié en type 6)
+
+**Suivi des factures impayées :**
+
+- **Nouveau connecteur** : `get_invoices_payment_status()` sur `SageConnector`, requête `F_DOCENTETE` pour récupérer `DO_TotalTTC`, `DO_MontantRegle` et le reste à payer pour chaque facture (DO_Domaine=0, DO_Type IN 6,7)
+- **Enrichissement sync** : après le sync des lignes de vente, les colonnes `doc_total_ttc` et `doc_amount_paid` sont mises à jour sur chaque `SalesLine` correspondante
+- **API client** : l'endpoint `/api/clients/{id}` retourne un objet `unpaid` avec `unpaid_count`, `unpaid_total_ttc`, `unpaid_remaining` et `oldest_unpaid_date`
+- **Frontend** : carte KPI "Impayés" en rouge sur la fiche client 360°, affichant le montant restant dû et le nombre de factures impayées
+
+**Corrections de cohérence financière :**
+
+- **CA produits** : les KPIs produits (CA, marge, top clients, évolution mensuelle) sont calculés uniquement sur les factures (type 6) et avoirs (type 7), plus de cumul avec BC/BL
+- **Dashboard global admin** : correction du bug où le changement de date ne mettait pas à jour les stats en vue globale (gestion correcte de `user_id="all"`)
+- **Résilience frontend** : les appels API du dashboard utilisent des `.then().catch()` individuels au lieu de `Promise.all()` pour éviter qu'une erreur bloque tous les KPIs
+
+**Améliorations navigation :**
+
+- **Liens commande ↔ produit** : sur la fiche client, les IDs de commande sont cliquables (→ page commandes), les noms de produit sont cliquables (→ fiche produit)
+- **Recherche produit dans commandes** : le lien "Voir les X commandes →" d'un produit redirige vers `/orders?search=<ref>` avec recherche pré-remplie
+- **Recherche backend améliorée** : la recherche sur `/api/orders` utilise un sous-requête pour trouver les commandes contenant un article ou une désignation correspondante
+
+**Scheduler et sync automatique :**
+
+- **Sage delta sync** : toutes les 15 min de 6h à 22h, `max_instances=1`
+- **Ringover sync** : toutes les 3 min de 6h à 22h, `max_instances=1`, inclut auto-qualification des appels sortants sans réponse et auto-transcription IA
+- **Fix FK violation** : la qualification automatique des appels ne crée plus d'entrées avec un `user_id` NULL (skip si le call n'est pas mappé à un utilisateur)
+- **Sync type tracking** : chaque type de sync (clients, sales, products, stock) a son propre `last_sync_time` pour des deltas indépendants
+
+---
 
 ### v1.8 — 24 Février 2026
 
