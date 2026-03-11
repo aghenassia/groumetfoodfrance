@@ -2,7 +2,7 @@
 Connecteur Ringover API v2.
 Migré depuis le prototype Flask (app.py).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import httpx
 from sqlalchemy import select
@@ -315,6 +315,13 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
         if playlist_updated:
             await db.commit()
 
+    # Match call_sessions to newly synced calls
+    sessions_matched = 0
+    try:
+        sessions_matched = await _match_call_sessions(db)
+    except Exception as e:
+        logger.warning(f"Erreur matching call_sessions: {e}")
+
     # Log de sync dans une opération séparée
     log = SyncLog(
         source="ringover_calls",
@@ -333,6 +340,7 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
         "errors": errors,
         "auto_qualified": auto_qualified,
         "playlist_auto_called": playlist_updated,
+        "sessions_matched": sessions_matched,
         "total_from_api": len(all_calls),
     }
 
@@ -434,6 +442,78 @@ async def get_team_members() -> list[dict]:
         })
 
     return members
+
+
+async def _match_call_sessions(db: AsyncSession) -> int:
+    """Match unmatched call_sessions to recently synced calls by user + phone + time proximity."""
+    from models.call_session import CallSession
+    from models.qualification import CallQualification
+    from connectors.phone_normalizer import normalize_phone
+    from sqlalchemy import and_
+
+    unmatched_q = await db.execute(
+        select(CallSession).where(
+            CallSession.matched_call_id == None,
+            CallSession.ended_at != None,
+        )
+    )
+    unmatched = unmatched_q.scalars().all()
+    if not unmatched:
+        return 0
+
+    matched = 0
+    for session in unmatched:
+        phone_norm = session.phone_number
+        if phone_norm:
+            try:
+                phone_norm = normalize_phone(phone_norm)
+            except Exception:
+                pass
+
+        window_start = session.started_at - timedelta(minutes=2)
+        window_end = session.started_at + timedelta(minutes=30)
+
+        filters = [
+            Call.start_time >= window_start,
+            Call.start_time <= window_end,
+            Call.user_id == session.user_id,
+        ]
+        if phone_norm:
+            filters.append(Call.contact_e164 == phone_norm)
+
+        call_q = await db.execute(
+            select(Call)
+            .where(and_(*filters))
+            .order_by(Call.start_time.desc())
+            .limit(1)
+        )
+        call = call_q.scalar_one_or_none()
+        if not call:
+            continue
+
+        session.matched_call_id = call.id
+
+        existing_qualif = await db.execute(
+            select(CallQualification).where(CallQualification.call_id == call.id)
+        )
+        if not existing_qualif.scalar_one_or_none() and session.mood:
+            qualif = CallQualification(
+                call_id=call.id,
+                user_id=session.user_id,
+                mood=session.mood,
+                outcome=session.outcome,
+                notes=session.notes,
+                next_step=session.next_step,
+                next_step_date=session.next_step_date,
+            )
+            db.add(qualif)
+
+        matched += 1
+
+    if matched:
+        await db.commit()
+    logger.info(f"Call sessions matched: {matched}/{len(unmatched)}")
+    return matched
 
 
 def _parse_ringover_datetime(raw) -> datetime | None:
