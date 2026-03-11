@@ -94,6 +94,7 @@ async def list_products(
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     has_sales: bool | None = None,
     stock_filter: str | None = Query(default=None, pattern="^(in_stock|low|out|no_data)$"),
+    depot_id: int | None = Query(default=None, description="Filtrer par dépôt (stock > 0 dans ce dépôt)"),
     limit: int = Query(default=50, le=500),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -118,6 +119,17 @@ async def list_products(
     )
 
     base = base.where(Product.is_service == False)
+
+    if depot_id is not None:
+        refs_in_depot = (
+            select(ProductStockDepot.article_ref)
+            .where(
+                ProductStockDepot.depot_id == depot_id,
+                ProductStockDepot.stock_quantity > 0,
+            )
+            .distinct()
+        )
+        base = base.where(Product.article_ref.in_(refs_in_depot))
 
     if search:
         pattern = f"%{search}%"
@@ -232,13 +244,29 @@ async def get_order_detail(
     )
     client_row = client_q.first()
 
+    ttc = float(first.doc_total_ttc) if first.doc_total_ttc else None
+    paid = float(first.doc_amount_paid) if first.doc_amount_paid else None
+    remaining = round(ttc - (paid or 0), 2) if ttc is not None else None
+    p_status = None
+    doc_type_raw = int(first.sage_doc_type) if first.sage_doc_type else None
+    if ttc is not None and doc_type_raw in (6, 7):
+        if remaining and remaining > 0.01:
+            p_status = "partial" if paid and paid > 0 else "unpaid"
+        else:
+            p_status = "paid"
+
     return {
         "sage_piece_id": sage_piece_id,
         "date": str(first.date),
+        "doc_type_raw": doc_type_raw,
         "client_sage_id": first.client_sage_id,
         "client_name": (client_row[1] if client_row else None) or first.client_name,
         "client_id": client_row[0] if client_row else first.client_id,
         "total_ht": sum(float(l.amount_ht or 0) for l in lines),
+        "doc_total_ttc": round(ttc, 2) if ttc else None,
+        "doc_amount_paid": round(paid, 2) if paid else None,
+        "remaining_due": remaining if remaining and remaining > 0.01 else None,
+        "payment_status": p_status,
         "lines": [
             {
                 "article_ref": l.article_ref,
@@ -347,6 +375,28 @@ async def get_families(
         .order_by(func.count(Product.id).desc())
     )
     return [{"family": r[0], "count": r[1]} for r in result.all()]
+
+
+@router.get("/depots")
+async def get_depots(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Retourne les dépôts distincts avec le nombre d'articles en stock."""
+    result = await db.execute(
+        select(
+            ProductStockDepot.depot_id,
+            ProductStockDepot.depot_name,
+            func.count(distinct(ProductStockDepot.article_ref)).label("nb_articles"),
+        )
+        .where(ProductStockDepot.stock_quantity > 0)
+        .group_by(ProductStockDepot.depot_id, ProductStockDepot.depot_name)
+        .order_by(func.count(distinct(ProductStockDepot.article_ref)).desc())
+    )
+    return [
+        {"depot_id": r[0], "depot_name": r[1] or f"Dépôt #{r[0]}", "nb_articles": r[2]}
+        for r in result.all()
+    ]
 
 
 @router.get("/orders")

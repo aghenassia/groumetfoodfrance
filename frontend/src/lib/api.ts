@@ -441,6 +441,10 @@ class ApiClient {
     return this.get<{ family: string; count: number }[]>("/api/products/families");
   }
 
+  getProductDepots() {
+    return this.get<{ depot_id: number; depot_name: string; nb_articles: number }[]>("/api/products/depots");
+  }
+
   // User management (admin)
   getUsers() {
     return this.get<UserDetail[]>("/api/admin/users");
@@ -1165,6 +1169,10 @@ export interface OrderListItem {
   doc_type: string;
   doc_type_raw: number;
   sales_rep?: string;
+  doc_total_ttc?: number | null;
+  doc_amount_paid?: number | null;
+  remaining_due?: number | null;
+  payment_status?: "paid" | "unpaid" | "partial" | null;
 }
 
 export interface OrderListResponse {
@@ -1183,10 +1191,15 @@ export interface OrderListResponse {
 export interface OrderDetailResponse {
   sage_piece_id: string;
   date: string;
+  doc_type_raw?: number;
   client_sage_id: string;
   client_name?: string;
   client_id?: string;
   total_ht: number;
+  doc_total_ttc?: number | null;
+  doc_amount_paid?: number | null;
+  remaining_due?: number | null;
+  payment_status?: "paid" | "unpaid" | "partial" | null;
   lines: {
     article_ref?: string;
     designation?: string;
@@ -1498,6 +1511,8 @@ export interface ChallengeEntry {
   description?: string | null;
   article_ref?: string | null;
   article_name?: string | null;
+  article_refs?: string[] | null;
+  article_family?: string | null;
   metric: string;
   target_value?: number | null;
   reward?: string | null;

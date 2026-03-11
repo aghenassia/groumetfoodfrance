@@ -32,6 +32,7 @@ async def list_orders(
     date_from: str | None = None,
     date_to: str | None = None,
     user_id: str | None = Query(default=None, description="Filtrer par commercial (user_id)"),
+    payment_status: str | None = Query(default=None, pattern="^(unpaid|paid|partial)$"),
     sort_by: str = Query(default="date", pattern="^(date|ca|client|type)$"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
@@ -74,6 +75,8 @@ async def list_orders(
             func.max(DOC_TYPE_LABEL).label("doc_type"),
             func.max(SalesLine.sage_doc_type).label("doc_type_raw"),
             func.max(SalesLine.sales_rep).label("sales_rep"),
+            func.max(SalesLine.doc_total_ttc).label("doc_total_ttc"),
+            func.max(SalesLine.doc_amount_paid).label("doc_amount_paid"),
         )
         .outerjoin(Client, Client.sage_id == SalesLine.client_sage_id)
         .group_by(SalesLine.sage_piece_id, SalesLine.date)
@@ -81,6 +84,31 @@ async def list_orders(
 
     if filters:
         base = base.where(*filters)
+
+    if payment_status == "unpaid":
+        base = base.having(
+            and_(
+                func.max(SalesLine.doc_total_ttc) != None,
+                (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) > 0.01,
+                func.max(SalesLine.sage_doc_type).in_([6, 7]),
+            )
+        )
+    elif payment_status == "paid":
+        base = base.having(
+            or_(
+                func.max(SalesLine.doc_total_ttc) == None,
+                (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) <= 0.01,
+            )
+        )
+    elif payment_status == "partial":
+        base = base.having(
+            and_(
+                func.max(SalesLine.doc_total_ttc) != None,
+                func.coalesce(func.max(SalesLine.doc_amount_paid), 0) > 0,
+                (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) > 0.01,
+                func.max(SalesLine.sage_doc_type).in_([6, 7]),
+            )
+        )
 
     if search:
         pattern = f"%{search}%"
@@ -131,8 +159,20 @@ async def list_orders(
     base = base.offset(offset).limit(limit)
     result = await db.execute(base)
 
-    orders = [
-        {
+    rows = result.all()
+    orders = []
+    for r in rows:
+        ttc = float(r.doc_total_ttc) if r.doc_total_ttc else None
+        paid = float(r.doc_amount_paid) if r.doc_amount_paid else None
+        remaining = round(ttc - (paid or 0), 2) if ttc is not None else None
+        p_status = None
+        if ttc is not None and r.doc_type_raw in (6, 7):
+            if remaining and remaining > 0.01:
+                p_status = "partial" if paid and paid > 0 else "unpaid"
+            else:
+                p_status = "paid"
+
+        orders.append({
             "piece_id": r.sage_piece_id,
             "date": str(r.date) if r.date else None,
             "client_name": r.client_name or "Inconnu",
@@ -146,9 +186,11 @@ async def list_orders(
             "doc_type": r.doc_type,
             "doc_type_raw": r.doc_type_raw,
             "sales_rep": r.sales_rep,
-        }
-        for r in result.all()
-    ]
+            "doc_total_ttc": round(ttc, 2) if ttc else None,
+            "doc_amount_paid": round(paid, 2) if paid else None,
+            "remaining_due": remaining if remaining and remaining > 0.01 else None,
+            "payment_status": p_status,
+        })
 
     return {
         "total": total,

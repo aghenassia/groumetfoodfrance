@@ -154,6 +154,8 @@ function ProductsPageInner() {
     []
   );
   const [stockFilter, setStockFilter] = useState<StockFilter>("");
+  const [depotFilter, setDepotFilter] = useState<string>("all");
+  const [depots, setDepots] = useState<{ depot_id: number; depot_name: string; nb_articles: number }[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
   const [detail, setDetail] = useState<ProductDetailResponse | null>(null);
@@ -165,10 +167,8 @@ function ProductsPageInner() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api
-      .getProductFamilies()
-      .then(setFamilies)
-      .catch(() => {});
+    api.getProductFamilies().then(setFamilies).catch(() => {});
+    api.getProductDepots().then(setDepots).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -192,6 +192,7 @@ function ProductsPageInner() {
     if (hasSales === "no") params.has_sales = "false";
     if (family !== "all") params.family = family;
     if (stockFilter) params.stock_filter = stockFilter;
+    if (depotFilter !== "all") params.depot_id = depotFilter;
 
     api
       .getProducts(params)
@@ -202,7 +203,7 @@ function ProductsPageInner() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, sortBy, sortDir, hasSales, family, stockFilter, page]);
+  }, [debouncedSearch, sortBy, sortDir, hasSales, family, stockFilter, depotFilter, page]);
 
   useEffect(() => {
     fetchProducts();
@@ -258,7 +259,7 @@ function ProductsPageInner() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const activeFilterCount =
-    (hasSales !== "all" ? 1 : 0) + (family !== "all" ? 1 : 0) + (stockFilter ? 1 : 0);
+    (hasSales !== "all" ? 1 : 0) + (family !== "all" ? 1 : 0) + (stockFilter ? 1 : 0) + (depotFilter !== "all" ? 1 : 0);
 
   const hasDetail = !!(detail || loadingDetail);
 
@@ -366,10 +367,36 @@ function ProductsPageInner() {
               </Select>
             </div>
 
-            {/* Stock filter */}
+            {/* Depot filter */}
             <div className="hidden sm:block w-px h-6 bg-border" />
             <div className="flex items-center gap-1.5">
               <Warehouse className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Entrepôt :</span>
+              <Select
+                value={depotFilter}
+                onValueChange={(v) => {
+                  setDepotFilter(v);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger className="h-7 w-[180px] text-xs">
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les entrepôts</SelectItem>
+                  {depots.map((d) => (
+                    <SelectItem key={d.depot_id} value={String(d.depot_id)}>
+                      {d.depot_name} ({d.nb_articles})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Stock filter */}
+            <div className="hidden sm:block w-px h-6 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Stock :</span>
               <div className="flex gap-1">
                 {STOCK_FILTER_OPTIONS.map((f) => (
@@ -401,6 +428,7 @@ function ProductsPageInner() {
                     setHasSales("all");
                     setFamily("all");
                     setStockFilter("");
+                    setDepotFilter("all");
                     setPage(0);
                   }}
                 >

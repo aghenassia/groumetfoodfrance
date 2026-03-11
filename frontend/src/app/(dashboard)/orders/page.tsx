@@ -50,6 +50,8 @@ import {
   Receipt,
   Package,
   CalendarDays,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -173,6 +175,27 @@ function MarginBadge({ value }: { value?: number | null }) {
   );
 }
 
+function PaymentBadge({ status, remaining }: { status?: string | null; remaining?: number | null }) {
+  if (!status) return <span className="text-muted-foreground text-xs">—</span>;
+  const cfg = {
+    unpaid: { label: "Impayé", className: "text-red-700 bg-red-50 border-red-200", icon: AlertCircle },
+    partial: { label: "Partiel", className: "text-amber-700 bg-amber-50 border-amber-200", icon: AlertCircle },
+    paid: { label: "Payé", className: "text-green-700 bg-green-50 border-green-200", icon: CheckCircle2 },
+  }[status] || { label: status, className: "text-muted-foreground bg-muted border-border", icon: null };
+  const Icon = cfg.icon;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <Badge variant="outline" className={`text-[10px] gap-0.5 px-1.5 py-0 ${cfg.className}`}>
+        {Icon && <Icon className="w-2.5 h-2.5" />}
+        {cfg.label}
+      </Badge>
+      {remaining != null && remaining > 0 && (
+        <span className="text-[10px] text-red-600 font-medium">{formatCurrency(remaining)}</span>
+      )}
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   return (
     <Suspense>
@@ -197,6 +220,7 @@ function OrdersPageInner() {
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date } | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [salesFilter, setSalesFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [allUsers, setAllUsers] = useState<{ id: string; name: string }[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -255,6 +279,9 @@ function OrdersPageInner() {
     if (salesFilter && salesFilter !== "all") {
       params.user_id = salesFilter;
     }
+    if (paymentFilter && paymentFilter !== "all") {
+      params.payment_status = paymentFilter;
+    }
 
     api
       .getOrders(params)
@@ -264,7 +291,7 @@ function OrdersPageInner() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, sortBy, sortDir, docFilter, page, dateRange, salesFilter]);
+  }, [debouncedSearch, sortBy, sortDir, docFilter, page, dateRange, salesFilter, paymentFilter]);
 
   useEffect(() => {
     fetchOrders();
@@ -332,7 +359,7 @@ function OrdersPageInner() {
   const orders = data?.orders ?? [];
   const summary = data?.summary;
   const totalPages = Math.ceil(total / PAGE_SIZE);
-  const activeFilterCount = docFilter.length + (salesFilter !== "all" ? 1 : 0);
+  const activeFilterCount = docFilter.length + (salesFilter !== "all" ? 1 : 0) + (paymentFilter !== "all" ? 1 : 0);
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "manager";
   const hasDetail = !!(detail || loadingDetail);
 
@@ -492,6 +519,29 @@ function OrdersPageInner() {
                 </Select>
               </>
             )}
+            <div className="w-px h-6 bg-border" />
+            <span className="text-xs text-muted-foreground">Paiement :</span>
+            {([
+              { key: "all", label: "Tous", icon: null },
+              { key: "unpaid", label: "Impayé", icon: AlertCircle },
+              { key: "partial", label: "Partiel", icon: AlertCircle },
+              { key: "paid", label: "Payé", icon: CheckCircle2 },
+            ] as const).map((p) => (
+              <Button
+                key={p.key}
+                variant={paymentFilter === p.key ? "default" : "outline"}
+                size="sm"
+                className={`h-7 text-xs px-2.5 gap-1 ${
+                  paymentFilter === p.key && p.key === "unpaid" ? "bg-red-600 hover:bg-red-700" :
+                  paymentFilter === p.key && p.key === "partial" ? "bg-amber-600 hover:bg-amber-700" :
+                  paymentFilter === p.key && p.key === "paid" ? "bg-green-600 hover:bg-green-700" : ""
+                }`}
+                onClick={() => { setPaymentFilter(p.key); setPage(0); }}
+              >
+                {p.icon && <p.icon className="w-3 h-3" />}
+                {p.label}
+              </Button>
+            ))}
             {activeFilterCount > 0 && (
               <>
                 <div className="w-px h-6 bg-border" />
@@ -499,7 +549,7 @@ function OrdersPageInner() {
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs text-muted-foreground"
-                  onClick={() => { setDocFilter([]); setSalesFilter("all"); setPage(0); }}
+                  onClick={() => { setDocFilter([]); setSalesFilter("all"); setPaymentFilter("all"); setPage(0); }}
                 >
                   <X className="w-3 h-3 mr-1" />
                   Réinitialiser
@@ -537,6 +587,7 @@ function OrdersPageInner() {
                         Montant HT <SortIcon col="ca" />
                       </TableHead>
                       <TableHead className="text-right hidden lg:table-cell">Marge</TableHead>
+                      <TableHead className="text-center hidden lg:table-cell">Statut</TableHead>
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
@@ -599,6 +650,9 @@ function OrdersPageInner() {
                           <TableCell className="text-right text-sm tabular-nums hidden lg:table-cell">
                             <MarginBadge value={o.avg_margin} />
                           </TableCell>
+                          <TableCell className="text-center hidden lg:table-cell">
+                            <PaymentBadge status={o.payment_status} remaining={o.remaining_due} />
+                          </TableCell>
                           <TableCell className="pr-3">
                             <ChevronRight className="w-4 h-4 opacity-30 group-hover:opacity-100 transition-opacity" />
                           </TableCell>
@@ -660,11 +714,20 @@ function OrdersPageInner() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
                       <span>{formatDateShort(o.date)}</span>
                       <span>{o.nb_articles} art.</span>
                       <span>Qté {formatQty(o.total_qty)}</span>
                       <MarginBadge value={o.avg_margin} />
+                      {o.payment_status && o.payment_status !== "paid" && (
+                        <Badge variant="outline" className={`text-[10px] gap-0.5 px-1.5 py-0 ${
+                          o.payment_status === "unpaid" ? "text-red-700 bg-red-50 border-red-200" : "text-amber-700 bg-amber-50 border-amber-200"
+                        }`}>
+                          <AlertCircle className="w-2.5 h-2.5" />
+                          {o.payment_status === "unpaid" ? "Impayé" : "Partiel"}
+                          {o.remaining_due != null && ` · ${formatCurrency(o.remaining_due)}`}
+                        </Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -829,6 +892,47 @@ function OrderDetailPanel({
           {avgMargin != null && (
             <div className="flex items-center justify-center mt-2 text-xs text-muted-foreground">
               Marge moy. : <MarginBadge value={avgMargin} />
+            </div>
+          )}
+          {detail.payment_status && (
+            <div className={`mt-3 p-2.5 rounded-lg border ${
+              detail.payment_status === "unpaid" ? "bg-red-50 border-red-200" :
+              detail.payment_status === "partial" ? "bg-amber-50 border-amber-200" :
+              "bg-green-50 border-green-200"
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  {detail.payment_status === "paid" ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                  )}
+                  <span className={`text-sm font-medium ${
+                    detail.payment_status === "unpaid" ? "text-red-700" :
+                    detail.payment_status === "partial" ? "text-amber-700" :
+                    "text-green-700"
+                  }`}>
+                    {detail.payment_status === "paid" ? "Payé" : detail.payment_status === "partial" ? "Partiellement payé" : "Impayé"}
+                  </span>
+                </div>
+                {detail.payment_status !== "paid" && detail.remaining_due != null && (
+                  <span className="text-sm font-bold text-red-700">
+                    {formatCurrencyPrecise(detail.remaining_due)}
+                  </span>
+                )}
+              </div>
+              {detail.doc_total_ttc != null && (
+                <div className="mt-1.5 grid grid-cols-2 gap-x-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total TTC</span>
+                    <span className="font-medium">{formatCurrencyPrecise(detail.doc_total_ttc)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Réglé</span>
+                    <span className="font-medium">{formatCurrencyPrecise(detail.doc_amount_paid ?? 0)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
