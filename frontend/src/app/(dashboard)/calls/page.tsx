@@ -531,7 +531,7 @@ export default function CallsPage() {
                             {ct.phone && <span className="font-mono">{ct.phone}</span>}
                           </div>
                         </div>
-                        {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
+                        {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={ct.company_id || undefined} clientName={ct.company_name || ct.name} contactName={ct.name} />}
                         {ct.company_id && (
                           <Link href={`/clients/${ct.company_id}`} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="icon" className="h-6 w-6"><ChevronRight className="w-3 h-3" /></Button>
@@ -560,7 +560,7 @@ export default function CallsPage() {
                             <span className="font-mono">{c.sage_id}</span>
                           </div>
                         </div>
-                        {c.phone_e164 && <ClickToCall phoneNumber={c.phone_e164} />}
+                        {c.phone_e164 && <ClickToCall phoneNumber={c.phone_e164} clientId={c.id} clientName={c.name} />}
                         <Link href={`/clients/${c.id}`}><Button variant="ghost" size="icon" className="h-6 w-6"><ChevronRight className="w-3 h-3" /></Button></Link>
                       </div>
                     ))}
@@ -696,6 +696,8 @@ export default function CallsPage() {
                         variant="cta"
                         size="sm"
                         contactName={contactName(selectedCall) || undefined}
+                        clientId={selectedCall.client_id || undefined}
+                        clientName={selectedCall.client_name || contactName(selectedCall) || undefined}
                         label="Rappeler"
                       />
                     )}
@@ -1104,14 +1106,14 @@ export default function CallsPage() {
                                   {ct.email && <span className="truncate">{ct.email}</span>}
                                 </div>
                               </div>
-                              {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
+                              {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={selectedClient.id} clientName={selectedClient.name} contactName={ct.name} />}
                             </div>
                           ))}
                         </div>
                       ) : selectedClient.phone ? (
                         <div className="flex items-center gap-2 text-sm">
                           <Phone className="w-3.5 h-3.5 text-muted-foreground" />{selectedClient.phone}
-                          {selectedClient.phone_e164 && <ClickToCall phoneNumber={selectedClient.phone_e164} />}
+                          {selectedClient.phone_e164 && <ClickToCall phoneNumber={selectedClient.phone_e164} clientId={selectedClient.id} clientName={selectedClient.name} />}
                         </div>
                       ) : null}
                     </CardContent>
