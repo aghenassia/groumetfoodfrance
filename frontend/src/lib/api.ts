@@ -490,6 +490,13 @@ class ApiClient {
     return this.get<CallSessionResponse[]>(`/api/call-sessions/client/${clientId}`);
   }
 
+  getClientNotes(clientId: string) {
+    return this.get<ClientNoteResponse[]>(`/api/clients/${clientId}/notes`);
+  }
+  createClientNote(clientId: string, content: string) {
+    return this.post<ClientNoteResponse>(`/api/clients/${clientId}/notes`, { content });
+  }
+
   // User management (admin)
   getUsers() {
     return this.get<UserDetail[]>("/api/admin/users");
@@ -856,6 +863,7 @@ export interface Call {
   client_last_order?: string | null;
   qualification?: Qualification;
   ai_analysis?: AiAnalysisBrief;
+  has_session_qualification?: boolean;
 }
 
 export interface Qualification {
@@ -1629,4 +1637,13 @@ export interface CallSessionResponse {
   matched_call_id?: string | null;
   started_at: string;
   ended_at?: string | null;
+}
+
+export interface ClientNoteResponse {
+  id: string;
+  client_id: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  content: string;
+  created_at: string;
 }

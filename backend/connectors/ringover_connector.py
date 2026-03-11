@@ -2,9 +2,12 @@
 Connecteur Ringover API v2.
 Migré depuis le prototype Flask (app.py).
 """
+import logging
 from datetime import datetime, timezone, timedelta
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert

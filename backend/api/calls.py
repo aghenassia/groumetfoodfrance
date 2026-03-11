@@ -146,6 +146,18 @@ async def list_calls(
     result = await db.execute(stmt)
     rows = result.all()
 
+    call_ids = [row[0].id for row in rows]
+    session_qualified_ids: set[str] = set()
+    if call_ids:
+        from models.call_session import CallSession
+        sq = await db.execute(
+            select(CallSession.matched_call_id).where(
+                CallSession.matched_call_id.in_(call_ids),
+                CallSession.mood != None,
+            )
+        )
+        session_qualified_ids = {r[0] for r in sq.all()}
+
     calls = []
     for row in rows:
         call_obj = row[0]
@@ -162,6 +174,7 @@ async def list_calls(
         resp.contact_email = row[9]
         resp.contact_phone = row[10]
         resp.company_id = row[11] or resp.client_id
+        resp.has_session_qualification = call_obj.id in session_qualified_ids
         calls.append(resp)
 
     return calls
@@ -176,7 +189,16 @@ async def unqualified_calls(
 ):
     from sqlalchemy import or_
 
+    from models.call_session import CallSession
+
     subq = select(CallQualification.call_id)
+    session_qualified = (
+        select(CallSession.matched_call_id)
+        .where(
+            CallSession.matched_call_id != None,
+            CallSession.mood != None,
+        )
+    )
     user_filters = []
     if user.role == "sales":
         user_filters.append(or_(Call.user_id == user.id, Call.user_name == user.name))
@@ -210,6 +232,7 @@ async def unqualified_calls(
         .where(
             Call.is_answered == True,
             ~Call.id.in_(subq),
+            ~Call.id.in_(session_qualified),
             *user_filters,
         )
         .order_by(Call.start_time.desc())

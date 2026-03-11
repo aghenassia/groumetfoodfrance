@@ -1282,3 +1282,60 @@ async def enrich_client(
         raise HTTPException(status_code=502, detail=f"Erreur IA : {e}")
 
     return EnrichSuggestion(**suggestions)
+
+
+# ── Notes libres ──────────────────────────────────────────────────
+
+class NoteCreate(BaseModel):
+    content: str
+
+class NoteResponse(BaseModel):
+    id: str
+    client_id: str
+    user_id: str | None = None
+    user_name: str | None = None
+    content: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+@router.get("/{client_id}/notes", response_model=list[NoteResponse])
+async def list_notes(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from models.client_note import ClientNote
+
+    result = await db.execute(
+        select(ClientNote)
+        .where(ClientNote.client_id == client_id)
+        .order_by(ClientNote.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.post("/{client_id}/notes", response_model=NoteResponse)
+async def create_note(
+    client_id: str,
+    body: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    import uuid as _uuid
+    from models.client_note import ClientNote
+
+    if not body.content.strip():
+        raise HTTPException(400, "Le contenu ne peut pas être vide")
+
+    note = ClientNote(
+        id=str(_uuid.uuid4()),
+        client_id=client_id,
+        user_id=user.id,
+        user_name=user.name,
+        content=body.content.strip(),
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return note

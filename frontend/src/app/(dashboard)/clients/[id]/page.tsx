@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType, ClientIntelResponse, CallSessionResponse } from "@/lib/api";
+import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType, ClientIntelResponse, CallSessionResponse, ClientNoteResponse } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -153,7 +153,7 @@ export default function ClientDetailPage() {
   const [newPhone, setNewPhone] = useState("");
   const [newPhoneLabel, setNewPhoneLabel] = useState("mobile");
   const [addingPhone, setAddingPhone] = useState(false);
-  const [activeTab, setActiveTab] = useState<"sales" | "orders" | "calls" | "feedback" | "upsell" | "audit" | "interactions">("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "orders" | "calls" | "feedback" | "upsell" | "audit">("sales");
   const [intel, setIntel] = useState<ClientIntelResponse | null>(null);
   const [sessions, setSessions] = useState<CallSessionResponse[]>([]);
   const [expandedCall, setExpandedCall] = useState<string | null>(null);
@@ -196,6 +196,9 @@ export default function ClientDetailPage() {
   const [enrichSelectedFields, setEnrichSelectedFields] = useState<Record<string, boolean>>({});
   const [showDeleteClient, setShowDeleteClient] = useState(false);
   const [deletingClient, setDeletingClient] = useState(false);
+  const [notes, setNotes] = useState<ClientNoteResponse[]>([]);
+  const [newNoteContent, setNewNoteContent] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   const fetchClient = () => {
     api
@@ -213,9 +216,27 @@ export default function ClientDetailPage() {
     api.getClientSessions(id).then(setSessions).catch(() => {});
   };
 
+  const fetchNotes = () => {
+    api.getClientNotes(id).then(setNotes).catch(() => {});
+  };
+
+  const handleAddNote = async () => {
+    if (!newNoteContent.trim()) return;
+    setSavingNote(true);
+    try {
+      await api.createClientNote(id, newNoteContent.trim());
+      setNewNoteContent("");
+      fetchNotes();
+      toast.success("Note ajoutée");
+    } catch { toast.error("Erreur"); }
+    setSavingNote(false);
+  };
+
   useEffect(() => {
     fetchClient();
     fetchIntel();
+    fetchSessions();
+    fetchNotes();
   }, [id]);
 
   useEffect(() => {
@@ -1169,7 +1190,7 @@ export default function ClientDetailPage() {
             onClick={() => setActiveTab("feedback")}
           >
             <MessageSquare className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
-            Retours ({client.recent_calls.filter(c => c.qualification).length})
+            Retours ({client.recent_calls.filter(c => c.qualification).length + sessions.filter(s => s.mood || s.notes).length + notes.length})
           </Button>
           <Button
             variant={activeTab === "upsell" ? "default" : "outline"}
@@ -1182,18 +1203,6 @@ export default function ClientDetailPage() {
           >
             <TrendingUp className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
             Upsell
-          </Button>
-          <Button
-            variant={activeTab === "interactions" ? "default" : "outline"}
-            size="sm"
-            className="shrink-0 text-xs sm:text-sm"
-            onClick={() => {
-              setActiveTab("interactions");
-              fetchSessions();
-            }}
-          >
-            <MessageSquare className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
-            Interactions
           </Button>
           <Button
             variant={activeTab === "audit" ? "default" : "outline"}
@@ -1700,16 +1709,44 @@ export default function ClientDetailPage() {
         )}
       </div>
 
-      {/* Feedback / Retours commerciaux tab */}
+      {/* Feedback / Retours commerciaux tab — unified timeline */}
       {activeTab === "feedback" && (
         <Card>
-          <CardContent className="py-4">
-            {(() => {
-              const feedbacks = client.recent_calls
-                .filter((c) => c.qualification)
-                .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+          <CardContent className="py-4 space-y-4">
+            {/* Quick note form */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Ajouter une note sur ce client..."
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAddNote()}
+                className="flex-1 text-sm"
+              />
+              <Button size="sm" disabled={!newNoteContent.trim() || savingNote} onClick={handleAddNote}>
+                {savingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              </Button>
+            </div>
 
-              if (feedbacks.length === 0) {
+            {(() => {
+              type TimelineItem = { type: "call"; date: Date; data: typeof client.recent_calls[0] }
+                | { type: "session"; date: Date; data: CallSessionResponse }
+                | { type: "note"; date: Date; data: ClientNoteResponse };
+
+              const items: TimelineItem[] = [];
+
+              client.recent_calls
+                .filter((c) => c.qualification)
+                .forEach((c) => items.push({ type: "call", date: new Date(c.start_time), data: c }));
+
+              sessions
+                .filter((s) => s.mood || s.notes)
+                .forEach((s) => items.push({ type: "session", date: new Date(s.started_at), data: s }));
+
+              notes.forEach((n) => items.push({ type: "note", date: new Date(n.created_at), data: n }));
+
+              items.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+              if (items.length === 0) {
                 return (
                   <p className="text-sm text-muted-foreground py-8 text-center">
                     Aucun retour commercial enregistré
@@ -1720,93 +1757,138 @@ export default function ClientDetailPage() {
               return (
                 <div className="relative pl-6 space-y-0">
                   <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border" />
-                  {feedbacks.map((call) => {
-                    const q = call.qualification!;
-                    const isOut = call.direction === "out" || call.direction === "outbound" || call.direction === "OUT";
-                    const isAutoQualified = q.outcome === "Injoignable" && !call.is_answered && isOut;
+                  {items.map((item, idx) => {
+                    if (item.type === "call") {
+                      const call = item.data as typeof client.recent_calls[0];
+                      const q = call.qualification!;
+                      const isOut = call.direction === "out" || call.direction === "outbound" || call.direction === "OUT";
+                      const isAutoQualified = q.outcome === "Injoignable" && !call.is_answered && isOut;
 
-                    return (
-                      <div key={call.id} className="relative pb-5">
-                        <div className={`absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white ${
-                          isAutoQualified ? "border-amber-300" :
-                          q.mood === "positive" || q.mood === "hot" ? "border-green-400" :
-                          q.mood === "negative" || q.mood === "cold" ? "border-red-400" :
-                          "border-gray-300"
-                        }`}>
-                          {isAutoQualified ? (
-                            <Phone className="w-2.5 h-2.5 text-amber-500" />
-                          ) : (
-                            <MessageSquare className="w-2.5 h-2.5 text-muted-foreground" />
-                          )}
-                        </div>
-
-                        <div className="bg-accent/40 rounded-lg p-3 space-y-2">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-medium">
-                                {formatDateTime(call.start_time)}
-                              </span>
-                              {call.user_name && (
-                                <span className="text-xs text-muted-foreground">· {call.user_name}</span>
-                              )}
-                              {isAutoQualified && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300 bg-amber-50">
-                                  Auto
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              {q.mood && (
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
-                                  q.mood === "positive" || q.mood === "hot" ? "border-green-300 text-green-700 bg-green-50" :
-                                  q.mood === "negative" || q.mood === "cold" ? "border-red-300 text-red-700 bg-red-50" :
-                                  q.mood === "neutral" ? "border-gray-200 bg-gray-50" :
-                                  "border-gray-200"
-                                }`}>
-                                  {q.mood === "positive" || q.mood === "hot" ? "Positif" :
-                                   q.mood === "negative" || q.mood === "cold" ? "Négatif" : "Neutre"}
-                                </Badge>
-                              )}
-                              {q.outcome && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                  {q.outcome}
-                                </Badge>
-                              )}
-                            </div>
+                      return (
+                        <div key={`call-${call.id}`} className="relative pb-5">
+                          <div className={`absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white ${
+                            isAutoQualified ? "border-amber-300" :
+                            q.mood === "positive" || q.mood === "hot" ? "border-green-400" :
+                            q.mood === "negative" || q.mood === "cold" ? "border-red-400" :
+                            "border-gray-300"
+                          }`}>
+                            {isAutoQualified ? (
+                              <Phone className="w-2.5 h-2.5 text-amber-500" />
+                            ) : (
+                              <Phone className="w-2.5 h-2.5 text-muted-foreground" />
+                            )}
                           </div>
-
-                          {q.notes && (
-                            <p className="text-sm bg-white rounded p-2.5 border text-foreground">
-                              {q.notes}
-                            </p>
-                          )}
-
-                          {q.next_step && (
-                            <div className="flex items-center gap-1.5 text-xs">
-                              <Calendar className="w-3 h-3 text-sora shrink-0" />
-                              <span className="font-medium">{q.next_step}</span>
-                              {q.next_step_date && (
-                                <span className="text-muted-foreground">— {formatDate(q.next_step_date)}</span>
-                              )}
+                          <div className="bg-accent/40 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 border-blue-200 text-blue-700">Appel</Badge>
+                                <span className="text-xs font-medium">{formatDateTime(call.start_time)}</span>
+                                {call.user_name && <span className="text-xs text-muted-foreground">· {call.user_name}</span>}
+                                {isAutoQualified && <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300 bg-amber-50">Auto</Badge>}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {q.mood && (
+                                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                                    q.mood === "positive" || q.mood === "hot" ? "border-green-300 text-green-700 bg-green-50" :
+                                    q.mood === "negative" || q.mood === "cold" ? "border-red-300 text-red-700 bg-red-50" :
+                                    "border-gray-200 bg-gray-50"
+                                  }`}>
+                                    {q.mood === "positive" || q.mood === "hot" ? "Positif" : q.mood === "negative" || q.mood === "cold" ? "Négatif" : "Neutre"}
+                                  </Badge>
+                                )}
+                                {q.outcome && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{q.outcome}</Badge>}
+                              </div>
                             </div>
-                          )}
+                            {q.notes && <p className="text-sm bg-white rounded p-2.5 border text-foreground">{q.notes}</p>}
+                            {q.next_step && (
+                              <div className="flex items-center gap-1.5 text-xs">
+                                <Calendar className="w-3 h-3 text-sora shrink-0" />
+                                <span className="font-medium">{q.next_step}</span>
+                                {q.next_step_date && <span className="text-muted-foreground">— {formatDate(q.next_step_date)}</span>}
+                              </div>
+                            )}
+                            {q.tags && q.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {q.tags.map((tag, i) => <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0">{tag}</Badge>)}
+                              </div>
+                            )}
+                            {call.ai_analysis?.summary && (
+                              <div className="text-xs text-muted-foreground bg-white/50 rounded p-2 border border-dashed">
+                                <span className="font-medium text-foreground">IA : </span>
+                                {call.ai_analysis.summary}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
 
-                          {q.tags && q.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {q.tags.map((tag, i) => (
-                                <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0">
-                                  {tag}
-                                </Badge>
-                              ))}
+                    if (item.type === "session") {
+                      const s = item.data as CallSessionResponse;
+                      return (
+                        <div key={`session-${s.id}`} className="relative pb-5">
+                          <div className="absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white border-green-400">
+                            <Phone className="w-2.5 h-2.5 text-green-600" />
+                          </div>
+                          <div className="bg-green-50/60 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 border-green-200 text-green-700">Companion</Badge>
+                                <span className="text-xs font-medium">
+                                  {new Date(s.started_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                                {s.phone_number && <span className="text-xs text-muted-foreground font-mono">{s.phone_number}</span>}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {s.mood && (
+                                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                                    s.mood === "positive" ? "border-green-300 text-green-700 bg-green-50" :
+                                    s.mood === "negative" ? "border-red-300 text-red-700 bg-red-50" :
+                                    "border-gray-200 bg-gray-50"
+                                  }`}>
+                                    {s.mood === "positive" ? "Positif" : s.mood === "negative" ? "Négatif" : "Neutre"}
+                                  </Badge>
+                                )}
+                                {s.outcome && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                    {s.outcome === "interested" ? "Intéressé" :
+                                     s.outcome === "callback" ? "Rappel" :
+                                     s.outcome === "order" ? "Commande" :
+                                     s.outcome === "not_interested" ? "Pas intéressé" :
+                                     s.outcome === "nrp" ? "NRP" :
+                                     s.outcome === "quote_sent" ? "Devis envoyé" : s.outcome}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                          )}
+                            {s.notes && <p className="text-sm bg-white rounded p-2.5 border text-foreground">{s.notes}</p>}
+                            {s.next_step && (
+                              <div className="flex items-center gap-1.5 text-xs">
+                                <CalendarDays className="w-3 h-3 text-sora shrink-0" />
+                                <span className="font-medium">{s.next_step}</span>
+                                {s.next_step_date && <span className="text-muted-foreground">— {new Date(s.next_step_date).toLocaleDateString("fr-FR")}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
 
-                          {call.ai_analysis?.summary && (
-                            <div className="text-xs text-muted-foreground bg-white/50 rounded p-2 border border-dashed">
-                              <span className="font-medium text-foreground">IA : </span>
-                              {call.ai_analysis.summary}
-                            </div>
-                          )}
+                    const n = item.data as ClientNoteResponse;
+                    return (
+                      <div key={`note-${n.id}`} className="relative pb-5">
+                        <div className="absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white border-purple-300">
+                          <FileText className="w-2.5 h-2.5 text-purple-500" />
+                        </div>
+                        <div className="bg-purple-50/40 rounded-lg p-3 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 border-purple-200 text-purple-700">Note</Badge>
+                            <span className="text-xs font-medium">
+                              {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            {n.user_name && <span className="text-xs text-muted-foreground">· {n.user_name}</span>}
+                          </div>
+                          <p className="text-sm bg-white rounded p-2.5 border text-foreground">{n.content}</p>
                         </div>
                       </div>
                     );
@@ -1901,72 +1983,7 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
-      {/* Interactions tab */}
-      {activeTab === "interactions" && (
-        <Card>
-          <CardContent className="py-4">
-            {sessions.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                Aucune interaction enregistrée via le Call Companion
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {sessions.map((s) => (
-                  <div key={s.id} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-3.5 h-3.5 text-green-600" />
-                        <span className="text-sm font-medium">
-                          {new Date(s.started_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        {s.phone_number && (
-                          <span className="text-xs text-muted-foreground font-mono">{s.phone_number}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {s.mood && (
-                          <Badge variant="outline" className={`text-xs ${
-                            s.mood === "positive" ? "text-green-700 bg-green-50 border-green-200" :
-                            s.mood === "negative" ? "text-red-700 bg-red-50 border-red-200" :
-                            "text-amber-700 bg-amber-50 border-amber-200"
-                          }`}>
-                            {s.mood === "positive" ? "Positif" : s.mood === "negative" ? "Négatif" : "Neutre"}
-                          </Badge>
-                        )}
-                        {s.outcome && (
-                          <Badge variant="outline" className="text-xs">
-                            {s.outcome === "interested" ? "Intéressé" :
-                             s.outcome === "callback" ? "Rappel" :
-                             s.outcome === "order" ? "Commande" :
-                             s.outcome === "not_interested" ? "Pas intéressé" :
-                             s.outcome === "nrp" ? "NRP" :
-                             s.outcome === "quote_sent" ? "Devis envoyé" :
-                             s.outcome}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    {s.notes && (
-                      <p className="text-xs text-muted-foreground bg-muted/30 rounded p-2">{s.notes}</p>
-                    )}
-                    {s.next_step && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <CalendarDays className="w-3 h-3" />
-                        <span>{s.next_step}</span>
-                        {s.next_step_date && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {new Date(s.next_step_date).toLocaleDateString("fr-FR")}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Interactions tab removed — merged into Retours */}
 
       {/* Audit tab */}
       {activeTab === "audit" && (

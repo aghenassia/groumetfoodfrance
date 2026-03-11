@@ -41,6 +41,7 @@ class CallResponse(BaseModel):
     client_last_order: date | None = None
     qualification: "QualificationResponse | None" = None
     ai_analysis: AiAnalysisBrief | None = None
+    has_session_qualification: bool = False
 
     model_config = {"from_attributes": True}
 

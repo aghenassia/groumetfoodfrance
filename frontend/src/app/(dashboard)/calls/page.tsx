@@ -647,7 +647,7 @@ export default function CallsPage() {
                           {call.ai_analysis.summary.slice(0, 70)}{call.ai_analysis.summary.length > 70 ? "…" : ""}
                         </span>
                       )}
-                      {!hasOutcome && !hasAi && call.is_answered && !call.qualification && (
+                      {!hasOutcome && !hasAi && call.is_answered && !call.qualification && !call.has_session_qualification && (
                         <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
                           <MessageSquare className="w-3.5 h-3.5" />À qualifier
                         </span>
@@ -887,7 +887,7 @@ export default function CallsPage() {
                   )}
 
                   {/* Qualification — CTA proéminent si non qualifié */}
-                  {selectedCall.is_answered && !selectedCall.qualification ? (
+                  {selectedCall.is_answered && !selectedCall.qualification && !selectedCall.has_session_qualification ? (
                     <div
                       className="rounded-lg border-2 border-amber-400/60 bg-gradient-to-r from-amber-50 to-amber-100/60 p-4 cursor-pointer hover:shadow-md transition-all"
                       onClick={() => openQualify(selectedCall)}

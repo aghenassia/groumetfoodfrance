@@ -484,8 +484,8 @@ export default function PlaylistPage() {
                         phoneNumber={selectedItem.phone_e164}
                         variant="cta"
                         contactName={selectedItem.primary_contact?.name || selectedItem.contact_name || undefined}
-                        clientId={selectedItem.client_id}
-                        clientName={selectedItem.client_name}
+                        clientId={selectedItem.id}
+                        clientName={selectedItem.name}
                         className="flex-1"
                       />
                     ) : (
