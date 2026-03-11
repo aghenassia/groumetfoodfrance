@@ -33,6 +33,7 @@ import {
   Search,
   Package,
   X,
+  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,11 +56,15 @@ export default function AdminChallengesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  type FilterMode = "none" | "products" | "family";
+  const [filterMode, setFilterMode] = useState<FilterMode>("none");
   const [form, setForm] = useState({
     name: "",
     description: "",
     article_ref: "",
     article_name: "",
+    article_refs: [] as { ref: string; name: string }[],
+    article_family: "",
     metric: "quantity_kg",
     target_value: "",
     reward: "",
@@ -75,6 +80,11 @@ export default function AdminChallengesPage() {
   const [productResults, setProductResults] = useState<ProductListItem[]>([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [showProductResults, setShowProductResults] = useState(false);
+  const [families, setFamilies] = useState<{ family: string; count: number }[]>([]);
+
+  useEffect(() => {
+    api.getProductFamilies().then(setFamilies).catch(() => {});
+  }, []);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
@@ -88,7 +98,8 @@ export default function AdminChallengesPage() {
       setSearchingProducts(true);
       api.getProducts({ search: productSearch.trim(), limit: "10" })
         .then((res) => {
-          setProductResults(res.products);
+          const selected = new Set(form.article_refs.map((r) => r.ref));
+          setProductResults(res.products.filter((p) => !selected.has(p.article_ref)));
           setShowProductResults(true);
         })
         .catch(() => {})
@@ -97,14 +108,17 @@ export default function AdminChallengesPage() {
     return () => clearTimeout(searchTimer.current);
   }, [productSearch]);
 
-  const selectProduct = (p: ProductListItem) => {
-    setForm({ ...form, article_ref: p.article_ref, article_name: p.designation || p.article_ref });
+  const addProduct = (p: ProductListItem) => {
+    setForm({
+      ...form,
+      article_refs: [...form.article_refs, { ref: p.article_ref, name: p.designation || p.article_ref }],
+    });
     setProductSearch("");
     setShowProductResults(false);
   };
 
-  const clearProduct = () => {
-    setForm({ ...form, article_ref: "", article_name: "" });
+  const removeProduct = (ref: string) => {
+    setForm({ ...form, article_refs: form.article_refs.filter((r) => r.ref !== ref) });
   };
 
   const fetchChallenges = () => {
@@ -121,11 +135,14 @@ export default function AdminChallengesPage() {
 
   const openNew = () => {
     setEditingId(null);
+    setFilterMode("none");
     setForm({
       name: "",
       description: "",
       article_ref: "",
       article_name: "",
+      article_refs: [],
+      article_family: "",
       metric: "quantity_kg",
       target_value: "",
       reward: "",
@@ -138,11 +155,16 @@ export default function AdminChallengesPage() {
 
   const openEdit = (ch: ChallengeEntry) => {
     setEditingId(ch.id);
+    const refs = (ch.article_refs || []).map((r) => ({ ref: r, name: r }));
+    const mode: FilterMode = ch.article_family ? "family" : refs.length > 0 ? "products" : "none";
+    setFilterMode(mode);
     setForm({
       name: ch.name,
       description: ch.description || "",
       article_ref: ch.article_ref || "",
       article_name: ch.article_name || "",
+      article_refs: refs,
+      article_family: ch.article_family || "",
       metric: ch.metric,
       target_value: ch.target_value?.toString() || "",
       reward: ch.reward || "",
@@ -160,6 +182,9 @@ export default function AdminChallengesPage() {
     }
     setSaving(true);
     try {
+      const refs = filterMode === "products" ? form.article_refs.map((r) => r.ref) : undefined;
+      const family = filterMode === "family" ? form.article_family : undefined;
+
       if (editingId) {
         await api.updateChallenge(editingId, {
           name: form.name,
@@ -168,14 +193,16 @@ export default function AdminChallengesPage() {
           reward: form.reward || undefined,
           status: form.status,
           end_date: form.end_date,
+          article_refs: refs || [],
+          article_family: family || "",
         });
         toast.success("Challenge mis à jour");
       } else {
         await api.createChallenge({
           name: form.name,
           description: form.description || undefined,
-          article_ref: form.article_ref || undefined,
-          article_name: form.article_name || undefined,
+          article_refs: refs,
+          article_family: family,
           metric: form.metric,
           target_value: form.target_value ? parseFloat(form.target_value) : undefined,
           reward: form.reward || undefined,
@@ -270,7 +297,19 @@ export default function AdminChallengesPage() {
                       <BarChart3 className="w-3 h-3" />
                       {METRIC_LABELS[ch.metric] || ch.metric}
                     </span>
-                    {ch.article_name && (
+                    {ch.article_family && (
+                      <span className="flex items-center gap-1">
+                        <Tag className="w-3 h-3" />
+                        Famille : {ch.article_family}
+                      </span>
+                    )}
+                    {!ch.article_family && ch.article_refs && ch.article_refs.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        {ch.article_refs.length} produit{ch.article_refs.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {!ch.article_family && !ch.article_refs?.length && ch.article_name && (
                       <span className="flex items-center gap-1">
                         <Target className="w-3 h-3" />
                         {ch.article_name}
@@ -330,62 +369,103 @@ export default function AdminChallengesPage() {
               <Input value={form.reward} onChange={(e) => setForm({ ...form, reward: e.target.value })} placeholder="Ex: iPhone 16, Bon d'achat 200€, Week-end spa…" />
             </div>
             <div className="space-y-2">
-              <Label>Produit (optionnel — filtre le challenge sur un article)</Label>
-              {form.article_ref ? (
-                <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/30">
-                  <Package className="w-4 h-4 text-sora shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{form.article_name || form.article_ref}</p>
-                    <p className="text-[11px] text-muted-foreground font-mono">{form.article_ref}</p>
-                  </div>
-                  {!editingId && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={clearProduct}>
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="Rechercher un produit par nom ou référence…"
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      onFocus={() => productResults.length > 0 && setShowProductResults(true)}
-                      onBlur={() => setTimeout(() => setShowProductResults(false), 200)}
-                      className="pl-8 h-9"
-                      disabled={!!editingId}
-                    />
-                    {searchingProducts && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
-                  </div>
-                  {showProductResults && productResults.length > 0 && (
-                    <div className="absolute z-50 top-full mt-1 left-0 right-0 border rounded-md bg-popover shadow-lg max-h-60 overflow-y-auto">
-                      {productResults.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 hover:bg-accent/50 border-b last:border-b-0 flex items-center gap-2"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => selectProduct(p)}
-                        >
-                          <Package className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{p.designation || p.article_ref}</p>
-                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <span className="font-mono">{p.article_ref}</span>
-                              {p.family && <span>· {p.family}</span>}
-                              {p.weight && <span>· {p.weight} kg</span>}
-                            </div>
-                          </div>
-                          {p.sale_price != null && (
-                            <span className="text-xs font-mono text-muted-foreground shrink-0">{p.sale_price.toFixed(2)} €</span>
-                          )}
-                        </button>
+              <Label>Ciblage produit (optionnel)</Label>
+              <div className="flex gap-1">
+                {([
+                  { key: "none", label: "Tous produits" },
+                  { key: "products", label: "Produits choisis" },
+                  { key: "family", label: "Par famille" },
+                ] as const).map((m) => (
+                  <Button
+                    key={m.key}
+                    variant={filterMode === m.key ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs flex-1"
+                    onClick={() => {
+                      setFilterMode(m.key);
+                      if (m.key === "none") setForm({ ...form, article_refs: [], article_family: "" });
+                      if (m.key === "products") setForm({ ...form, article_family: "" });
+                      if (m.key === "family") setForm({ ...form, article_refs: [] });
+                    }}
+                  >
+                    {m.label}
+                  </Button>
+                ))}
+              </div>
+
+              {filterMode === "products" && (
+                <div className="space-y-2">
+                  {form.article_refs.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.article_refs.map((r) => (
+                        <Badge key={r.ref} variant="secondary" className="text-xs gap-1 pl-2 pr-1 py-1">
+                          <Package className="w-3 h-3" />
+                          <span className="truncate max-w-[140px]">{r.name}</span>
+                          <button onClick={() => removeProduct(r.ref)} className="ml-0.5 hover:text-red-500">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
                       ))}
                     </div>
                   )}
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Rechercher et ajouter des produits…"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        onFocus={() => productResults.length > 0 && setShowProductResults(true)}
+                        onBlur={() => setTimeout(() => setShowProductResults(false), 200)}
+                        className="pl-8 h-9"
+                      />
+                      {searchingProducts && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                    </div>
+                    {showProductResults && productResults.length > 0 && (
+                      <div className="absolute z-50 top-full mt-1 left-0 right-0 border rounded-md bg-popover shadow-lg max-h-48 overflow-y-auto">
+                        {productResults.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-accent/50 border-b last:border-b-0 flex items-center gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => addProduct(p)}
+                          >
+                            <Package className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm truncate">{p.designation || p.article_ref}</p>
+                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                <span className="font-mono">{p.article_ref}</span>
+                                {p.family && <span>· {p.family}</span>}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              )}
+
+              {filterMode === "family" && (
+                <Select
+                  value={form.article_family || ""}
+                  onValueChange={(v) => setForm({ ...form, article_family: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-3.5 h-3.5 text-muted-foreground" />
+                      <SelectValue placeholder="Choisir une famille de produits" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {families.map((f) => (
+                      <SelectItem key={f.family} value={f.family}>
+                        {f.family} ({f.count} produits)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">

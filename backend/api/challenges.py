@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -11,6 +11,7 @@ from core.security import get_current_user
 from models.user import User
 from models.challenge import Challenge, ChallengeRanking
 from models.sales_line import SalesLine
+from models.product import Product
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
 
@@ -20,7 +21,9 @@ class ChallengeCreate(BaseModel):
     description: str | None = None
     article_ref: str | None = None
     article_name: str | None = None
-    metric: str  # quantity_kg, quantity_units, ca, margin_gross
+    article_refs: list[str] | None = None
+    article_family: str | None = None
+    metric: str
     target_value: float | None = None
     reward: str | None = None
     start_date: date
@@ -31,6 +34,8 @@ class ChallengeCreate(BaseModel):
 class ChallengeUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    article_refs: list[str] | None = None
+    article_family: str | None = None
     target_value: float | None = None
     reward: str | None = None
     status: str | None = None
@@ -43,6 +48,8 @@ class ChallengeResponse(BaseModel):
     description: str | None
     article_ref: str | None
     article_name: str | None
+    article_refs: list[str] | None = None
+    article_family: str | None = None
     metric: str
     target_value: float | None
     reward: str | None = None
@@ -93,9 +100,11 @@ async def list_challenges(
     out = []
     for row in result.all():
         ch = row[0]
+        refs = ch.article_refs.split(",") if ch.article_refs else None
         out.append(ChallengeResponse(
             id=ch.id, name=ch.name, description=ch.description,
             article_ref=ch.article_ref, article_name=ch.article_name,
+            article_refs=refs, article_family=ch.article_family,
             metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
             reward=ch.reward,
             start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
@@ -114,12 +123,20 @@ async def create_challenge(
     _require_admin(user)
     if body.metric not in METRIC_AGG:
         raise HTTPException(400, f"Métrique invalide. Valeurs: {list(METRIC_AGG.keys())}")
+
+    refs_str = ",".join(body.article_refs) if body.article_refs else None
+    # Backwards compat: if single ref provided but not refs list, use it
+    if not refs_str and body.article_ref:
+        refs_str = body.article_ref
+
     ch = Challenge(
         id=str(uuid.uuid4()),
         name=body.name,
         description=body.description,
         article_ref=body.article_ref,
         article_name=body.article_name,
+        article_refs=refs_str,
+        article_family=body.article_family or None,
         metric=body.metric,
         target_value=body.target_value,
         reward=body.reward,
@@ -131,9 +148,11 @@ async def create_challenge(
     db.add(ch)
     await db.commit()
     await db.refresh(ch)
+    refs = ch.article_refs.split(",") if ch.article_refs else None
     return ChallengeResponse(
         id=ch.id, name=ch.name, description=ch.description,
         article_ref=ch.article_ref, article_name=ch.article_name,
+        article_refs=refs, article_family=ch.article_family,
         metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
         reward=ch.reward,
         start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
@@ -165,13 +184,24 @@ async def update_challenge(
         ch.status = body.status
     if body.end_date is not None:
         ch.end_date = body.end_date
+    if body.article_refs is not None:
+        ch.article_refs = ",".join(body.article_refs) if body.article_refs else None
+        ch.article_ref = body.article_refs[0] if body.article_refs else None
+        ch.article_family = None
+    if body.article_family is not None:
+        ch.article_family = body.article_family or None
+        if ch.article_family:
+            ch.article_refs = None
+            ch.article_ref = None
     ch.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(ch)
     creator_name = (await db.execute(select(User.name).where(User.id == ch.created_by))).scalar()
+    refs = ch.article_refs.split(",") if ch.article_refs else None
     return ChallengeResponse(
         id=ch.id, name=ch.name, description=ch.description,
         article_ref=ch.article_ref, article_name=ch.article_name,
+        article_refs=refs, article_family=ch.article_family,
         metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
         reward=ch.reward,
         start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
@@ -214,8 +244,16 @@ async def challenge_ranking(
         .outerjoin(User, User.id == SalesLine.user_id)
         .where(SalesLine.date >= ch.start_date, SalesLine.date <= ch.end_date)
     )
-    if ch.article_ref:
+
+    if ch.article_family:
+        family_refs = select(Product.article_ref).where(Product.family == ch.article_family).scalar_subquery()
+        stmt = stmt.where(SalesLine.article_ref.in_(family_refs))
+    elif ch.article_refs:
+        refs_list = [r.strip() for r in ch.article_refs.split(",") if r.strip()]
+        stmt = stmt.where(SalesLine.article_ref.in_(refs_list))
+    elif ch.article_ref:
         stmt = stmt.where(SalesLine.article_ref == ch.article_ref)
+
     stmt = stmt.where(SalesLine.user_id.isnot(None))
     stmt = stmt.group_by(SalesLine.user_id, User.name).order_by(func.sum(agg_col).desc())
 

@@ -13,6 +13,8 @@ class Challenge(Base):
     description: Mapped[str | None] = mapped_column(Text)
     article_ref: Mapped[str | None] = mapped_column(String(18))
     article_name: Mapped[str | None] = mapped_column(String(100))
+    article_refs: Mapped[str | None] = mapped_column(Text)
+    article_family: Mapped[str | None] = mapped_column(String(50))
     metric: Mapped[str] = mapped_column(String(30), nullable=False)  # quantity_kg, quantity_units, ca, margin_gross
     target_value: Mapped[float | None] = mapped_column(Numeric(15, 2))
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
