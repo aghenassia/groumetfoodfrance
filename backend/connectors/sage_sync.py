@@ -5,6 +5,7 @@ Full sync (nuit) + delta sync (toutes les 15min en journée).
 Logique merge : les champs non-null Sage mettent à jour,
 les données CRM manuelles ne sont jamais écrasées.
 """
+import asyncio
 import logging
 from datetime import date, datetime, timezone
 
@@ -74,7 +75,7 @@ async def sync_clients_from_sage(
 
     connector = SageConnector()
     try:
-        sage_clients = connector.get_clients(since=since)
+        sage_clients = await asyncio.to_thread(connector.get_clients, since)
         log.records_found = len(sage_clients)
 
         created, updated, errors = 0, 0, 0
@@ -303,7 +304,7 @@ async def sync_sales_from_sage(
 
     connector = SageConnector()
     try:
-        sage_lines = connector.get_sales_lines(since=since)
+        sage_lines = await asyncio.to_thread(connector.get_sales_lines, since)
         log.records_found = len(sage_lines)
 
         created, errors, skipped = 0, 0, 0
@@ -477,7 +478,7 @@ async def sync_products_from_sage(
 
     connector = SageConnector()
     try:
-        sage_articles = connector.get_articles(since=since)
+        sage_articles = await asyncio.to_thread(connector.get_articles, since)
         log.records_found = len(sage_articles)
 
         SERVICE_REFS = {
@@ -585,7 +586,7 @@ async def sync_stock_from_sage(
 
     connector = SageConnector()
     try:
-        stock_rows = connector.get_stock(since=since)
+        stock_rows = await asyncio.to_thread(connector.get_stock, since)
         log.records_found = len(stock_rows)
 
         depot_upserted, errors = 0, 0

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, Query, HTTPException
 from pydantic import BaseModel
@@ -520,7 +521,7 @@ async def get_sage_collaborateurs(
     """Récupère les collaborateurs depuis Sage."""
     connector = SageConnector()
     try:
-        collabs = connector.get_collaborateurs()
+        collabs = await asyncio.to_thread(connector.get_collaborateurs)
         return collabs
     except Exception as e:
         return {"error": str(e), "collaborateurs": []}
@@ -550,40 +551,37 @@ async def sage_diagnostic_bdc(
     from datetime import date as _date
     d = since or _date(2025, 3, 9)
 
-    connector = SageConnector()
+    def _query_sage_bdc(d_param):
+        connector = SageConnector()
+        try:
+            conn = connector.connect()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?", d_param)
+            bdc_lines = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT DO_Piece) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?", d_param)
+            bdc_docs = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT DO_Piece, DO_Date, CT_Num, DL_Design, DL_MontantHT, CO_No,
+                       ISNULL(co.CO_Nom, '') + ' ' + ISNULL(co.CO_Prenom, '') AS RepName
+                FROM F_DOCLIGNE dl
+                LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
+                WHERE dl.DO_Type = 1 AND dl.DO_Date >= ?
+                ORDER BY dl.DO_Date DESC
+            """, d_param)
+            cols = [c[0] for c in cursor.description]
+            detail = [dict(zip(cols, row)) for row in cursor.fetchall()]
+            for row in detail:
+                for k, v in row.items():
+                    if isinstance(v, (datetime, _date)):
+                        row[k] = str(v)
+            return bdc_lines, bdc_docs, detail
+        finally:
+            connector.close()
+
     try:
-        conn = connector.connect()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?
-        """, d)
-        sage_bdc_lines = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT COUNT(DISTINCT DO_Piece) FROM F_DOCLIGNE WHERE DO_Type = 1 AND DO_Date >= ?
-        """, d)
-        sage_bdc_docs = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT DO_Piece, DO_Date, CT_Num, DL_Design, DL_MontantHT, CO_No,
-                   ISNULL(co.CO_Nom, '') + ' ' + ISNULL(co.CO_Prenom, '') AS RepName
-            FROM F_DOCLIGNE dl
-            LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
-            WHERE dl.DO_Type = 1 AND dl.DO_Date >= ?
-            ORDER BY dl.DO_Date DESC
-        """, d)
-        cols = [c[0] for c in cursor.description]
-        sage_bdc_detail = [dict(zip(cols, row)) for row in cursor.fetchall()]
-
-        for row in sage_bdc_detail:
-            for k, v in row.items():
-                if isinstance(v, (datetime, _date)):
-                    row[k] = str(v)
+        sage_bdc_lines, sage_bdc_docs, sage_bdc_detail = await asyncio.to_thread(_query_sage_bdc, d)
     except Exception as e:
         return {"error": f"Sage query failed: {e}"}
-    finally:
-        connector.close()
 
     crm_q = await db.execute(
         select(
