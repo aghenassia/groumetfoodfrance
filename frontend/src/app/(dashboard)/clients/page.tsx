@@ -48,10 +48,14 @@ import {
   Calendar,
   AlertTriangle,
   Target,
+  Truck,
+  Swords,
+  Package,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
 import { toast } from "sonner";
+import { NameItem } from "@/lib/api";
 
 const PAGE_SIZE = 50;
 
@@ -138,6 +142,10 @@ export default function ClientsPage() {
   const [churnFilter, setChurnFilter] = useState<string>("all");
   const [hasOrders, setHasOrders] = useState<string>("all");
   const [commercialFilter, setCommercialFilter] = useState<string>("all");
+  const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [competitorFilter, setCompetitorFilter] = useState<string>("all");
+  const [allSuppliers, setAllSuppliers] = useState<NameItem[]>([]);
+  const [allCompetitors, setAllCompetitors] = useState<NameItem[]>([]);
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("ca_total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -159,6 +167,8 @@ export default function ClientsPage() {
           .map((u) => ({ id: u.id, name: u.name }))
       );
     }).catch(() => {});
+    api.searchSuppliers().then(setAllSuppliers).catch(() => {});
+    api.searchCompetitors().then(setAllCompetitors).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -190,6 +200,8 @@ export default function ClientsPage() {
     if (hasOrders === "yes") params.has_orders = "true";
     if (hasOrders === "no") params.has_orders = "false";
     if (commercialFilter !== "all") params.assigned_user_id = commercialFilter;
+    if (supplierFilter !== "all") params.supplier_id = supplierFilter;
+    if (competitorFilter !== "all") params.competitor_id = competitorFilter;
 
     api
       .getClients(params)
@@ -200,7 +212,7 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, sortBy, sortDir, page]);
+  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, sortBy, sortDir, page]);
 
   useEffect(() => {
     fetchClients();
@@ -386,6 +398,53 @@ export default function ClientsPage() {
               </Button>
             ))}
           </div>
+
+          {/* Supplier filter */}
+          {allSuppliers.length > 0 && (
+            <>
+              <div className="w-px h-6 bg-border" />
+              <Select
+                value={supplierFilter}
+                onValueChange={(v) => { setSupplierFilter(v); setPage(0); }}
+              >
+                <SelectTrigger className="h-8 w-[170px] text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Truck className="w-3 h-3 text-muted-foreground" />
+                    <SelectValue placeholder="Fournisseur" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous fournisseurs</SelectItem>
+                  {allSuppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+
+          {/* Competitor filter */}
+          {allCompetitors.length > 0 && (
+            <>
+              <Select
+                value={competitorFilter}
+                onValueChange={(v) => { setCompetitorFilter(v); setPage(0); }}
+              >
+                <SelectTrigger className="h-8 w-[170px] text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Swords className="w-3 h-3 text-muted-foreground" />
+                    <SelectValue placeholder="Concurrent" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous concurrents</SelectItem>
+                  {allCompetitors.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
 
           <div className="w-px h-6 bg-border" />
 

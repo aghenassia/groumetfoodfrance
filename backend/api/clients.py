@@ -64,6 +64,9 @@ async def list_clients(
     status: str | None = None,
     churn_min: int | None = None,
     churn_max: int | None = None,
+    supplier_id: str | None = Query(default=None, description="Filtrer par fournisseur"),
+    competitor_id: str | None = Query(default=None, description="Filtrer par concurrent"),
+    product_ref: str | None = Query(default=None, description="Filtrer par produit d'intérêt"),
     sort_by: str = Query(default="name", pattern="^(name|ca_total|ca_12m|last_order|order_count|order_count_12m|avg_basket|margin|churn|upsell|priority)$"),
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, le=500),
@@ -130,6 +133,19 @@ async def list_clients(
         base = base.where(
             (ClientScore.order_count_total == 0) | (ClientScore.order_count_total == None)
         )
+
+    if supplier_id:
+        from models.client_intel import ClientSupplier
+        supplier_clients = select(ClientSupplier.client_id).where(ClientSupplier.supplier_id == supplier_id).distinct()
+        base = base.where(Client.id.in_(supplier_clients))
+    if competitor_id:
+        from models.client_intel import ClientCompetitor
+        competitor_clients = select(ClientCompetitor.client_id).where(ClientCompetitor.competitor_id == competitor_id).distinct()
+        base = base.where(Client.id.in_(competitor_clients))
+    if product_ref:
+        from models.client_intel import ClientProductInterest
+        product_clients = select(ClientProductInterest.client_id).where(ClientProductInterest.article_ref == product_ref).distinct()
+        base = base.where(Client.id.in_(product_clients))
 
     sort_map = {
         "name": Client.name,
