@@ -490,6 +490,8 @@ export default function ContactsPage() {
                           <ClickToCall
                             phoneNumber={selectedContact.phone_e164}
                             contactName={displayName(selectedContact)}
+                            clientId={selectedContact.company_id || undefined}
+                            clientName={selectedContact.company_name || undefined}
                             variant="cta"
                             label="Appeler"
                           />

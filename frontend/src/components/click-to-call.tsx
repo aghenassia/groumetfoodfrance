@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Phone, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useCallCompanion } from "@/components/call-companion/context";
 
 interface ClickToCallProps {
   phoneNumber: string;
@@ -14,6 +15,8 @@ interface ClickToCallProps {
   label?: string;
   className?: string;
   contactName?: string;
+  clientId?: string;
+  clientName?: string;
 }
 
 export function ClickToCall({
@@ -23,8 +26,12 @@ export function ClickToCall({
   label,
   className,
   contactName,
+  clientId,
+  clientName,
 }: ClickToCallProps) {
   const [calling, setCalling] = useState(false);
+  let companion: ReturnType<typeof useCallCompanion> | null = null;
+  try { companion = useCallCompanion(); } catch {}
 
   const handleDial = async () => {
     setCalling(true);
@@ -35,6 +42,9 @@ export function ClickToCall({
           ? `Appel vers ${contactName} lancé — décrochez !`
           : "Appel lancé — décrochez votre téléphone Ringover"
       );
+      if (companion && clientId) {
+        companion.openCompanion(clientId, clientName || contactName || phoneNumber, phoneNumber);
+      }
     } catch {
       toast.error("Impossible de lancer l'appel");
     } finally {

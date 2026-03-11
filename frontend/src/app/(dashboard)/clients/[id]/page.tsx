@@ -632,6 +632,8 @@ export default function ClientDetailPage() {
               variant="cta"
               label="Appeler"
               contactName={client.name}
+              clientId={client.id}
+              clientName={client.name}
             />
           )}
         </div>

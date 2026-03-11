@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { CallCompanionProvider } from "@/components/call-companion/context";
+import { CallCompanionWidget } from "@/components/call-companion/widget";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -150,34 +152,37 @@ export default function DashboardLayout({
   );
 
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
-        <SidebarContent />
-      </aside>
-
-      {/* Mobile sidebar */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-56 p-0 bg-sidebar border-sidebar-border">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
+    <CallCompanionProvider>
+      <div className="min-h-screen flex bg-background">
+        {/* Desktop sidebar */}
+        <aside className="hidden md:flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
           <SidebarContent />
-        </SheetContent>
-      </Sheet>
+        </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="md:hidden flex items-center gap-3 border-b px-4 h-14">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="w-5 h-5" />
-          </Button>
-          <h1 className="text-sm font-semibold">Sales Machine</h1>
-        </header>
-        <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+        {/* Mobile sidebar */}
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent side="left" className="w-56 p-0 bg-sidebar border-sidebar-border">
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <SidebarContent />
+          </SheetContent>
+        </Sheet>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="md:hidden flex items-center gap-3 border-b px-4 h-14">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+            <h1 className="text-sm font-semibold">Sales Machine</h1>
+          </header>
+          <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+        </div>
       </div>
-    </div>
+      <CallCompanionWidget />
+    </CallCompanionProvider>
   );
 }
