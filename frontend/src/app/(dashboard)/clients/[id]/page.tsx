@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType } from "@/lib/api";
+import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType, ClientIntelResponse, CallSessionResponse } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -65,8 +65,14 @@ import {
   FileText,
   Truck,
   AlertCircle,
+  Swords,
+  ExternalLink,
+  CalendarDays,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
+import { SupplierPicker } from "@/components/intel/supplier-picker";
+import { CompetitorPicker } from "@/components/intel/competitor-picker";
+import { ProductInterestPicker } from "@/components/intel/product-interest-picker";
 import { toast } from "sonner";
 import {
   ResponsiveContainer,
@@ -147,7 +153,9 @@ export default function ClientDetailPage() {
   const [newPhone, setNewPhone] = useState("");
   const [newPhoneLabel, setNewPhoneLabel] = useState("mobile");
   const [addingPhone, setAddingPhone] = useState(false);
-  const [activeTab, setActiveTab] = useState<"sales" | "orders" | "calls" | "feedback" | "upsell" | "audit">("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "orders" | "calls" | "feedback" | "upsell" | "audit" | "interactions">("sales");
+  const [intel, setIntel] = useState<ClientIntelResponse | null>(null);
+  const [sessions, setSessions] = useState<CallSessionResponse[]>([]);
   const [expandedCall, setExpandedCall] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetailResponse | null>(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
@@ -197,8 +205,17 @@ export default function ClientDetailPage() {
       .finally(() => setLoading(false));
   };
 
+  const fetchIntel = () => {
+    api.getClientIntel(id).then(setIntel).catch(() => {});
+  };
+
+  const fetchSessions = () => {
+    api.getClientSessions(id).then(setSessions).catch(() => {});
+  };
+
   useEffect(() => {
     fetchClient();
+    fetchIntel();
   }, [id]);
 
   useEffect(() => {
@@ -1079,6 +1096,37 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
+      {/* Intel Commerciale */}
+      {intel && (
+        <Card>
+          <CardHeader className="pb-2 pt-3">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Lightbulb className="w-4 h-4 text-primary" />
+              Intel commerciale
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <SupplierPicker
+                clientId={id}
+                suppliers={intel.suppliers}
+                onUpdate={fetchIntel}
+              />
+              <CompetitorPicker
+                clientId={id}
+                competitors={intel.competitors}
+                onUpdate={fetchIntel}
+              />
+              <ProductInterestPicker
+                clientId={id}
+                interests={intel.product_interests}
+                onUpdate={fetchIntel}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs: Sales / Calls */}
       <div>
         <div className="flex gap-1 mb-3 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
@@ -1134,6 +1182,18 @@ export default function ClientDetailPage() {
           >
             <TrendingUp className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
             Upsell
+          </Button>
+          <Button
+            variant={activeTab === "interactions" ? "default" : "outline"}
+            size="sm"
+            className="shrink-0 text-xs sm:text-sm"
+            onClick={() => {
+              setActiveTab("interactions");
+              fetchSessions();
+            }}
+          >
+            <MessageSquare className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />
+            Interactions
           </Button>
           <Button
             variant={activeTab === "audit" ? "default" : "outline"}
@@ -1836,6 +1896,73 @@ export default function ClientDetailPage() {
               <p className="text-center text-muted-foreground py-8">
                 Aucune suggestion disponible
               </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Interactions tab */}
+      {activeTab === "interactions" && (
+        <Card>
+          <CardContent className="py-4">
+            {sessions.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Aucune interaction enregistrée via le Call Companion
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {sessions.map((s) => (
+                  <div key={s.id} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-green-600" />
+                        <span className="text-sm font-medium">
+                          {new Date(s.started_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        {s.phone_number && (
+                          <span className="text-xs text-muted-foreground font-mono">{s.phone_number}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {s.mood && (
+                          <Badge variant="outline" className={`text-xs ${
+                            s.mood === "positive" ? "text-green-700 bg-green-50 border-green-200" :
+                            s.mood === "negative" ? "text-red-700 bg-red-50 border-red-200" :
+                            "text-amber-700 bg-amber-50 border-amber-200"
+                          }`}>
+                            {s.mood === "positive" ? "Positif" : s.mood === "negative" ? "Négatif" : "Neutre"}
+                          </Badge>
+                        )}
+                        {s.outcome && (
+                          <Badge variant="outline" className="text-xs">
+                            {s.outcome === "interested" ? "Intéressé" :
+                             s.outcome === "callback" ? "Rappel" :
+                             s.outcome === "order" ? "Commande" :
+                             s.outcome === "not_interested" ? "Pas intéressé" :
+                             s.outcome === "nrp" ? "NRP" :
+                             s.outcome === "quote_sent" ? "Devis envoyé" :
+                             s.outcome}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {s.notes && (
+                      <p className="text-xs text-muted-foreground bg-muted/30 rounded p-2">{s.notes}</p>
+                    )}
+                    {s.next_step && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <CalendarDays className="w-3 h-3" />
+                        <span>{s.next_step}</span>
+                        {s.next_step_date && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {new Date(s.next_step_date).toLocaleDateString("fr-FR")}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
