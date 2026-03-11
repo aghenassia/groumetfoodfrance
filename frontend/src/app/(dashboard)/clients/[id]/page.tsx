@@ -465,10 +465,21 @@ export default function ClientDetailPage() {
   const openEditContact = (contact: ContactType) => {
     setEditingContact(contact);
     const emails = contact.email ? contact.email.split(',').map(e => e.trim()).filter(Boolean) : [''];
+    let firstName = contact.first_name || '';
+    let lastName = contact.last_name || '';
+    if (!firstName && !lastName && contact.name) {
+      const parts = contact.name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        firstName = parts[0];
+        lastName = parts.slice(1).join(' ');
+      } else {
+        lastName = parts[0];
+      }
+    }
     setContactForm({
       name: contact.name || '',
-      first_name: contact.first_name || '',
-      last_name: contact.last_name || '',
+      first_name: firstName,
+      last_name: lastName,
       role: contact.role || '',
       phone: contact.phone || '',
       emails: emails.length > 0 ? emails : [''],
