@@ -7,6 +7,7 @@ les données CRM manuelles ne sont jamais écrasées.
 """
 import asyncio
 import logging
+import re
 from datetime import date, datetime, timezone
 
 import pyodbc
@@ -338,9 +339,16 @@ async def sync_sales_from_sage(
                 co_no = sl.get("CO_No")
                 sales_rep_name = _clean(str(sl.get("SalesRepName", "")))
 
+                raw_doc_type = int(sl.get("DO_Type", 6))
+                if raw_doc_type == 7:
+                    if re.match(r"^\d{2}A", piece_id):
+                        raw_doc_type = 7  # avoir comptabilisé
+                    else:
+                        raw_doc_type = 6  # facture comptabilisée → facture
+
                 values = {
                     "sage_piece_id": piece_id,
-                    "sage_doc_type": int(sl.get("DO_Type", 6)),
+                    "sage_doc_type": raw_doc_type,
                     "client_sage_id": client_sage_id,
                     "client_id": client_map.get(client_sage_id),
                     "date": line_date,
@@ -429,6 +437,32 @@ async def sync_sales_from_sage(
             await db.commit()
             logger.info(f"Lifecycle fix: {len(incoherent_ids)} clients prospect/lead avec commandes corrigés")
 
+        # Nettoyage : supprimer les lignes commentaires (sans article_ref)
+        from sqlalchemy import delete, or_
+        del_result = await db.execute(
+            delete(SalesLine).where(
+                or_(SalesLine.article_ref == None, SalesLine.article_ref == "")
+            )
+        )
+        cleaned = del_result.rowcount
+        if cleaned:
+            logger.info(f"Nettoyage: {cleaned} lignes commentaires supprimées (AR_Ref vide)")
+
+        # Reclassification : factures comptabilisées (DO_Type 7 avec prefix xxF) → type 6
+        reclass = await db.execute(
+            sqlalchemy_update(SalesLine)
+            .where(
+                SalesLine.sage_doc_type == 7,
+                ~SalesLine.sage_piece_id.regexp_match(r"^\d{2}A"),
+            )
+            .values(sage_doc_type=6)
+        )
+        reclassified = reclass.rowcount
+        if reclassified:
+            logger.info(f"Reclassification: {reclassified} factures comptabilisées (7→6)")
+
+        await db.commit()
+
         log.records_created = created
         log.records_errors = errors
         log.status = "completed"
@@ -438,6 +472,7 @@ async def sync_sales_from_sage(
         logger.info(
             f"Sync Sage ventes ({sync_type}): "
             f"{created} traités, {skipped} ignorés, {errors} erreurs sur {len(sage_lines)} trouvés"
+            f" | nettoyage: {cleaned} commentaires, {reclassified} reclassifiés"
         )
 
         return {
@@ -446,6 +481,8 @@ async def sync_sales_from_sage(
             "synced": created,
             "skipped": skipped,
             "errors": errors,
+            "cleaned": cleaned,
+            "reclassified": reclassified,
         }
 
     except pyodbc.Error as e:

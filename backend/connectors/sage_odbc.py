@@ -151,6 +151,8 @@ class SageConnector:
             FROM F_DOCLIGNE dl
             LEFT JOIN F_COLLABORATEUR co ON dl.CO_No = co.CO_No
             WHERE dl.DO_Type IN (1, 3, 6, 7)
+              AND dl.AR_Ref IS NOT NULL
+              AND LTRIM(RTRIM(dl.AR_Ref)) != ''
         """
 
         if since:
