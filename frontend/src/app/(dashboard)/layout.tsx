@@ -25,12 +25,14 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { AuthProvider } from "@/lib/auth-context";
 import { CallCompanionProvider } from "@/components/call-companion/context";
 import { CallCompanionWidget } from "@/components/call-companion/widget";
+import { ReminderNotifier } from "@/components/reminder-notifier";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/playlist", label: "Playlist", icon: ListMusic },
+  { href: "/playlist", label: "To do", icon: ListMusic },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/contacts", label: "Contacts", icon: ContactRound },
   { href: "/calls", label: "Appels", icon: Phone },
@@ -96,8 +98,13 @@ export default function DashboardLayout({
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       <div className="p-4">
-        <h1 className="text-lg font-bold tracking-tight text-kiku">Sales Machine</h1>
-        <p className="text-xs text-sidebar-foreground/60">CRM Phone-First</p>
+        <div className="flex items-center gap-2">
+          <img src="/gff-white.svg" alt="GFF" className="h-7 w-auto" />
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-kiku">GFF CRM</h1>
+            <p className="text-xs text-sidebar-foreground/60">Gourmet Food France</p>
+          </div>
+        </div>
       </div>
       <div className="h-px bg-sidebar-border" />
       <nav className="flex-1 p-2 space-y-0.5">
@@ -152,37 +159,40 @@ export default function DashboardLayout({
   );
 
   return (
-    <CallCompanionProvider>
-      <div className="min-h-screen flex bg-background">
-        {/* Desktop sidebar */}
-        <aside className="hidden md:flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
-          <SidebarContent />
-        </aside>
-
-        {/* Mobile sidebar */}
-        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetContent side="left" className="w-56 p-0 bg-sidebar border-sidebar-border">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
+    <AuthProvider>
+      <CallCompanionProvider>
+        <div className="min-h-screen flex bg-background">
+          {/* Desktop sidebar */}
+          <aside className="hidden md:flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
             <SidebarContent />
-          </SheetContent>
-        </Sheet>
+          </aside>
 
-        {/* Main content */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="md:hidden flex items-center gap-3 border-b px-4 h-14">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="w-5 h-5" />
-            </Button>
-            <h1 className="text-sm font-semibold">Sales Machine</h1>
-          </header>
-          <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+          {/* Mobile sidebar */}
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetContent side="left" className="w-56 p-0 bg-sidebar border-sidebar-border">
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <SidebarContent />
+            </SheetContent>
+          </Sheet>
+
+          {/* Main content */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <header className="md:hidden flex items-center gap-3 border-b px-4 h-14">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+              <h1 className="text-sm font-semibold">GFF CRM</h1>
+            </header>
+            <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+          </div>
         </div>
-      </div>
-      <CallCompanionWidget />
-    </CallCompanionProvider>
+        <CallCompanionWidget />
+        <ReminderNotifier />
+      </CallCompanionProvider>
+    </AuthProvider>
   );
 }

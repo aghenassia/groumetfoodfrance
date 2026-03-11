@@ -1414,8 +1414,8 @@ export default function GlossairePage() {
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
           Concours ponctuels pour motiver les commerciaux sur un produit ou un KPI.
-          Un challenge définit un produit cible (optionnel), une métrique, un objectif,
-          une <strong>récompense</strong> et une période. Le classement est calculé en temps réel.
+          Un challenge peut cibler un produit unique, <strong>plusieurs références</strong>,
+          ou une <strong>famille entière</strong> de produits. Le classement est calculé en temps réel.
         </p>
 
         <Card>
@@ -1445,7 +1445,274 @@ export default function GlossairePage() {
             <div className="mt-4 space-y-2 text-xs text-muted-foreground">
               <p><strong className="text-foreground">Statuts :</strong> brouillon → actif → terminé. Seuls les challenges actifs sont visibles par les commerciaux.</p>
               <p><strong className="text-foreground">Récompense :</strong> texte libre (ex: &quot;iPhone 16&quot;, &quot;Bon 200€&quot;) affiché sur le dashboard et le classement.</p>
-              <p><strong className="text-foreground">Classement :</strong> calculé en temps réel à partir des lignes de vente Sage, filtré par article_ref (si défini) et par période.</p>
+              <p><strong className="text-foreground">Ciblage multi-ref :</strong> un challenge peut cibler une seule référence (<code className="bg-muted px-1 py-0.5 rounded text-foreground">article_ref</code>), plusieurs références (<code className="bg-muted px-1 py-0.5 rounded text-foreground">article_refs</code> — liste séparée par virgules) ou une famille entière (<code className="bg-muted px-1 py-0.5 rounded text-foreground">article_family</code>). Si une famille est sélectionnée, toutes les ventes de produits appartenant à cette famille sont comptabilisées.</p>
+              <p><strong className="text-foreground">Classement :</strong> calculé en temps réel à partir des lignes de vente Sage, filtré par article_ref/article_refs/article_family et par période.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator />
+
+      {/* --- INTEL COMMERCIALE --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <ShoppingCart className="w-5 h-5 text-sora" />
+          Intel commerciale
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Données stratégiques collectées sur chaque client pour enrichir le ciblage commercial.
+          Trois catégories de données sont gérées, chacune avec une base globale partagée.
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Donnée</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Table</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Base globale</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-2 font-medium">Fournisseurs</td>
+                      <td className="px-3 py-2 font-mono text-sora">client_suppliers</td>
+                      <td className="px-3 py-2 font-mono text-sora">suppliers</td>
+                      <td className="px-3 py-2 text-muted-foreground">Fournisseurs avec lesquels le client travaille. Auto-complétion depuis la base globale, création auto de nouveaux fournisseurs.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-medium">Concurrents</td>
+                      <td className="px-3 py-2 font-mono text-sora">client_competitors</td>
+                      <td className="px-3 py-2 font-mono text-sora">competitors</td>
+                      <td className="px-3 py-2 text-muted-foreground">Concurrents identifiés chez le client. Même mécanique que les fournisseurs.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-medium">Produits d&apos;intérêt</td>
+                      <td className="px-3 py-2 font-mono text-sora">client_product_interests</td>
+                      <td className="px-3 py-2 text-muted-foreground">Catalogue produits</td>
+                      <td className="px-3 py-2 text-muted-foreground">Produits commandés habituellement ou souhaités. Recherche dans le catalogue, saisie libre si absent. Tags cliquables vers la fiche produit.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Points d&apos;entrée :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET/POST /api/intel/&#123;client_id&#125;/suppliers</code>,{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">.../competitors</code>,{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">.../product-interests</code>
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  <strong className="text-foreground">Affichage :</strong> les tags sont tronqués à 200px avec tooltip au survol. Les produits avec{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">article_ref</code> sont cliquables et redirigent vers la fiche produit.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- CALL COMPANION --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Phone className="w-5 h-5 text-sora" />
+          Call Companion (widget flottant)
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Widget persistant pour qualifier un appel et enrichir la fiche client en temps réel.
+          S&apos;ouvre au clic sur &quot;Appeler&quot; et reste visible lors de la navigation CRM.
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Variable</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Table</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">call_sessions</td>
+                      <td className="px-3 py-2 font-mono text-sora">call_sessions</td>
+                      <td className="px-3 py-2 text-muted-foreground">Session de qualification créée par le widget. Stocke mood, outcome, notes, next_step, next_step_date, phone_number.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">matched_call_id</td>
+                      <td className="px-3 py-2 font-mono text-sora">call_sessions</td>
+                      <td className="px-3 py-2 text-muted-foreground">ID de l&apos;appel Ringover apparié automatiquement (matching user + phone + fenêtre ±2min/30min).</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">has_session_qualification</td>
+                      <td className="px-3 py-2 font-mono text-sora">calls (calculé)</td>
+                      <td className="px-3 py-2 text-muted-foreground">Flag booléen indiquant qu&apos;un appel a été qualifié via le Companion. Exclut l&apos;appel de &quot;À qualifier&quot;.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Architecture :</strong> le widget utilise un{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">CallCompanionProvider</code> (React Context)
+                  intégré dans le layout dashboard pour persister l&apos;état entre les navigations de page.
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  <strong className="text-foreground">Endpoints :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/call-sessions</code> (créer),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/call-sessions/client/&#123;id&#125;</code> (historique).
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- RAPPELS & TO DO MANUELLE --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-ume" />
+          Rappels &amp; To do manuelle
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Système de rappels avec heure précise et notifications popup temps réel.
+          Les rappels et ajouts manuels à la To do sont préservés lors de la regénération automatique.
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Variable</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Table / Champ</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">reminder_time</td>
+                      <td className="px-3 py-2 font-mono text-sora">daily_playlists.reminder_time</td>
+                      <td className="px-3 py-2 text-muted-foreground">Heure (TIME) à laquelle le rappel doit se déclencher. Utilisé par le polling frontend.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">created_by</td>
+                      <td className="px-3 py-2 font-mono text-sora">daily_playlists.created_by</td>
+                      <td className="px-3 py-2 text-muted-foreground">User ID du créateur du rappel (FK vers users). Permet aux managers d&apos;assigner des rappels à d&apos;autres.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">reason=&quot;manual&quot;</td>
+                      <td className="px-3 py-2 font-mono text-sora">daily_playlists.reason</td>
+                      <td className="px-3 py-2 text-muted-foreground">Entrée ajoutée manuellement (bouton &quot;Playlist&quot; sur fiche client). Protégée contre la suppression auto.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">reason=&quot;callback&quot;</td>
+                      <td className="px-3 py-2 font-mono text-sora">daily_playlists.reason</td>
+                      <td className="px-3 py-2 text-muted-foreground">Rappel planifié (avec date/heure). Protégé contre la suppression auto.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Polling :</strong> le composant{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">ReminderNotifier</code> vérifie
+                  toutes les 30 secondes via{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/playlists/reminders/due</code>{" "}
+                  les rappels dont l&apos;heure est dépassée et le statut n&apos;est pas &quot;done&quot;.
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  <strong className="text-foreground">CRUD :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/playlists/reminder</code> (créer),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">PATCH .../reminders/&#123;id&#125;</code> (modifier),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">DELETE .../reminders/&#123;id&#125;</code> (supprimer).
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- NOTES CLIENT --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <FileText className="w-5 h-5 text-kiku" />
+          Notes client
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Notes libres associées à un client, visibles dans l&apos;onglet Retours de la fiche 360°.
+        </p>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Champ</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  <tr>
+                    <td className="px-3 py-2 font-mono text-sora">client_id</td>
+                    <td className="px-3 py-2 font-mono">VARCHAR(50)</td>
+                    <td className="px-3 py-2 text-muted-foreground">FK vers la fiche client</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-mono text-sora">user_id</td>
+                    <td className="px-3 py-2 font-mono">VARCHAR(36)</td>
+                    <td className="px-3 py-2 text-muted-foreground">FK vers l&apos;utilisateur qui a créé la note</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-mono text-sora">user_name</td>
+                    <td className="px-3 py-2 font-mono">VARCHAR(100)</td>
+                    <td className="px-3 py-2 text-muted-foreground">Nom affiché de l&apos;auteur (stocké pour perf)</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-mono text-sora">content</td>
+                    <td className="px-3 py-2 font-mono">TEXT</td>
+                    <td className="px-3 py-2 text-muted-foreground">Contenu libre de la note</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-mono text-sora">created_at</td>
+                    <td className="px-3 py-2 font-mono">TIMESTAMPTZ</td>
+                    <td className="px-3 py-2 text-muted-foreground">Horodatage de création</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Endpoints :</strong>{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/clients/&#123;id&#125;/notes</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/clients/&#123;id&#125;/notes</code>
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                <strong className="text-foreground">Affichage :</strong> les notes apparaissent dans la timeline unifiée de l&apos;onglet
+                &quot;Retours&quot; avec un badge distinctif et l&apos;identité de l&apos;auteur.
+              </p>
             </div>
           </CardContent>
         </Card>

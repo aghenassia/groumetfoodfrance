@@ -1,8 +1,9 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Query, HTTPException
+import uuid
+from datetime import date, datetime, time, timedelta, timezone
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from pydantic import BaseModel
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, delete as sa_delete, func as sqlfunc, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -17,6 +18,40 @@ from models.sales_line import SalesLine
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
+
+
+class AddToPlaylistRequest(BaseModel):
+    client_id: str
+    user_id: str | None = None
+    reason_detail: str | None = None
+
+
+class CreateReminderRequest(BaseModel):
+    client_id: str
+    user_id: str | None = None
+    target_date: date
+    target_time: str | None = None
+    reason_detail: str | None = None
+
+
+class UpdateReminderRequest(BaseModel):
+    target_date: date | None = None
+    target_time: str | None = None
+    reason_detail: str | None = None
+    status: str | None = None
+
+
+class ReminderResponse(BaseModel):
+    id: str
+    client_id: str
+    client_name: str
+    user_id: str
+    user_name: str | None = None
+    generated_date: str
+    reminder_time: str | None = None
+    reason_detail: str | None = None
+    status: str
+    created_by: str | None = None
 
 
 class PlaylistContactInfo(BaseModel):
@@ -54,6 +89,264 @@ class PlaylistItemResponse(BaseModel):
     score: int = 0
     status: str = "pending"
     primary_contact: PlaylistContactInfo | None = None
+
+
+@router.post("/add")
+async def add_to_playlist(
+    body: AddToPlaylistRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ajoute manuellement un client à la playlist du jour."""
+    target_user_id = user.id
+    if body.user_id and body.user_id != user.id:
+        if user.role not in ("admin", "manager"):
+            raise HTTPException(403, "Seul un admin ou manager peut affecter un autre utilisateur")
+        target_user = await db.get(User, body.user_id)
+        if not target_user:
+            raise HTTPException(404, "Utilisateur cible introuvable")
+        target_user_id = body.user_id
+
+    client = await db.get(Client, body.client_id)
+    if not client:
+        raise HTTPException(404, "Client introuvable")
+
+    today = date.today()
+    existing = (await db.execute(
+        select(DailyPlaylist).where(
+            DailyPlaylist.user_id == target_user_id,
+            DailyPlaylist.client_id == body.client_id,
+            DailyPlaylist.generated_date == today,
+        )
+    )).scalar_one_or_none()
+
+    if existing:
+        return {"ok": True, "message": "Déjà dans la playlist du jour", "playlist_id": existing.id}
+
+    max_prio = (await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.max(DailyPlaylist.priority), 0))
+        .where(DailyPlaylist.user_id == target_user_id, DailyPlaylist.generated_date == today)
+    )).scalar() or 0
+
+    entry = DailyPlaylist(
+        id=str(uuid.uuid4()),
+        user_id=target_user_id,
+        client_id=body.client_id,
+        generated_date=today,
+        priority=max_prio + 1,
+        reason="manual",
+        reason_detail=body.reason_detail or "Ajouté manuellement",
+        score=0,
+        status="pending",
+    )
+    db.add(entry)
+    await db.commit()
+    return {"ok": True, "message": "Client ajouté à la playlist", "playlist_id": entry.id}
+
+
+@router.post("/reminder")
+async def create_reminder(
+    body: CreateReminderRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Crée un rappel en ajoutant le client à la playlist d'une date future."""
+    if body.target_date < date.today():
+        raise HTTPException(400, "La date du rappel doit être aujourd'hui ou dans le futur")
+
+    target_user_id = user.id
+    if body.user_id and body.user_id != user.id:
+        if user.role not in ("admin", "manager"):
+            raise HTTPException(403, "Seul un admin ou manager peut affecter un autre utilisateur")
+        target_user = await db.get(User, body.user_id)
+        if not target_user:
+            raise HTTPException(404, "Utilisateur cible introuvable")
+        target_user_id = body.user_id
+
+    client = await db.get(Client, body.client_id)
+    if not client:
+        raise HTTPException(404, "Client introuvable")
+
+    existing = (await db.execute(
+        select(DailyPlaylist).where(
+            DailyPlaylist.user_id == target_user_id,
+            DailyPlaylist.client_id == body.client_id,
+            DailyPlaylist.generated_date == body.target_date,
+        )
+    )).scalar_one_or_none()
+
+    if existing:
+        return {"ok": True, "message": "Rappel déjà existant pour cette date", "playlist_id": existing.id}
+
+    max_prio = (await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.max(DailyPlaylist.priority), 0))
+        .where(DailyPlaylist.user_id == target_user_id, DailyPlaylist.generated_date == body.target_date)
+    )).scalar() or 0
+
+    reminder_time_val = None
+    if body.target_time:
+        try:
+            parts = body.target_time.split(":")
+            reminder_time_val = time(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            raise HTTPException(400, "Format d'heure invalide (HH:MM attendu)")
+
+    entry = DailyPlaylist(
+        id=str(uuid.uuid4()),
+        user_id=target_user_id,
+        client_id=body.client_id,
+        generated_date=body.target_date,
+        priority=max_prio + 1,
+        reason="callback",
+        reason_detail=body.reason_detail or "Rappel programmé",
+        score=0,
+        status="pending",
+        reminder_time=reminder_time_val,
+        created_by=user.id,
+    )
+    db.add(entry)
+    await db.commit()
+    return {"ok": True, "message": f"Rappel créé pour le {body.target_date.isoformat()}", "playlist_id": entry.id}
+
+
+@router.get("/reminders", response_model=list[ReminderResponse])
+async def list_reminders(
+    user_id: str | None = None,
+    include_past: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Liste les rappels (playlist entries avec reason='callback')."""
+    effective_user_id = user.id
+    if user_id and user.role in ("admin", "manager"):
+        effective_user_id = user_id
+
+    stmt = (
+        select(DailyPlaylist, Client, User)
+        .join(Client, DailyPlaylist.client_id == Client.id)
+        .outerjoin(User, DailyPlaylist.user_id == User.id)
+        .where(
+            DailyPlaylist.reason == "callback",
+            DailyPlaylist.status.in_(["pending"]) if not include_past else True,
+        )
+    )
+
+    if user.role not in ("admin", "manager") or not user_id or user_id == user.id:
+        stmt = stmt.where(DailyPlaylist.user_id == effective_user_id)
+
+    if not include_past:
+        stmt = stmt.where(DailyPlaylist.generated_date >= date.today())
+
+    stmt = stmt.order_by(DailyPlaylist.generated_date, DailyPlaylist.reminder_time)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        ReminderResponse(
+            id=p.id,
+            client_id=p.client_id,
+            client_name=c.name,
+            user_id=p.user_id,
+            user_name=u.name if u else None,
+            generated_date=p.generated_date.isoformat(),
+            reminder_time=p.reminder_time.strftime("%H:%M") if p.reminder_time else None,
+            reason_detail=p.reason_detail,
+            status=p.status,
+            created_by=p.created_by,
+        )
+        for p, c, u in rows
+    ]
+
+
+@router.get("/reminders/due")
+async def get_due_reminders(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Retourne les rappels dont l'heure est arrivée (pour popup)."""
+    now = datetime.now()
+    today = now.date()
+    current_time = now.time()
+
+    stmt = (
+        select(DailyPlaylist, Client)
+        .join(Client, DailyPlaylist.client_id == Client.id)
+        .where(
+            DailyPlaylist.user_id == user.id,
+            DailyPlaylist.reason == "callback",
+            DailyPlaylist.status == "pending",
+            DailyPlaylist.generated_date == today,
+            DailyPlaylist.reminder_time.isnot(None),
+            DailyPlaylist.reminder_time <= current_time,
+        )
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        {
+            "id": p.id,
+            "client_id": p.client_id,
+            "client_name": c.name,
+            "reminder_time": p.reminder_time.strftime("%H:%M") if p.reminder_time else None,
+            "reason_detail": p.reason_detail,
+        }
+        for p, c in rows
+    ]
+
+
+@router.patch("/reminders/{reminder_id}")
+async def update_reminder(
+    reminder_id: str,
+    body: UpdateReminderRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Modifie un rappel."""
+    entry = await db.get(DailyPlaylist, reminder_id)
+    if not entry:
+        raise HTTPException(404, "Rappel introuvable")
+    if entry.user_id != user.id and user.role not in ("admin", "manager"):
+        raise HTTPException(403, "Accès non autorisé")
+
+    if body.target_date is not None:
+        entry.generated_date = body.target_date
+    if body.target_time is not None:
+        if body.target_time == "":
+            entry.reminder_time = None
+        else:
+            try:
+                parts = body.target_time.split(":")
+                entry.reminder_time = time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                raise HTTPException(400, "Format d'heure invalide")
+    if body.reason_detail is not None:
+        entry.reason_detail = body.reason_detail
+    if body.status is not None:
+        entry.status = body.status
+
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/reminders/{reminder_id}")
+async def delete_reminder(
+    reminder_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Supprime un rappel."""
+    entry = await db.get(DailyPlaylist, reminder_id)
+    if not entry:
+        raise HTTPException(404, "Rappel introuvable")
+    if entry.user_id != user.id and user.role not in ("admin", "manager"):
+        raise HTTPException(403, "Accès non autorisé")
+
+    await db.delete(entry)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("", response_model=list[PlaylistItemResponse])

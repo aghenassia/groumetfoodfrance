@@ -62,6 +62,7 @@ import {
   History,
   Hash,
   CalendarDays,
+  Weight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -109,6 +110,15 @@ function formatCurrency(v: number | null | undefined): string {
 function formatQty(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(v);
+}
+
+function formatWeight(kg: number | null | undefined): string {
+  if (kg == null || kg === 0) return "—";
+  const abs = Math.abs(kg);
+  if (abs >= 1000) {
+    return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(kg / 1000) + " t";
+  }
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(kg) + " kg";
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -920,7 +930,7 @@ function MarginBadge({ value }: { value?: number | null }) {
   );
 }
 
-type DetailTab = "overview" | "orders";
+type DetailTab = "overview" | "orders" | "kg";
 
 function DetailPanel({
   detail,
@@ -1026,6 +1036,15 @@ function DetailPanel({
               Aperçu
             </Button>
             <Button
+              variant={tab === "kg" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs px-2.5 gap-1"
+              onClick={() => setTab("kg")}
+            >
+              <Weight className="w-3 h-3" />
+              Kg
+            </Button>
+            <Button
               variant={tab === "orders" ? "default" : "outline"}
               size="sm"
               className="h-7 text-xs px-2.5 gap-1"
@@ -1045,6 +1064,10 @@ function DetailPanel({
 
       {tab === "overview" && (
         <OverviewTab detail={detail} onOpenProduct={onOpenProduct} />
+      )}
+
+      {tab === "kg" && (
+        <KgTab detail={detail} onOpenProduct={onOpenProduct} />
       )}
 
       {tab === "orders" && (
@@ -1220,6 +1243,175 @@ function OverviewTab({
                     </div>
                     <span className="w-14 text-right shrink-0 font-medium tabular-nums text-xs">
                       {formatCurrency(m.ca)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
+function KgTab({
+  detail,
+  onOpenProduct,
+}: {
+  detail: ProductDetailResponse;
+  onOpenProduct: (ref: string) => void;
+}) {
+  const sortedClients = [...detail.top_clients].sort((a, b) => b.qty - a.qty);
+
+  return (
+    <>
+      {/* KPI grid - vue poids */}
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="grid grid-cols-2 gap-2">
+            <KpiTile
+              value={formatWeight(detail.total_qty)}
+              label="Poids total vendu"
+              icon={<Weight className="w-3.5 h-3.5" />}
+            />
+            <KpiTile
+              value={detail.total_qty != null && detail.nb_orders
+                ? formatWeight(detail.total_qty / detail.nb_orders)
+                : "—"}
+              label="Moy. / commande"
+              icon={<Package className="w-3.5 h-3.5" />}
+            />
+            <KpiTile
+              value={String(detail.nb_clients ?? 0)}
+              label="Clients"
+              icon={<Users className="w-3.5 h-3.5" />}
+            />
+            <KpiTile
+              value={detail.total_qty != null && detail.nb_clients
+                ? formatWeight(detail.total_qty / detail.nb_clients)
+                : "—"}
+              label="Moy. / client"
+              icon={<Users className="w-3.5 h-3.5" />}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-2.5 text-xs text-muted-foreground px-1">
+            {detail.unit && <span>Unité : {detail.unit}</span>}
+            {detail.sale_price != null && detail.sale_price > 0 && (
+              <span>PV : {formatCurrency(detail.sale_price)}</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Top clients par poids */}
+      {sortedClients.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1.5 pt-3">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-sora" />
+              Top clients (poids)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="divide-y divide-border">
+              {sortedClients.map((c, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between py-1.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    {c.client_id ? (
+                      <Link
+                        href={`/clients/${c.client_id}`}
+                        className="hover:underline font-medium truncate block max-w-[220px]"
+                      >
+                        {c.client_name}
+                      </Link>
+                    ) : (
+                      <span className="truncate block max-w-[220px]">
+                        {c.client_name}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {c.orders} cmd · CA {formatCurrency(c.ca)}
+                    </span>
+                  </div>
+                  <span className="font-semibold shrink-0 ml-2 tabular-nums">
+                    {formatWeight(c.qty)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Co-purchased */}
+      {detail.co_purchased.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1.5 pt-3">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <Link2 className="w-4 h-4 text-ume" />
+              Souvent acheté avec
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="divide-y divide-border">
+              {detail.co_purchased.slice(0, 8).map((cp, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between text-xs py-1.5 cursor-pointer hover:bg-accent rounded px-1.5 -mx-1.5 transition-colors"
+                  onClick={() => onOpenProduct(cp.article_ref)}
+                >
+                  <span className="truncate max-w-[240px]">
+                    {cp.designation || cp.article_ref}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className="text-xs shrink-0 ml-2"
+                  >
+                    {cp.co_orders} cmd
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Poids mensuel */}
+      {detail.monthly_sales.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1.5 pt-3">
+            <CardTitle className="text-base flex items-center gap-1.5">
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              Poids mensuel
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-1">
+              {detail.monthly_sales.slice(-12).map((m, i) => {
+                const maxQty = Math.max(
+                  ...detail.monthly_sales.slice(-12).map((x) => x.qty)
+                );
+                const pct = maxQty > 0 ? (m.qty / maxQty) * 100 : 0;
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 text-xs group/bar"
+                  >
+                    <span className="w-14 text-xs text-muted-foreground shrink-0 tabular-nums">
+                      {m.month}
+                    </span>
+                    <div className="flex-1 bg-muted rounded-full h-3 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500/70 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.max(pct, 1)}%` }}
+                      />
+                    </div>
+                    <span className="w-16 text-right shrink-0 font-medium tabular-nums text-xs">
+                      {formatWeight(m.qty)}
                     </span>
                   </div>
                 );

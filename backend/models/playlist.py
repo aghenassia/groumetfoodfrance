@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime, date, timezone
-from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey, UniqueConstraint, Index
+from datetime import datetime, date, time, timezone
+from sqlalchemy import String, Integer, Date, DateTime, Time, Text, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from core.database import Base
 
@@ -19,8 +19,10 @@ class DailyPlaylist(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     call_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("calls.id"))
+    reminder_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
-    user = relationship("User", back_populates="playlists")
+    user = relationship("User", back_populates="playlists", foreign_keys=[user_id])
     client = relationship("Client", back_populates="playlist_entries")
 
     __table_args__ = (

@@ -27,5 +27,5 @@ class User(Base):
     calls = relationship("Call", back_populates="user")
     contacts = relationship("Contact", back_populates="assigned_user")
     qualifications = relationship("CallQualification", back_populates="user")
-    playlists = relationship("DailyPlaylist", back_populates="user")
+    playlists = relationship("DailyPlaylist", back_populates="user", foreign_keys="[DailyPlaylist.user_id]")
     gamification_entries = relationship("Gamification", back_populates="user")

@@ -270,6 +270,31 @@ class ApiClient {
     return this.get<PlaylistInsight>(`/api/playlists/${playlistId}/insight?with_ai=${withAi}`);
   }
 
+  addToPlaylist(data: { client_id: string; user_id?: string; reason_detail?: string }) {
+    return this.post<{ ok: boolean; message: string; playlist_id: string }>("/api/playlists/add", data);
+  }
+
+  createReminder(data: { client_id: string; user_id?: string; target_date: string; target_time?: string; reason_detail?: string }) {
+    return this.post<{ ok: boolean; message: string; playlist_id: string }>("/api/playlists/reminder", data);
+  }
+
+  getRemindersPlaylist(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<ReminderItem[]>(`/api/playlists/reminders${qs}`);
+  }
+
+  getDueReminders() {
+    return this.get<DueReminder[]>("/api/playlists/reminders/due");
+  }
+
+  updateReminder(id: string, data: { target_date?: string; target_time?: string; reason_detail?: string; status?: string }) {
+    return this.patch<{ ok: boolean }>(`/api/playlists/reminders/${id}`, data);
+  }
+
+  deleteReminder(id: string) {
+    return this.delete<{ ok: boolean }>(`/api/playlists/reminders/${id}`);
+  }
+
   getPlaylistConfigs() {
     return this.get<PlaylistConfigItem[]>("/api/admin/playlist/configs");
   }
@@ -1032,6 +1057,27 @@ export interface Reminder {
   contact_e164?: string;
   user_name?: string;
   qualified_at: string;
+}
+
+export interface ReminderItem {
+  id: string;
+  client_id: string;
+  client_name: string;
+  user_id: string;
+  user_name?: string;
+  generated_date: string;
+  reminder_time?: string;
+  reason_detail?: string;
+  status: string;
+  created_by?: string;
+}
+
+export interface DueReminder {
+  id: string;
+  client_id: string;
+  client_name: string;
+  reminder_time?: string;
+  reason_detail?: string;
 }
 
 export interface LeaderboardEntry {

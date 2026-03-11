@@ -45,6 +45,10 @@ import {
   Gift,
   Calculator,
   Percent,
+  PhoneCall,
+  Briefcase,
+  Bell,
+  Weight,
 } from "lucide-react";
 
 type ArticleId =
@@ -72,7 +76,11 @@ type ArticleId =
   | "admin-glossaire"
   | "admin-margins"
   | "admin-challenges"
-  | "enrichment";
+  | "enrichment"
+  | "call-companion"
+  | "intel"
+  | "reminders"
+  | "kg-view";
 
 interface ArticleMeta {
   id: ArticleId;
@@ -139,6 +147,38 @@ const ARTICLES: ArticleMeta[] = [
     category: "sales",
     summary: "Création auto, enrichissement IA, édition, rattachement et audit trail des fiches clients.",
     tags: ["enrichissement", "ia", "édition", "rattachement", "audit", "fiche", "merge", "historique"],
+  },
+  {
+    id: "call-companion",
+    title: "Call Companion",
+    icon: PhoneCall,
+    category: "sales",
+    summary: "Widget flottant pour qualifier un appel et enrichir la fiche client pendant ou après un call. Persiste à travers la navigation CRM.",
+    tags: ["appel", "qualification", "companion", "widget", "enrichissement", "intel"],
+  },
+  {
+    id: "intel",
+    title: "Intel commerciale",
+    icon: Briefcase,
+    category: "sales",
+    summary: "Renseignez les fournisseurs, concurrents et produits d'intérêt de chaque client pour un ciblage précis.",
+    tags: ["fournisseur", "concurrent", "produit", "intel", "ciblage", "filtre"],
+  },
+  {
+    id: "reminders",
+    title: "Rappels & To do",
+    icon: Bell,
+    category: "sales",
+    summary: "Créez des rappels avec date et heure depuis la fiche client, les appels ou le widget. Notifications popup en temps réel.",
+    tags: ["rappel", "notification", "playlist", "todo", "heure", "popup"],
+  },
+  {
+    id: "kg-view",
+    title: "Vue Kg (Produits)",
+    icon: Weight,
+    category: "sales",
+    summary: "Analysez les ventes d'un produit en kilogrammes : poids total, top clients par poids, ventes mensuelles en kg/tonnes.",
+    tags: ["kg", "poids", "tonne", "produit", "volume", "quantité"],
   },
   {
     id: "qualify",
@@ -351,7 +391,7 @@ export default function WikiPage() {
           Wiki — Centre d&apos;aide
         </h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Tout ce qu&apos;il faut savoir pour maîtriser Sales Machine. Cliquez sur un article pour en savoir plus.
+          Tout ce qu&apos;il faut savoir pour maîtriser GFF CRM. Cliquez sur un article pour en savoir plus.
         </p>
       </div>
 
@@ -480,7 +520,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Rappels & Alertes">
             <p>Côte à côte sous les stats :</p>
             <ul className="text-sm space-y-1">
-              <li>• <strong>Rappels</strong> : les 5 prochains clients à rappeler (issus de la <L to="qualify">qualification</L>).</li>
+              <li>• <strong>Rappels</strong> : tous les <L to="reminders">rappels</L> à venir (qualifications + rappels manuels avec heure), modifiables et supprimables. Une <strong>popup de notification</strong> apparaît en temps réel quand un rappel est dû.</li>
               <li>• <strong>Alertes</strong> : appels non qualifiés et clients dormants.</li>
             </ul>
           </Section>
@@ -555,6 +595,16 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>Sans commercial :</strong> uniquement les entreprises orphelines (sans assignation).</li>
             </ul>
             <p className="text-sm text-muted-foreground mt-1">Ce périmètre empêche qu&apos;un client d&apos;un autre commercial apparaisse dans votre playlist.</p>
+          </Section>
+
+          <Section title="Ajout manuel & rappels">
+            <p>En plus de la génération automatique, vous pouvez :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Ajouter manuellement</strong> un client à votre To do depuis sa <L to="client360">fiche 360°</L> (bouton &quot;Playlist&quot;).</li>
+              <li>• Créer un <L to="reminders">rappel</L> avec date et heure, qui apparaîtra dans votre To do le jour J.</li>
+              <li>• Les managers peuvent assigner ces actions à un commercial spécifique.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Les entrées manuelles et rappels ne sont <strong>jamais supprimés</strong> par la regénération automatique des playlists.</p>
           </Section>
 
           <Section title="Anti-doublons">
@@ -654,13 +704,27 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• L&apos;<L to="ai-analysis">analyse IA</L> : résumé, sentiment, coaching, opportunités.</li>
               <li>• Le <strong>lecteur audio</strong> si un enregistrement existe.</li>
             </ul>
-            <p><strong>Retours commerciaux</strong> : timeline chronologique de tous les retours et qualifications du commercial sur ce client (moods, outcomes, notes, tags, prochaines étapes). Permet de visualiser l&apos;historique complet des échanges commerciaux en un seul endroit.</p>
+            <p><strong>Retours</strong> : timeline chronologique unifiée regroupant trois types d&apos;entrées :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <Badge variant="outline" className="text-[10px]">Appel</Badge> Qualifications d&apos;appels classiques (mood, outcome, notes).</li>
+              <li>• <Badge variant="outline" className="text-[10px] border-sora/30 text-sora">Companion</Badge> Sessions du <L to="call-companion">Call Companion</L> (qualification + intel).</li>
+              <li>• <Badge variant="outline" className="text-[10px] border-kiku/30 text-sensai">Note</Badge> Notes libres ajoutées par n&apos;importe quel commercial.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Un formulaire de saisie rapide en haut de l&apos;onglet permet d&apos;ajouter une note à tout moment.</p>
             <p><strong>Suggestions upsell</strong> : produits que des clients similaires achètent mais pas celui-ci, avec un taux d&apos;affinité et le CA généré chez les similaires.</p>
             <p><History className="w-3 h-3 inline text-sora" /> <strong>Historique modifications</strong> : timeline de toutes les modifications apportées à la fiche (création, mises à jour, fusions, ajout/suppression de téléphones). Chaque entrée indique qui a fait la modification, quel champ, l&apos;ancienne et la nouvelle valeur. Voir <L to="enrichment">Audit trail</L>.</p>
           </Section>
 
+          <Section title="Intel commerciale">
+            <p>La fiche client affiche une section dédiée à l&apos;<L to="intel">intel commerciale</L> avec les fournisseurs, concurrents et produits d&apos;intérêt du client. Ces données sont modifiables à tout moment directement sur la fiche, ou via le <L to="call-companion">Call Companion</L> pendant un appel.</p>
+          </Section>
+
+          <Section title="Actions Playlist & Rappels">
+            <p>Depuis l&apos;en-tête de la fiche client, deux boutons permettent d&apos;ajouter le client à la <strong>To do</strong> ou de créer un <L to="reminders">rappel</L> avec date et heure. Les managers peuvent assigner ces actions à un commercial spécifique via un sélecteur dédié.</p>
+          </Section>
+
           <Section title="Section Contacts">
-            <p>Chaque entreprise peut avoir <strong>plusieurs contacts</strong> (personnes physiques rattachées). La fiche 360° affiche la liste des contacts de l&apos;entreprise avec possibilité de créer, éditer et déplacer des contacts. Le <strong>contact principal</strong> est créé automatiquement lors de l&apos;import Sage ou de la sync Ringover. Voir <L to="contacts">Entreprises & Contacts</L>.</p>
+            <p>Chaque entreprise peut avoir <strong>plusieurs contacts</strong> (personnes physiques rattachées). La fiche 360° affiche la liste des contacts avec téléphone et email directement. Un seul contact peut être <strong>principal</strong> — il est lié au bouton &quot;Appeler&quot; de la fiche. La priorité se gère depuis le formulaire d&apos;édition du contact. Voir <L to="contacts">Entreprises & Contacts</L>.</p>
           </Section>
 
           <Section title="Infos légales">
@@ -852,6 +916,171 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
         </div>
       );
 
+    case "call-companion":
+      return (
+        <div className="space-y-4">
+          <Section title="Qu&apos;est-ce que le Call Companion ?">
+            <p>Le Call Companion est un <strong>widget flottant</strong> qui s&apos;ouvre automatiquement lorsqu&apos;un commercial clique sur le bouton &quot;Appeler&quot; d&apos;un client. Il reste visible même si vous naviguez sur d&apos;autres pages du CRM, garantissant que vous pouvez remplir les informations pendant ou après l&apos;appel sans perdre votre travail.</p>
+          </Section>
+
+          <Section title="Comment ça marche ?">
+            <ol className="text-sm space-y-2 list-decimal list-inside">
+              <li>Cliquez sur <strong>&quot;Appeler&quot;</strong> depuis la <L to="client360">fiche client</L>, la <L to="playlist">To do</L>, la page <L to="calls">Appels</L> ou les <L to="contacts">Contacts</L>.</li>
+              <li>Le widget s&apos;ouvre en bas à droite de l&apos;écran avec le nom du client.</li>
+              <li>Renseignez les informations pendant ou après l&apos;appel.</li>
+              <li>Naviguez librement dans le CRM — le widget reste ouvert.</li>
+              <li>Cliquez sur <strong>&quot;Enregistrer la session&quot;</strong> pour sauvegarder.</li>
+            </ol>
+          </Section>
+
+          <Section title="Les sections du widget">
+            <ul className="space-y-2 text-sm">
+              <li><strong>Qualification :</strong> ressenti (chaud/neutre/froid), résultat de l&apos;appel (intéressé, rappel, commande, NRP, devis envoyé, pas intéressé). Ces données alimentent la <L to="qualify">qualification</L> et la <L to="client360">fiche client</L>.</li>
+              <li><strong>Intel commerciale :</strong> ajout rapide de <L to="intel">fournisseurs, concurrents et produits d&apos;intérêt</L> pour ce client (mode compact).</li>
+              <li><strong>Notes &amp; prochaine action :</strong> notes libres, prochaine étape, date et heure de rappel. Si une date est renseignée, un <L to="reminders">rappel</L> est automatiquement créé.</li>
+            </ul>
+          </Section>
+
+          <Section title="Matching avec les appels Ringover">
+            <p>Lors de la prochaine sync Ringover, le système apparie automatiquement votre session Companion avec l&apos;appel réel (CDR) en croisant le <strong>user_id</strong>, le <strong>numéro de téléphone</strong> et une <strong>fenêtre temporelle</strong> (±2min au début, ±30min après). Un appel qualifié via le Companion n&apos;apparaît plus dans l&apos;onglet &quot;À qualifier&quot;.</p>
+          </Section>
+
+          <Section title="Historique des sessions">
+            <p>Toutes les sessions Companion sont enregistrées et visibles dans l&apos;onglet <strong>Retours</strong> de la <L to="client360">fiche client</L>, avec un badge &quot;Companion&quot; distinctif. Elles apparaissent dans la timeline chronologique aux côtés des qualifications d&apos;appels et des <L to="client360">notes client</L>.</p>
+          </Section>
+        </div>
+      );
+
+    case "intel":
+      return (
+        <div className="space-y-4">
+          <Section title="Qu&apos;est-ce que l&apos;intel commerciale ?">
+            <p>L&apos;intel commerciale permet d&apos;enrichir chaque fiche client avec trois types d&apos;informations stratégiques : les <strong>fournisseurs</strong> du client, ses <strong>concurrents</strong>, et les <strong>produits qui l&apos;intéressent</strong>.</p>
+          </Section>
+
+          <Section title="Fournisseurs">
+            <p>Renseignez les fournisseurs avec lesquels travaille votre client. Le système maintient une <strong>base globale de fournisseurs</strong> partagée entre tous les clients :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Tapez les premières lettres pour rechercher un fournisseur existant.</li>
+              <li>• Si le fournisseur n&apos;existe pas, il sera automatiquement ajouté à la base globale.</li>
+              <li>• Vous pouvez ensuite filtrer les clients par fournisseur pour identifier des opportunités.</li>
+            </ul>
+          </Section>
+
+          <Section title="Concurrents">
+            <p>Même principe que les fournisseurs : une base globale de concurrents enrichie au fil des appels.</p>
+            <ul className="text-sm space-y-1">
+              <li>• Utile pour détecter les ruptures chez un concurrent et proposer une alternative.</li>
+              <li>• Permet d&apos;identifier rapidement tous les clients travaillant avec un concurrent donné.</li>
+            </ul>
+          </Section>
+
+          <Section title="Produits d&apos;intérêt">
+            <p>Notez les produits que le client commande habituellement ou qui l&apos;intéressent :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Recherche dans le <L to="products">catalogue produits</L> existant.</li>
+              <li>• Possibilité d&apos;ajouter un produit en texte libre s&apos;il n&apos;est pas en base.</li>
+              <li>• Les tags produit avec une référence article sont <strong>cliquables</strong> et redirigent vers la fiche produit.</li>
+            </ul>
+          </Section>
+
+          <Section title="Où renseigner l&apos;intel ?">
+            <ul className="text-sm space-y-1">
+              <li>• Depuis le <L to="call-companion">Call Companion</L> pendant un appel (mode compact).</li>
+              <li>• Directement sur la <L to="client360">fiche client 360°</L> dans la section &quot;Intel commerciale&quot; (à tout moment, sans contexte d&apos;appel).</li>
+            </ul>
+          </Section>
+
+          <Section title="Exploitation des données">
+            <p>L&apos;intel commerciale permet à terme de :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Filtrer les clients par fournisseur, concurrent ou produit d&apos;intérêt.</li>
+              <li>• Identifier les clients touchés par une rupture chez un concurrent.</li>
+              <li>• Cibler les clients intéressés par une famille de produits pour une opération commerciale.</li>
+            </ul>
+          </Section>
+        </div>
+      );
+
+    case "reminders":
+      return (
+        <div className="space-y-4">
+          <Section title="Système de rappels">
+            <p>GFF CRM propose un système de rappels avancé avec <strong>date et heure</strong>, intégré dans la &quot;To do&quot; quotidienne. Les rappels déclenchent une <strong>notification popup</strong> en temps réel quand l&apos;heure est arrivée.</p>
+          </Section>
+
+          <Section title="Créer un rappel">
+            <p>Vous pouvez créer un rappel depuis plusieurs endroits :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Fiche client :</strong> bouton &quot;Rappel&quot; dans l&apos;en-tête → choisissez date, heure et note.</li>
+              <li>• <strong>Call Companion :</strong> section &quot;Prochaine étape&quot; avec date et heure → crée automatiquement un rappel à la soumission.</li>
+              <li>• <strong>Page Appels :</strong> bouton &quot;Rappel&quot; dans le panneau droit d&apos;un appel.</li>
+              <li>• <strong>Qualification classique :</strong> date de rappel dans le formulaire de qualification.</li>
+            </ul>
+          </Section>
+
+          <Section title="Managers : assigner à un commercial">
+            <p>Si vous êtes <strong>manager ou admin</strong>, un sélecteur &quot;Pour quel commercial ?&quot; apparaît dans les popovers de rappel et de playlist. Vous pouvez ainsi :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Créer un rappel pour un commercial spécifique.</li>
+              <li>• Ajouter un client à la &quot;To do&quot; d&apos;un commercial.</li>
+            </ul>
+          </Section>
+
+          <Section title="Notification popup">
+            <p>Quand l&apos;heure d&apos;un rappel est atteinte, une <strong>popup animée</strong> apparaît en bas à droite de l&apos;écran avec :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Le nom du client.</li>
+              <li>• La note associée au rappel.</li>
+              <li>• Un bouton pour accéder directement à la fiche client.</li>
+              <li>• Un bouton pour acquitter le rappel.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Le système vérifie les rappels en attente toutes les 30 secondes.</p>
+          </Section>
+
+          <Section title="Gérer ses rappels">
+            <p>Sur le <L to="dashboard">dashboard</L>, la section &quot;Rappels à venir&quot; liste tous vos rappels programmés. Vous pouvez :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Modifier</strong> un rappel (date, heure, note) via l&apos;icône crayon.</li>
+              <li>• <strong>Supprimer</strong> un rappel via l&apos;icône corbeille.</li>
+            </ul>
+          </Section>
+
+          <Section title="To do manuelle">
+            <p>En plus des rappels, vous pouvez <strong>ajouter manuellement un client à votre To do</strong> du jour depuis la fiche client (bouton &quot;Playlist&quot;). Ces entrées manuelles ne sont <strong>jamais supprimées</strong> par la regénération automatique des playlists.</p>
+          </Section>
+        </div>
+      );
+
+    case "kg-view":
+      return (
+        <div className="space-y-4">
+          <Section title="Vue Kg sur les produits">
+            <p>L&apos;onglet <strong>&quot;Kg&quot;</strong> est disponible dans le panneau détail de chaque produit, à côté de &quot;Aperçu&quot; et &quot;Commandes&quot;. Il offre une analyse des ventes en <strong>poids (kilogrammes)</strong> au lieu du chiffre d&apos;affaires.</p>
+          </Section>
+
+          <Section title="KPIs affichés">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Poids total vendu</strong> : somme de toutes les quantités vendues (en kg ou tonnes si &gt; 1000 kg).</li>
+              <li>• <strong>Moyenne par commande</strong> : poids moyen par commande.</li>
+              <li>• <strong>Moyenne par client</strong> : poids moyen par client acheteur.</li>
+            </ul>
+          </Section>
+
+          <Section title="Top clients par poids">
+            <p>Classement des meilleurs acheteurs de ce produit par quantité (en kg), au lieu du classement par CA habituel. Utile pour identifier les gros volumes.</p>
+          </Section>
+
+          <Section title="Ventes mensuelles en poids">
+            <p>Graphique en barres (couleur émeraude) montrant l&apos;évolution des quantités vendues mois par mois. Le formatage est intelligent :</p>
+            <ul className="text-sm space-y-1">
+              <li>• En dessous de 1 000 kg : affichage en <strong>kg</strong> (ex: &quot;450 kg&quot;).</li>
+              <li>• Au-dessus de 1 000 kg : affichage en <strong>tonnes</strong> (ex: &quot;2,5 t&quot;).</li>
+            </ul>
+          </Section>
+        </div>
+      );
+
     case "qualify":
       return (
         <div className="space-y-4">
@@ -897,7 +1126,13 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Où qualifier ?">
-            <p>Depuis la page <L to="calls">Appels</L> (bouton &quot;Qualifier&quot; sur chaque appel), ou depuis la <L to="playlist">Playlist</L> lors du traitement d&apos;un contact.</p>
+            <p>Plusieurs options :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong><L to="call-companion">Call Companion</L></strong> : widget flottant qui s&apos;ouvre au clic sur &quot;Appeler&quot; — la méthode la plus rapide, pendant ou juste après l&apos;appel.</li>
+              <li>• <strong>Page <L to="calls">Appels</L></strong> : bouton &quot;Qualifier&quot; sur chaque appel non qualifié.</li>
+              <li>• <strong><L to="playlist">To do</L></strong> : lors du traitement d&apos;un contact.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Un appel qualifié via le Companion ne nécessite pas de requalification sur la page Appels.</p>
           </Section>
         </div>
       );
@@ -1041,6 +1276,14 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             </ul>
           </Section>
 
+          <Section title="Fiche produit — Onglet Kg">
+            <p>L&apos;onglet <strong>Kg</strong> affiche les données de ventes en poids au lieu du CA. Voir <L to="kg-view">Vue Kg</L> pour le détail.</p>
+          </Section>
+
+          <Section title="Filtre par entrepôt">
+            <p>Un filtre par <strong>entrepôt/dépôt</strong> est disponible dans la barre de filtres de la page produits. Il permet de n&apos;afficher que les produits disponibles dans un dépôt spécifique.</p>
+          </Section>
+
           <Section title="Stock par dépôt">
             <p>Le stock est détaillé par dépôt : quantité en stock, réservée, en commande, en préparation, disponible et prévisionnelle. La <L to="admin-sync">synchronisation</L> des stocks peut être lancée depuis l&apos;admin.</p>
           </Section>
@@ -1166,7 +1409,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Comment ça marche ?">
             <ul className="text-sm space-y-1">
               <li>• Le classement est calculé <strong>en temps réel</strong> à partir des ventes Sage.</li>
-              <li>• Si le challenge porte sur un produit, seules les ventes de ce produit comptent.</li>
+              <li>• Un challenge peut cibler <strong>un produit</strong>, <strong>plusieurs références</strong>, ou une <strong>famille entière</strong> de produits.</li>
               <li>• La métrique (kg, unités, CA ou marge) détermine comment les ventes sont comptabilisées.</li>
               <li>• Votre position est mise en surbrillance sur le <L to="leaderboard">classement</L> et le <L to="dashboard">dashboard</L>.</li>
             </ul>

@@ -81,9 +81,9 @@ export function SupplierPicker({ clientId, suppliers, onUpdate, compact }: Suppl
       {suppliers.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {suppliers.map((s) => (
-            <Badge key={s.id} variant="outline" className="text-xs gap-1 pr-1 bg-blue-50 text-blue-700 border-blue-200">
-              {s.supplier_name}
-              <button onClick={() => remove(s.supplier_id)} className="ml-0.5 hover:text-red-600 transition-colors">
+            <Badge key={s.id} variant="outline" className="text-xs gap-1 pr-1 bg-blue-50 text-blue-700 border-blue-200 max-w-[200px]" title={s.supplier_name}>
+              <span className="truncate">{s.supplier_name}</span>
+              <button onClick={() => remove(s.supplier_id)} className="ml-0.5 hover:text-red-600 transition-colors shrink-0">
                 <X className="w-3 h-3" />
               </button>
             </Badge>

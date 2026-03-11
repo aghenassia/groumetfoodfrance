@@ -799,10 +799,13 @@ async def clear_playlists_today(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    """Supprime les playlists du jour (pour regénérer)."""
+    """Supprime les playlists du jour (pour regénérer). Préserve les ajouts manuels et rappels."""
     from sqlalchemy import delete
     today = date.today()
-    stmt = delete(DailyPlaylist).where(DailyPlaylist.generated_date == today)
+    stmt = delete(DailyPlaylist).where(
+        DailyPlaylist.generated_date == today,
+        DailyPlaylist.reason.notin_(["manual", "callback"]),
+    )
     if user_id:
         stmt = stmt.where(DailyPlaylist.user_id == user_id)
     result = await db.execute(stmt)

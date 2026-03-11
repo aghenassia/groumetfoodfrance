@@ -63,6 +63,7 @@ export function CallCompanionWidget() {
   const [notes, setNotes] = useState("");
   const [nextStep, setNextStep] = useState("");
   const [nextStepDate, setNextStepDate] = useState("");
+  const [nextStepTime, setNextStepTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -94,12 +95,25 @@ export function CallCompanionWidget() {
         next_step: nextStep || undefined,
         next_step_date: nextStepDate || undefined,
       });
-      toast.success("Appel qualifié et intel sauvegardée");
+
+      if (nextStepDate && clientId) {
+        try {
+          await api.createReminder({
+            client_id: clientId,
+            target_date: nextStepDate,
+            target_time: nextStepTime || undefined,
+            reason_detail: nextStep || notes || "Rappel suite appel",
+          });
+        } catch {}
+      }
+
+      toast.success("Appel qualifié" + (nextStepDate ? " · Rappel créé" : ""));
       setMood("");
       setOutcome("");
       setNotes("");
       setNextStep("");
       setNextStepDate("");
+      setNextStepTime("");
       closeCompanion();
     } catch {
       toast.error("Erreur lors de la sauvegarde");
@@ -114,6 +128,7 @@ export function CallCompanionWidget() {
     setNotes("");
     setNextStep("");
     setNextStepDate("");
+    setNextStepTime("");
     closeCompanion();
   };
 
@@ -147,6 +162,8 @@ export function CallCompanionWidget() {
             setNextStep={setNextStep}
             nextStepDate={nextStepDate}
             setNextStepDate={setNextStepDate}
+            nextStepTime={nextStepTime}
+            setNextStepTime={setNextStepTime}
             onRefreshIntel={refreshIntel}
           />
         </div>
@@ -193,6 +210,8 @@ export function CallCompanionWidget() {
             setNextStep={setNextStep}
             nextStepDate={nextStepDate}
             setNextStepDate={setNextStepDate}
+            nextStepTime={nextStepTime}
+            setNextStepTime={setNextStepTime}
             onRefreshIntel={refreshIntel}
           />
         </div>
@@ -216,6 +235,7 @@ function CompanionForm({
   notes, setNotes,
   nextStep, setNextStep,
   nextStepDate, setNextStepDate,
+  nextStepTime, setNextStepTime,
   onRefreshIntel,
 }: {
   clientId: string | null;
@@ -225,6 +245,7 @@ function CompanionForm({
   notes: string; setNotes: (v: string) => void;
   nextStep: string; setNextStep: (v: string) => void;
   nextStepDate: string; setNextStepDate: (v: string) => void;
+  nextStepTime: string; setNextStepTime: (v: string) => void;
   onRefreshIntel: () => Promise<void>;
 }) {
   if (!clientId) return null;
@@ -319,31 +340,47 @@ function CompanionForm({
         <SectionTitle number={6} title="Notes & prochaine action" />
         <div className="mt-2 space-y-2">
           <Textarea
-            placeholder="Notes sur l'échange..."
+            placeholder="Notes sur l'échange (visible dans Retours)..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             className="text-xs min-h-[60px] resize-none"
           />
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Action à faire</label>
+            <Input
+              placeholder="Ex: Rappeler, Envoyer devis, Relancer..."
+              value={nextStep}
+              onChange={(e) => setNextStep(e.target.value)}
+              className="h-7 text-xs"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-muted-foreground mb-0.5 block">Prochaine étape</label>
-              <Input
-                placeholder="Ex: Rappeler, Envoyer devis..."
-                value={nextStep}
-                onChange={(e) => setNextStep(e.target.value)}
-                className="h-7 text-xs"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-muted-foreground mb-0.5 block">Date de rappel</label>
+              <label className="text-[10px] text-muted-foreground mb-0.5 block">📅 Date de rappel</label>
               <Input
                 type="date"
                 value={nextStepDate}
                 onChange={(e) => setNextStepDate(e.target.value)}
+                min={new Date().toISOString().split("T")[0]}
+                className="h-7 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-0.5 block">🕐 Heure</label>
+              <Input
+                type="time"
+                value={nextStepTime}
+                onChange={(e) => setNextStepTime(e.target.value)}
                 className="h-7 text-xs"
               />
             </div>
           </div>
+          {nextStepDate && (
+            <p className="text-[10px] text-blue-600 bg-blue-50 rounded px-2 py-1">
+              Un rappel sera créé pour le {new Date(nextStepDate).toLocaleDateString("fr-FR")}
+              {nextStepTime ? ` à ${nextStepTime}` : ""} dans votre playlist
+            </p>
+          )}
         </div>
       </section>
     </div>

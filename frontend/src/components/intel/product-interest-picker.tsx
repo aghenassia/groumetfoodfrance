@@ -5,6 +5,7 @@ import { api, ClientProductInterestEntry } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { X, Plus, Package, Loader2, Search } from "lucide-react";
+import Link from "next/link";
 
 interface ProductInterestPickerProps {
   clientId: string;
@@ -91,18 +92,23 @@ export function ProductInterestPicker({ clientId, interests, onUpdate, compact }
 
       {interests.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {interests.map((pi) => (
-            <Badge key={pi.id} variant="outline" className="text-xs gap-1 pr-1 bg-purple-50 text-purple-700 border-purple-200">
-              {pi.article_ref ? (
-                <span><span className="font-mono opacity-70">{pi.article_ref}</span> {pi.product_name}</span>
-              ) : (
-                <span>{pi.product_name}</span>
-              )}
-              <button onClick={() => remove(pi.id)} className="ml-0.5 hover:text-red-600 transition-colors">
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          ))}
+          {interests.map((pi) => {
+            const label = pi.article_ref ? `${pi.article_ref} ${pi.product_name}` : pi.product_name;
+            return (
+              <Badge key={pi.id} variant="outline" className="text-xs gap-1 pr-1 bg-purple-50 text-purple-700 border-purple-200 max-w-[200px]" title={label}>
+                {pi.article_ref ? (
+                  <Link href={`/products?ref=${encodeURIComponent(pi.article_ref)}`} className="truncate hover:underline">
+                    {label}
+                  </Link>
+                ) : (
+                  <span className="truncate">{label}</span>
+                )}
+                <button onClick={() => remove(pi.id)} className="ml-0.5 hover:text-red-600 transition-colors shrink-0">
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            );
+          })}
         </div>
       )}
 

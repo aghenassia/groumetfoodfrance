@@ -7,8 +7,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Sales Machine CRM",
-  description: "CRM Phone-First — Sage 100 + Ringover",
+  title: "GFF CRM",
+  description: "CRM Phone-First — Gourmet Food France",
+  icons: {
+    icon: "/favicon-GFF-black.png",
+  },
 };
 
 export default function RootLayout({

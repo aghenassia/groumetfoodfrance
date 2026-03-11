@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { api, CallStats, PlaylistItem, Reminder, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient, PipelineStats, SalesDashboardResponse, SalesRepStats } from "@/lib/api";
+import { api, CallStats, PlaylistItem, Reminder, ReminderItem, MyStats, User, ObjectiveProgress, ChallengeEntry, ChallengeRankingEntry, MyMargins, MyTopProduct, MyTopClient, PipelineStats, SalesDashboardResponse, SalesRepStats } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -57,7 +57,18 @@ import {
   ChevronUp,
   ChevronDown,
   PhoneOutgoing,
+  Trash2,
+  Pencil,
+  Clock,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
 import { SparkLine, THEME_COLORS } from "@/components/ui/spark-line";
@@ -164,6 +175,12 @@ export default function DashboardPage() {
   const [unqualCount, setUnqualCount] = useState(0);
   const [dormantCount, setDormantCount] = useState(0);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [playlistReminders, setPlaylistReminders] = useState<ReminderItem[]>([]);
+  const [editingReminder, setEditingReminder] = useState<ReminderItem | null>(null);
+  const [editReminderDate, setEditReminderDate] = useState("");
+  const [editReminderTime, setEditReminderTime] = useState("");
+  const [editReminderNote, setEditReminderNote] = useState("");
+  const [savingReminder, setSavingReminder] = useState(false);
   const [objProgress, setObjProgress] = useState<ObjectiveProgress[]>([]);
   const [activeChallenges, setActiveChallenges] = useState<ChallengeEntry[]>([]);
   const [challengeRankings, setChallengeRankings] = useState<Record<string, ChallengeRankingEntry[]>>({});
@@ -267,6 +284,7 @@ export default function DashboardPage() {
     api.getUnqualifiedCalls(unqualParams).then((calls) => setUnqualCount(calls.length)).catch(() => {});
     api.getClients(dormantParams).then((res) => setDormantCount(res.total)).catch(() => {});
     api.getReminders(reminderParams).then((r) => setReminders(r.slice(0, 5))).catch(() => {});
+    api.getRemindersPlaylist(viewAs !== "me" && viewAs !== "all" ? { user_id: viewAs } : {}).then(setPlaylistReminders).catch(() => {});
 
     api.getChallenges("active").then((chs) => {
       setActiveChallenges(chs);
@@ -714,13 +732,49 @@ export default function DashboardPage() {
             <CardTitle className="text-base">
               <CalendarClock className="w-4 h-4 inline mr-2" />
               Rappels à venir
+              {(reminders.length + playlistReminders.length) > 0 && (
+                <Badge variant="secondary" className="ml-2 text-xs">{reminders.length + playlistReminders.length}</Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {reminders.length === 0 ? (
+            {reminders.length === 0 && playlistReminders.length === 0 ? (
               <p className="text-xs text-muted-foreground py-4 text-center">Aucun rappel</p>
             ) : (
               <div className="space-y-1.5">
+                {playlistReminders.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors group">
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/clients/${r.client_id}`} className="text-sm font-medium hover:underline">{r.client_name}</Link>
+                      <p className="text-xs text-muted-foreground">
+                        {r.reason_detail || "Rappel"}
+                        {r.reminder_time && <span> · <Clock className="w-3 h-3 inline" /> {r.reminder_time}</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={new Date(r.generated_date) <= new Date() ? "destructive" : "outline"} className="text-xs">
+                        {new Date(r.generated_date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => {
+                        setEditingReminder(r);
+                        setEditReminderDate(r.generated_date);
+                        setEditReminderTime(r.reminder_time || "");
+                        setEditReminderNote(r.reason_detail || "");
+                      }}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600" onClick={async () => {
+                        try {
+                          await api.deleteReminder(r.id);
+                          setPlaylistReminders(prev => prev.filter(x => x.id !== r.id));
+                          toast.success("Rappel supprimé");
+                        } catch { toast.error("Erreur"); }
+                      }}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
                 {reminders.map((r) => (
                   <div key={r.call_id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors">
                     <div className="flex-1 min-w-0">
@@ -1019,6 +1073,51 @@ export default function DashboardPage() {
       )}
       </>
       )}
+
+      {/* Edit reminder dialog */}
+      <Dialog open={!!editingReminder} onOpenChange={(open) => { if (!open) setEditingReminder(null); }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Modifier le rappel</DialogTitle>
+          </DialogHeader>
+          {editingReminder && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">{editingReminder.client_name}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                  <Input type="date" value={editReminderDate} onChange={(e) => setEditReminderDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Heure</label>
+                  <Input type="time" value={editReminderTime} onChange={(e) => setEditReminderTime(e.target.value)} className="h-8 text-xs" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Note</label>
+                <Input value={editReminderNote} onChange={(e) => setEditReminderNote(e.target.value)} placeholder="Motif..." className="h-8 text-xs" />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditingReminder(null)}>Annuler</Button>
+                <Button size="sm" className="flex-1" disabled={savingReminder} onClick={async () => {
+                  setSavingReminder(true);
+                  try {
+                    await api.updateReminder(editingReminder.id, {
+                      target_date: editReminderDate,
+                      target_time: editReminderTime || "",
+                      reason_detail: editReminderNote,
+                    });
+                    setPlaylistReminders(prev => prev.map(r => r.id === editingReminder.id ? { ...r, generated_date: editReminderDate, reminder_time: editReminderTime || undefined, reason_detail: editReminderNote } : r));
+                    toast.success("Rappel modifié");
+                    setEditingReminder(null);
+                  } catch { toast.error("Erreur"); }
+                  setSavingReminder(false);
+                }}>Enregistrer</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1519,6 +1618,7 @@ function AdminPilotingView({
           </CardContent>
         </Card>
       </div>
+
     </div>
   );
 }

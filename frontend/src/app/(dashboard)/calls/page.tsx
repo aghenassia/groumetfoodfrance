@@ -57,10 +57,16 @@ import {
   Pencil,
   Check,
   Loader2,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -219,6 +225,31 @@ export default function CallsPage() {
   const [assignDialog, setAssignDialog] = useState<{ contactId: string; contactName: string } | null>(null);
   const [assignSearch, setAssignSearch] = useState("");
   const [assignResults, setAssignResults] = useState<Client[]>([]);
+
+  const [showCallReminder, setShowCallReminder] = useState(false);
+  const [callReminderDate, setCallReminderDate] = useState("");
+  const [callReminderTime, setCallReminderTime] = useState("");
+  const [callReminderNote, setCallReminderNote] = useState("");
+  const [creatingCallReminder, setCreatingCallReminder] = useState(false);
+
+  const handleCreateCallReminder = async () => {
+    if (!callReminderDate || !selectedCall?.client_id) return;
+    setCreatingCallReminder(true);
+    try {
+      await api.createReminder({
+        client_id: selectedCall.client_id,
+        target_date: callReminderDate,
+        target_time: callReminderTime || undefined,
+        reason_detail: callReminderNote.trim() || `Rappel suite à l'appel du ${formatDate(selectedCall.start_time)}`,
+      });
+      toast.success("Rappel créé");
+      setShowCallReminder(false);
+      setCallReminderDate("");
+      setCallReminderTime("");
+      setCallReminderNote("");
+    } catch { toast.error("Erreur"); }
+    setCreatingCallReminder(false);
+  };
   const [newCompanyName, setNewCompanyName] = useState("");
   const [searchingAssign, setSearchingAssign] = useState(false);
   const [assigningContact, setAssigningContact] = useState(false);
@@ -1118,11 +1149,44 @@ export default function CallsPage() {
                       ) : null}
                     </CardContent>
                   </Card>
-                  <Link href={`/clients/${selectedClient.id}`}>
-                    <Button variant="outline" size="sm" className="w-full h-8 text-xs">
-                      <ExternalLink className="w-3 h-3 mr-1.5" />Voir la fiche 360°
-                    </Button>
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link href={`/clients/${selectedClient.id}`} className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full h-8 text-xs">
+                        <ExternalLink className="w-3 h-3 mr-1.5" />Fiche 360°
+                      </Button>
+                    </Link>
+                    <Popover open={showCallReminder} onOpenChange={(open) => { setShowCallReminder(open); if (!open) { setCallReminderDate(""); setCallReminderTime(""); setCallReminderNote(""); } }}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
+                          <Bell className="w-3 h-3" />
+                          Rappel
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64" align="end">
+                        <div className="space-y-2.5">
+                          <h4 className="font-medium text-xs">Programmer un rappel</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-muted-foreground mb-0.5 block">Date</label>
+                              <Input type="date" value={callReminderDate} onChange={(e) => setCallReminderDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="h-7 text-xs" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted-foreground mb-0.5 block">Heure</label>
+                              <Input type="time" value={callReminderTime} onChange={(e) => setCallReminderTime(e.target.value)} className="h-7 text-xs" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground mb-0.5 block">Note</label>
+                            <Input value={callReminderNote} onChange={(e) => setCallReminderNote(e.target.value)} placeholder="Motif..." className="h-7 text-xs" />
+                          </div>
+                          <Button size="sm" className="w-full h-7 text-xs gap-1" onClick={handleCreateCallReminder} disabled={creatingCallReminder || !callReminderDate}>
+                            {creatingCallReminder ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bell className="w-3 h-3" />}
+                            Créer
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                   {selectedClient.sales_summary && (
                     <Card>
                       <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5" />Chiffres clés</CardTitle></CardHeader>

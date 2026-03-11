@@ -1,8 +1,8 @@
-# Sales Machine CRM — Architecture Technique
+# GFF CRM — Architecture Technique
 
 > CRM "Phone-First" sur mesure pour Gourmet Food France
 > Connecté à Sage 100 (ERP/Compta) + Ringover (Téléphonie)
-> Version : 3.2 — Mars 2026
+> Version : 3.3 — Mars 2026
 
 ---
 
@@ -2351,9 +2351,48 @@ JWT_REFRESH_DAYS=7
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2026-03-12 | v3.3 | Rappels avec heure + popup, Playlist manuelle, Vue Kg produits, Rebranding GFF CRM, Tags intel cliquables |
 | 2026-03-11 | v3.2 | Call Companion, Intel commerciale, Notes client, Retours unifiés, Challenges multi-ref, Filtre entrepôt, Statut paiement commandes |
 | 2026-03-11 | v3.1 | Déploiement VPS, CI/CD, filtrage données Sage, reclassification avoirs, suivi impayés |
 | 2026-02-23 | Refonte Company/Contact | Séparation Client → Company + Contact. Nouvelle table contacts, nouveaux endpoints API, adaptation sync Sage/Ringover, lifecycle engine, frontend fiche 360 et page appels. |
+
+### v3.3 — 12 Mars 2026
+
+**Système de rappels avancé :**
+
+- **Rappels avec heure** : nouveau champ `reminder_time` (TIME) sur `daily_playlists` pour planifier un rappel à une heure précise
+- **Popup de notification** : composant `ReminderNotifier` intégré au layout global, poll toutes les 30s via `GET /api/playlists/reminders/due`, affiche une popup flottante animée quand un rappel est dû
+- **CRUD complet** : endpoints `GET /api/playlists/reminders`, `PATCH /api/playlists/reminders/{id}`, `DELETE /api/playlists/reminders/{id}` pour lister, modifier et supprimer les rappels
+- **Gestion depuis le dashboard** : boutons modifier (dialog) et supprimer (inline) sur chaque rappel playlist, compteur badge sur la section
+- **Rappel depuis l'onglet appels** : bouton "Rappel" dans le panneau droit de la page appels avec date + heure + note
+- **Intégration Call Companion** : quand une date de rappel est renseignée dans le widget, un rappel playlist est automatiquement créé avec l'heure si précisée
+
+**Playlist manuelle :**
+
+- **Ajout manuel** : endpoint `POST /api/playlists/add` pour ajouter un client à la playlist du jour (reason="manual")
+- **Boutons sur la fiche client** : popovers "Playlist" et "Rappel" dans le header, avec sélecteur de commercial pour les admins/managers
+- **Protection des ajouts manuels** : l'endpoint `DELETE /playlist/clear` préserve les entrées `reason IN ("manual", "callback")` lors de la regénération
+
+**Vue Kg sur les produits :**
+
+- **Nouvel onglet "Kg"** dans le panneau détail produit (entre Aperçu et Commandes)
+- **KPI en poids** : poids total vendu, moyenne par commande, moyenne par client
+- **Top clients par poids** : classement par quantité au lieu du CA
+- **Barres mensuelles en poids** : visualisation distincte (couleur émeraude) avec formatage intelligent kg/t (>1000kg → tonnes)
+- **Fonction `formatWeight`** : formatage automatique en kg ou tonnes selon le seuil
+
+**Rebranding GFF CRM :**
+
+- Renommage de "Sales Machine" en "GFF CRM" sur toute l'application (sidebar, login, metadata, wiki)
+- Logo `gff-white.svg` dans la sidebar, favicon `favicon-GFF-black.png`
+- Onglet "Playlist" renommé "To do"
+
+**Améliorations UX :**
+
+- **Tags intel tronqués** : `max-w-[200px]` + `truncate` + tooltip `title` au survol sur les badges fournisseurs, concurrents et produits d'intérêt
+- **Tags produit cliquables** : clic sur un tag produit d'intérêt avec `article_ref` redirige vers la fiche produit
+- **AuthProvider** ajouté au layout dashboard pour que `useAuth()` fonctionne sur toutes les pages (fix dropdown admin)
+- **Fix contact édition** : pré-remplissage intelligent first_name/last_name depuis le champ name pour les contacts Sage
 
 ### v3.2 — 11 Mars 2026
 

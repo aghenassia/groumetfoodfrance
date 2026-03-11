@@ -37,7 +37,8 @@ export default function LoginPage() {
           <div className="mx-auto w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
             <Phone className="w-6 h-6 text-primary" />
           </div>
-          <CardTitle className="text-2xl font-bold">Sales Machine</CardTitle>
+          <img src="/favicon-GFF-black.png" alt="GFF" className="h-10 w-auto mx-auto" />
+          <CardTitle className="text-2xl font-bold">GFF CRM</CardTitle>
           <p className="text-muted-foreground text-sm">
             Connectez-vous à votre CRM
           </p>

@@ -68,12 +68,27 @@ import {
   Swords,
   ExternalLink,
   CalendarDays,
+  ListPlus,
+  Bell,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { SupplierPicker } from "@/components/intel/supplier-picker";
 import { CompetitorPicker } from "@/components/intel/competitor-picker";
 import { ProductInterestPicker } from "@/components/intel/product-interest-picker";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -200,6 +215,20 @@ export default function ClientDetailPage() {
   const [newNoteContent, setNewNoteContent] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
+  const { user: currentUser } = useAuth();
+  const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
+  const [allUsers, setAllUsers] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [showPlaylistPopover, setShowPlaylistPopover] = useState(false);
+  const [playlistTargetUser, setPlaylistTargetUser] = useState<string>("");
+  const [playlistNote, setPlaylistNote] = useState("");
+  const [addingToPlaylist, setAddingToPlaylist] = useState(false);
+  const [showReminderPopover, setShowReminderPopover] = useState(false);
+  const [reminderTargetUser, setReminderTargetUser] = useState<string>("");
+  const [reminderDate, setReminderDate] = useState("");
+  const [reminderTime, setReminderTime] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
+  const [creatingReminder, setCreatingReminder] = useState(false);
+
   const fetchClient = () => {
     api
       .getClient(id)
@@ -238,6 +267,49 @@ export default function ClientDetailPage() {
     fetchSessions();
     fetchNotes();
   }, [id]);
+
+  useEffect(() => {
+    if (isManager && allUsers.length === 0) {
+      api.getUsersList().then(setAllUsers).catch(() => {});
+    }
+  }, [isManager]);
+
+  const handleAddToPlaylist = async () => {
+    setAddingToPlaylist(true);
+    try {
+      const data: { client_id: string; user_id?: string; reason_detail?: string } = { client_id: id };
+      if (isManager && playlistTargetUser) data.user_id = playlistTargetUser;
+      if (playlistNote.trim()) data.reason_detail = playlistNote.trim();
+      const res = await api.addToPlaylist(data);
+      toast.success(res.message);
+      setShowPlaylistPopover(false);
+      setPlaylistNote("");
+      setPlaylistTargetUser("");
+    } catch { toast.error("Erreur lors de l'ajout à la playlist"); }
+    setAddingToPlaylist(false);
+  };
+
+  const handleCreateReminder = async () => {
+    if (!reminderDate) { toast.error("Sélectionnez une date"); return; }
+    setCreatingReminder(true);
+    try {
+      const data: { client_id: string; user_id?: string; target_date: string; target_time?: string; reason_detail?: string } = {
+        client_id: id,
+        target_date: reminderDate,
+      };
+      if (reminderTime) data.target_time = reminderTime;
+      if (isManager && reminderTargetUser) data.user_id = reminderTargetUser;
+      if (reminderNote.trim()) data.reason_detail = reminderNote.trim();
+      const res = await api.createReminder(data);
+      toast.success(res.message);
+      setShowReminderPopover(false);
+      setReminderDate("");
+      setReminderTime("");
+      setReminderNote("");
+      setReminderTargetUser("");
+    } catch { toast.error("Erreur lors de la création du rappel"); }
+    setCreatingReminder(false);
+  };
 
   useEffect(() => {
     const onFocus = () => fetchClient();
@@ -690,6 +762,122 @@ export default function ClientDetailPage() {
               />
             ) : null;
           })()}
+
+          {/* Playlist & Rappel */}
+          <Popover open={showPlaylistPopover} onOpenChange={(open) => { setShowPlaylistPopover(open); if (!open) { setPlaylistNote(""); setPlaylistTargetUser(""); } }}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <ListPlus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Playlist</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72" align="end">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">Ajouter à la playlist du jour</h4>
+                {isManager && allUsers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
+                    <Select value={playlistTargetUser} onValueChange={setPlaylistTargetUser}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Moi-même" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allUsers.filter(u => u.role === "sales" || u.role === "manager" || u.role === "admin").map(u => (
+                          <SelectItem key={u.id} value={u.id} className="text-xs">{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Note (optionnel)</label>
+                  <Input
+                    value={playlistNote}
+                    onChange={(e) => setPlaylistNote(e.target.value)}
+                    placeholder="Raison de l'ajout..."
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5"
+                  onClick={handleAddToPlaylist}
+                  disabled={addingToPlaylist}
+                >
+                  {addingToPlaylist ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ListPlus className="w-3.5 h-3.5" />}
+                  Ajouter
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <Popover open={showReminderPopover} onOpenChange={(open) => { setShowReminderPopover(open); if (!open) { setReminderDate(""); setReminderTime(""); setReminderNote(""); setReminderTargetUser(""); } }}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Bell className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Rappel</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72" align="end">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">Créer un rappel</h4>
+                {isManager && allUsers.length > 0 && (
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
+                    <Select value={reminderTargetUser} onValueChange={setReminderTargetUser}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Moi-même" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allUsers.filter(u => u.role === "sales" || u.role === "manager" || u.role === "admin").map(u => (
+                          <SelectItem key={u.id} value={u.id} className="text-xs">{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                    <Input
+                      type="date"
+                      value={reminderDate}
+                      onChange={(e) => setReminderDate(e.target.value)}
+                      min={new Date().toISOString().split("T")[0]}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Heure (optionnel)</label>
+                    <Input
+                      type="time"
+                      value={reminderTime}
+                      onChange={(e) => setReminderTime(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Note (optionnel)</label>
+                  <Input
+                    value={reminderNote}
+                    onChange={(e) => setReminderNote(e.target.value)}
+                    placeholder="Motif du rappel..."
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5"
+                  onClick={handleCreateReminder}
+                  disabled={creatingReminder || !reminderDate}
+                >
+                  {creatingReminder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                  Créer le rappel
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 

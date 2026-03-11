@@ -81,9 +81,9 @@ export function CompetitorPicker({ clientId, competitors, onUpdate, compact }: C
       {competitors.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {competitors.map((c) => (
-            <Badge key={c.id} variant="outline" className="text-xs gap-1 pr-1 bg-orange-50 text-orange-700 border-orange-200">
-              {c.competitor_name}
-              <button onClick={() => remove(c.competitor_id)} className="ml-0.5 hover:text-red-600 transition-colors">
+            <Badge key={c.id} variant="outline" className="text-xs gap-1 pr-1 bg-orange-50 text-orange-700 border-orange-200 max-w-[200px]" title={c.competitor_name}>
+              <span className="truncate">{c.competitor_name}</span>
+              <button onClick={() => remove(c.competitor_id)} className="ml-0.5 hover:text-red-600 transition-colors shrink-0">
                 <X className="w-3 h-3" />
               </button>
             </Badge>
