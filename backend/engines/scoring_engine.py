@@ -72,6 +72,8 @@ async def compute_all_scores(db: AsyncSession) -> dict:
 
     all_baskets = []
     for sage_id, stats in all_stats.items():
+        if stats is None:
+            continue
         count = stats.order_count_total or 1
         rev = float(stats.total_revenue_all or 0)
         all_baskets.append(rev / count)
