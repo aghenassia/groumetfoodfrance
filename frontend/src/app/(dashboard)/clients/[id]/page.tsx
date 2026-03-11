@@ -664,16 +664,21 @@ export default function ClientDetailPage() {
               </Button>
             </>
           )}
-          {client.phone_e164 && (
-            <ClickToCall
-              phoneNumber={client.phone_e164}
-              variant="cta"
-              label="Appeler"
-              contactName={client.name}
-              clientId={client.id}
-              clientName={client.name}
-            />
-          )}
+          {(() => {
+            const primaryContact = client.contacts?.find(c => c.is_primary);
+            const callPhone = primaryContact?.phone_e164 || client.phone_e164;
+            const callName = primaryContact?.name || client.contact_name || client.name;
+            return callPhone ? (
+              <ClickToCall
+                phoneNumber={callPhone}
+                variant="cta"
+                label="Appeler"
+                contactName={callName}
+                clientId={client.id}
+                clientName={client.name}
+              />
+            ) : null;
+          })()}
         </div>
       </div>
 
@@ -997,39 +1002,8 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
-      {/* Mobile-only contact cards */}
-      <div className="lg:hidden grid sm:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-1.5">
-              <Phone className="w-4 h-4" />
-              Téléphones
-            </CardTitle>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAddPhone(true)}>
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {client.phone_numbers.length === 0 && !client.phone && (
-              <p className="text-xs text-muted-foreground">Aucun numéro</p>
-            )}
-            {client.phone_numbers.map((pn) => (
-              <div key={pn.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-accent group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{pn.raw_phone || pn.phone_e164}</p>
-                  <p className="text-xs text-muted-foreground">{phoneLabel(pn.label)}</p>
-                </div>
-                <ClickToCall phoneNumber={pn.phone_e164} />
-              </div>
-            ))}
-            {client.phone_numbers.length === 0 && client.phone && (
-              <div className="flex items-center gap-2 py-1 px-2">
-                <div className="flex-1"><p className="text-sm font-medium">{client.phone}</p></div>
-                {client.phone_e164 && <ClickToCall phoneNumber={client.phone_e164} />}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* Mobile-only contacts card */}
+      <div className="lg:hidden">
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-1.5">
@@ -1047,12 +1021,22 @@ export default function ClientDetailPage() {
               client.contacts.map((ct) => (
                 <div key={ct.id} className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{ct.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{ct.name}</p>
+                      {ct.is_primary && <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>}
+                      {ct.role && <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>}
+                    </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
                       {ct.phone && <span className="flex items-center gap-1 whitespace-nowrap"><Phone className="w-3 h-3 shrink-0" />{ct.phone}</span>}
+                      {ct.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>}
                     </div>
                   </div>
-                  {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
@@ -2059,45 +2043,6 @@ export default function ClientDetailPage() {
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-1.5">
-              <Phone className="w-4 h-4" />
-              Téléphones
-            </CardTitle>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAddPhone(true)}>
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {client.phone_numbers.length === 0 && !client.phone && (
-              <p className="text-xs text-muted-foreground">Aucun numéro</p>
-            )}
-            {client.phone_numbers.map((pn) => (
-              <div key={pn.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-accent group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{pn.raw_phone || pn.phone_e164}</p>
-                  <p className="text-xs text-muted-foreground">{phoneLabel(pn.label)}</p>
-                </div>
-                <ClickToCall phoneNumber={pn.phone_e164} />
-                {pn.source !== "sage" && (
-                  <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => handleRemovePhone(pn.id)}>
-                    <Trash2 className="w-3 h-3 text-red-600" />
-                  </Button>
-                )}
-              </div>
-            ))}
-            {client.phone_numbers.length === 0 && client.phone && (
-              <div className="flex items-center gap-2 py-1 px-2">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{client.phone}</p>
-                </div>
-                {client.phone_e164 && <ClickToCall phoneNumber={client.phone_e164} />}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-1.5">
               <Users className="w-4 h-4" />
               Contacts ({client.contacts?.length || 0})
             </CardTitle>
@@ -2127,7 +2072,7 @@ export default function ClientDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} />}
+                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
                       <Pencil className="w-3 h-3" />
                     </Button>
@@ -2581,15 +2526,23 @@ export default function ClientDetailPage() {
               <Input className="h-8 text-sm" value={contactForm.role} onChange={(e) => setContactForm({...contactForm, role: e.target.value})} placeholder="Ex: Directeur, Acheteur..." />
             </div>
             <div>
-              <Label className="text-xs">Téléphone {editingContact?.phone ? '(clé unique)' : ''}</Label>
+              <Label className="text-xs">Téléphone</Label>
               <Input
                 className="h-8 text-sm"
                 value={contactForm.phone}
                 onChange={(e) => setContactForm({...contactForm, phone: e.target.value})}
                 placeholder="+33 6 12 34 56 78"
-                readOnly={!!editingContact?.phone}
-                disabled={!!editingContact?.phone}
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_primary_contact"
+                checked={contactForm.is_primary}
+                onChange={(e) => setContactForm({...contactForm, is_primary: e.target.checked})}
+                className="h-4 w-4 rounded border-gray-300 accent-green-600"
+              />
+              <Label htmlFor="is_primary_contact" className="text-xs cursor-pointer">Contact principal (lié au bouton Appeler)</Label>
             </div>
             <div>
               <Label className="text-xs flex items-center justify-between">

@@ -186,6 +186,13 @@ async def create_contact(
     db.add(contact)
     await db.flush()
 
+    if body.is_primary and body.company_id:
+        await db.execute(
+            update(Contact)
+            .where(Contact.company_id == body.company_id, Contact.id != contact.id)
+            .values(is_primary=False)
+        )
+
     if phone_e164 and body.company_id:
         pi = PhoneIndex(
             phone_e164=phone_e164,
@@ -268,6 +275,13 @@ async def update_contact(
                     detail=f"Ce numéro ({new_e164}) est déjà utilisé par le contact « {dup_row.name} » sur le client « {dup_row.company_name or 'inconnu'} »",
                 )
             contact.phone_e164 = new_e164
+
+    if "is_primary" in changes and changes["is_primary"] and contact.company_id:
+        await db.execute(
+            update(Contact)
+            .where(Contact.company_id == contact.company_id, Contact.id != contact.id)
+            .values(is_primary=False)
+        )
 
     if "first_name" in changes or "last_name" in changes:
         parts = [p for p in [contact.first_name, contact.last_name] if p and p.strip()]
