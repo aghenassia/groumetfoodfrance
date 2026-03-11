@@ -8,7 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/ringover-crm/backend
 EnvironmentFile=/opt/ringover-crm/.env
-ExecStart=/opt/ringover-crm/backend/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/opt/ringover-crm/backend/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5
 
