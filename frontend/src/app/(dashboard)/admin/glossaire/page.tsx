@@ -30,6 +30,7 @@ import {
   Receipt,
   Package,
   ShoppingCart,
+  Upload,
 } from "lucide-react";
 
 const STATUSES = [
@@ -1750,6 +1751,88 @@ export default function GlossairePage() {
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      <Separator />
+
+      {/* --- IMPORT CSV --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Upload className="w-5 h-5 text-sensai" />
+          Import CSV de leads
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Système d&apos;import de leads par fichier CSV avec validation, détection de doublons et traitement asynchrone.
+        </p>
+
+        <div className="space-y-3">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Variable</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Valeur / Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">sage_id</td>
+                      <td className="px-3 py-2 font-mono">LEAD-&#123;uuid8&#125;</td>
+                      <td className="px-3 py-2 text-muted-foreground">Identifiant Sage généré automatiquement pour les leads importés (jamais de conflit avec Sage réel)</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">status</td>
+                      <td className="px-3 py-2 font-mono">&quot;lead&quot;</td>
+                      <td className="px-3 py-2 text-muted-foreground">Statut par défaut des entreprises importées</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">source</td>
+                      <td className="px-3 py-2 font-mono">&quot;csv_import&quot;</td>
+                      <td className="px-3 py-2 text-muted-foreground">Source indiquée sur les contacts et numéros créés par import</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">batch_size</td>
+                      <td className="px-3 py-2 font-mono">50</td>
+                      <td className="px-3 py-2 text-muted-foreground">Nombre de lignes traitées par transaction DB (commit intermédiaire pour fiabilité)</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">store_ttl</td>
+                      <td className="px-3 py-2 font-mono">30 min</td>
+                      <td className="px-3 py-2 text-muted-foreground">Durée de vie du fichier parsé en mémoire avant expiration</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">poll_interval</td>
+                      <td className="px-3 py-2 font-mono">2 s</td>
+                      <td className="px-3 py-2 text-muted-foreground">Fréquence de polling du statut d&apos;import par le frontend</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Détection doublons :</strong> par téléphone normalisé E.164 dans PhoneIndex, et par nom d&apos;entreprise + ville (comparaison insensible à la casse).
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  <strong className="text-foreground">Actions doublon :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">skip</code> (ignorer),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">update</code> (enrichir les champs vides),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">create</code> (créer quand même en doublon).
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  <strong className="text-foreground">Endpoints :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/admin/import/template</code>,{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/admin/import/parse</code>,{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/admin/import/execute</code>,{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/admin/import/status/&#123;job_id&#125;</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </section>
     </div>
   );

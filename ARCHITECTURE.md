@@ -2973,6 +2973,30 @@ SAGE_ODBC_PASSWORD=CRM2026secure!
 - Noms de clients « Inconnu » : utilisation systématique de `func.coalesce(Client.name, SalesLine.client_name)` pour prioriser le nom de la table clients
 - Erreur HTML nested `<a>` tags : remplacement des `Link` imbriqués par des `<button>` avec navigation programmatique
 
+### v3.5 — 2 Mars 2026
+
+**Import CSV de leads :**
+- **Nouvelle page admin `/admin/import`** : interface d'import CSV en 4 étapes (upload, aperçu, revue doublons, progression)
+- **3 modes d'import** : CSV unique (entreprise + contact), entreprises seules, contacts seuls
+- **Templates téléchargeables** : CSV avec en-têtes et lignes d'exemple, encodé UTF-8 BOM pour compatibilité Excel
+- **Validation automatique** : nom d'entreprise requis, normalisation téléphone E.164 via `phonenumbers`, validation email, matching commercial → `User.sage_rep_name`
+- **Détection de doublons** : par téléphone (`PhoneIndex.phone_e164`) et par nom+ville (`Client.name` + `Client.city`)
+- **Gestion des doublons** : choix par ligne (Ignorer / Mettre à jour / Créer quand même) + actions groupées
+- **Import asynchrone** : traitement en background (`asyncio.create_task`) par batch de 50, polling de progression toutes les 2s
+- **Création Client** : `sage_id = LEAD-{uuid8}`, `status = "lead"`, `is_prospect = True`
+- **Création Contact + PhoneIndex** : entrées créées avec `source = "csv_import"`, upsert PhoneIndex via `ON CONFLICT DO NOTHING`
+- **Store en mémoire** : fichiers parsés et jobs avec TTL 30 minutes, nettoyage automatique
+
+**Fichiers :**
+- `backend/api/import_leads.py` : 4 endpoints — `GET /template`, `POST /parse`, `POST /execute`, `GET /status/{job_id}`
+- `frontend/src/app/(dashboard)/admin/import/page.tsx` : page complète avec drag-and-drop, tableau preview, revue doublons, barre de progression
+- `frontend/src/lib/api.ts` : méthodes `parseImportCSV`, `executeImport`, `getImportStatus`, `getImportTemplateUrl`
+
+**Challenges multi-familles :**
+- Support de sélection multiple de familles de produits pour un challenge (champ `article_families` en CSV dans la table `challenges`)
+- Remplacement du `Select` Radix par un `Popover` avec boutons cliquables pour résoudre le conflit Select-in-Dialog
+- Ranking filtré par `Product.family.in_(families)` lorsque plusieurs familles sont ciblées
+
 ### v1.1 — 23 Février 2026
 
 **Nouvelles fonctionnalités :**

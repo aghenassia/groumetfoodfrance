@@ -49,6 +49,7 @@ import {
   Briefcase,
   Bell,
   Weight,
+  Upload,
 } from "lucide-react";
 
 type ArticleId =
@@ -80,7 +81,8 @@ type ArticleId =
   | "call-companion"
   | "intel"
   | "reminders"
-  | "kg-view";
+  | "kg-view"
+  | "admin-import";
 
 interface ArticleMeta {
   id: ArticleId;
@@ -307,6 +309,14 @@ const ARTICLES: ArticleMeta[] = [
     category: "admin",
     summary: "Dashboard manager : KPIs équipe, comparaison commerciaux, drill-down appels, notes A/B/C/D.",
     tags: ["manager", "kpi", "comparaison", "grade", "performance"],
+  },
+  {
+    id: "admin-import",
+    title: "Import CSV de leads (Admin)",
+    icon: Upload,
+    category: "admin",
+    summary: "Importez des entreprises et contacts depuis un fichier CSV : validation, détection de doublons, import asynchrone.",
+    tags: ["import", "csv", "lead", "upload", "doublon", "entreprise", "contact"],
   },
   {
     id: "admin-glossaire",
@@ -1688,6 +1698,52 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>Derniers appels</strong> : liste des 50 derniers appels avec date, contact, durée, mood, outcome, score IA.</li>
             </ul>
             <p>Cliquez sur un appel pour ouvrir le volet latéral avec le <strong>lecteur audio</strong>, la <L to="qualify">qualification</L> complète et l&apos;<L to="ai-analysis">analyse IA</L> détaillée.</p>
+          </Section>
+        </div>
+      );
+
+    case "admin-import":
+      return (
+        <div className="space-y-4">
+          <Section title="Pourquoi importer des leads ?">
+            <p>Vous avez une liste de prospects à appeler (salon, fichier acheté, extraction web) ? L&apos;import CSV vous permet d&apos;intégrer ces entreprises et contacts directement dans le CRM, sans saisie manuelle.</p>
+          </Section>
+
+          <Section title="Les 3 modes d'import">
+            <ul className="text-sm space-y-2">
+              <li>• <strong>Entreprises + Contacts</strong> : un CSV avec une ligne par entreprise et son contact principal. C&apos;est le mode le plus courant.</li>
+              <li>• <strong>Entreprises seules</strong> : pour importer uniquement des entreprises sans contacts associés.</li>
+              <li>• <strong>Contacts seuls</strong> : pour ajouter des contacts à des entreprises déjà existantes dans le CRM (rattachement par nom d&apos;entreprise).</li>
+            </ul>
+          </Section>
+
+          <Section title="Comment ça marche">
+            <p>L&apos;import se déroule en <strong>4 étapes</strong> :</p>
+            <ol className="text-sm space-y-2 list-decimal list-inside">
+              <li><strong>Upload</strong> — choisissez le mode, téléchargez le template CSV si besoin, puis glissez votre fichier ou parcourez vos dossiers.</li>
+              <li><strong>Aperçu</strong> — le système analyse le fichier : compteur de lignes valides, erreurs de validation (téléphone invalide, email incorrect, commercial inconnu), et les 20 premières lignes en tableau.</li>
+              <li><strong>Doublons</strong> — si des entreprises existent déjà (même téléphone ou même nom+ville), vous choisissez pour chacune : <em>Ignorer</em>, <em>Mettre à jour</em> ou <em>Créer quand même</em>.</li>
+              <li><strong>Import</strong> — le traitement s&apos;exécute en arrière-plan par batch de 50 lignes. Une barre de progression vous montre l&apos;avancement en temps réel, puis le résumé final (créés / mis à jour / ignorés / erreurs).</li>
+            </ol>
+          </Section>
+
+          <Section title="Format du fichier CSV">
+            <p>Le séparateur attendu est le <strong>point-virgule</strong> (;). L&apos;encodage UTF-8 ou Latin-1 (Excel français) est détecté automatiquement.</p>
+            <p>Colonnes disponibles : <code>nom_entreprise</code> (obligatoire), <code>telephone</code>, <code>email</code>, <code>adresse</code>, <code>code_postal</code>, <code>ville</code>, <code>pays</code>, <code>siret</code>, <code>code_naf</code>, <code>site_web</code>, <code>commercial</code>, <code>est_prospect</code>, <code>contact_nom</code>, <code>contact_prenom</code>, <code>contact_role</code>, <code>contact_telephone</code>, <code>contact_email</code>.</p>
+            <p>Astuce : téléchargez le template pour avoir toutes les colonnes prêtes avec des exemples.</p>
+          </Section>
+
+          <Section title="Détection des doublons">
+            <p>Le système détecte les doublons de 2 façons :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Par téléphone</strong> : si le numéro (normalisé E.164) existe déjà dans la base PhoneIndex.</li>
+              <li>• <strong>Par nom + ville</strong> : si une entreprise avec le même nom et la même ville existe déjà.</li>
+            </ul>
+          </Section>
+
+          <Section title="Que deviennent les leads importés ?">
+            <p>Chaque entreprise importée est créée avec le statut <strong>&quot;lead&quot;</strong> et un identifiant <code>LEAD-xxxxxxxx</code>. Elle apparaît dans la liste clients et peut être intégrée aux <L to="playlist">To do</L> dès le lendemain.</p>
+            <p>Si un commercial est spécifié dans le CSV (colonne <code>commercial</code>), l&apos;entreprise lui est automatiquement assignée.</p>
           </Section>
         </div>
       );
