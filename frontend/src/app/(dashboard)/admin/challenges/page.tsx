@@ -21,6 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Trophy,
   Plus,
   Pencil,
@@ -452,34 +457,43 @@ export default function AdminChallengesPage() {
 
               {filterMode === "family" && (
                 <div className="space-y-2">
-                  <Select
-                    value=""
-                    onValueChange={(v) => {
-                      if (!form.article_families.includes(v)) {
-                        setForm({ ...form, article_families: [...form.article_families, v] });
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-9">
-                      <div className="flex items-center gap-2">
-                        <Tag className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-muted-foreground">
+                  <Popover modal>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 w-full h-9 px-3 rounded-md border border-input bg-background text-sm hover:bg-accent transition-colors text-left"
+                      >
+                        <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground truncate">
                           {form.article_families.length === 0
                             ? "Ajouter une famille de produits"
                             : `${form.article_families.length} famille${form.article_families.length > 1 ? "s" : ""} sélectionnée${form.article_families.length > 1 ? "s" : ""}`}
                         </span>
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1 max-h-60 overflow-y-auto" align="start">
                       {families
                         .filter((f) => !form.article_families.includes(f.family))
-                        .map((f) => (
-                          <SelectItem key={f.family} value={f.family}>
-                            {f.family} ({f.count} produits)
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                        .length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-2">Toutes les familles sont sélectionnées</p>
+                      ) : (
+                        families
+                          .filter((f) => !form.article_families.includes(f.family))
+                          .map((f) => (
+                            <button
+                              key={f.family}
+                              type="button"
+                              className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-accent transition-colors"
+                              onClick={() =>
+                                setForm({ ...form, article_families: [...form.article_families, f.family] })
+                              }
+                            >
+                              {f.family} <span className="text-muted-foreground">({f.count} produits)</span>
+                            </button>
+                          ))
+                      )}
+                    </PopoverContent>
+                  </Popover>
                   {form.article_families.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {form.article_families.map((fam) => (
