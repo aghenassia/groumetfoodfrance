@@ -786,7 +786,7 @@ async def upsert_playlist_config(
 
     stmt = pg_insert(PlaylistConfig).values(**values)
     stmt = stmt.on_conflict_do_update(
-        constraint="playlist_configs_user_id_key",
+        constraint="uq_playlist_config_user",
         set_={k: v for k, v in values.items() if k != "user_id"},
     )
     await db.execute(stmt)
