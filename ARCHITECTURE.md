@@ -1216,28 +1216,41 @@ Exemples de calibration réelle :
 | EUROVOLAILLES | 68 | 25j | 434j | 0 | 100 | Perdu |
 | MIDO (1 commande) | 1 | — | 1695j | 0 | 60 | One-shot jamais revenu |
 
-### Génération des playlists (chaque matin à 6h30)
+### Génération des To Do (chaque matin à 6h30)
 
-Chaque commercial possède une **PlaylistConfig** configurable par l'admin, définissant la répartition en pourcentages et les seuils.
+Chaque commercial possède une **PlaylistConfig** configurable par l'admin, définissant la répartition en pourcentages, les seuils et les filtres intel optionnels.
 
 #### Table `playlist_configs`
 
 ```sql
 CREATE TABLE playlist_configs (
-    id               VARCHAR(36) PRIMARY KEY,
-    user_id          VARCHAR(36) NOT NULL REFERENCES users(id) UNIQUE,
-    is_active        BOOLEAN DEFAULT TRUE,
-    total_size       INTEGER DEFAULT 15,
-    pct_callback     INTEGER DEFAULT 10,   -- % rappels planifiés
-    pct_dormant      INTEGER DEFAULT 30,   -- % clients dormants
-    pct_churn_risk   INTEGER DEFAULT 25,   -- % risque churn
-    pct_upsell       INTEGER DEFAULT 20,   -- % opportunités upsell
-    pct_prospect     INTEGER DEFAULT 15,   -- % nouveaux prospects
-    dormant_min_days INTEGER DEFAULT 90,   -- seuil jours inactivité
-    churn_min_score  INTEGER DEFAULT 40,   -- seuil score churn minimum
-    upsell_min_score INTEGER DEFAULT 30    -- seuil score upsell minimum
+    id                      VARCHAR(36) PRIMARY KEY,
+    user_id                 VARCHAR(36) NOT NULL REFERENCES users(id) UNIQUE,
+    is_active               BOOLEAN DEFAULT TRUE,
+    total_size              INTEGER DEFAULT 15,
+    pct_callback            INTEGER DEFAULT 10,   -- conservé en config, mais rappels hors budget
+    pct_dormant             INTEGER DEFAULT 35,   -- % clients dormants
+    pct_churn_risk          INTEGER DEFAULT 25,   -- % risque churn
+    pct_upsell              INTEGER DEFAULT 25,   -- % opportunités upsell
+    pct_prospect            INTEGER DEFAULT 15,   -- % nouveaux prospects
+    dormant_min_days        INTEGER DEFAULT 90,   -- seuil jours inactivité
+    churn_min_score         INTEGER DEFAULT 40,   -- seuil score churn minimum
+    upsell_min_score        INTEGER DEFAULT 30,   -- seuil score upsell minimum
+    filter_mode             VARCHAR(30) DEFAULT 'disabled',
+    filter_competitor_ids   TEXT[],
+    filter_supplier_ids     TEXT[],
+    filter_product_refs     TEXT[],
+    filter_product_families TEXT[]
 );
 ```
+
+| Colonne | Rôle |
+|---|---|
+| `filter_mode` | `disabled` (par défaut), `replace_prospects` ou `dedicated_pool` |
+| `filter_competitor_ids` | IDs concurrents pour filtrage intel |
+| `filter_supplier_ids` | IDs fournisseurs pour filtrage intel |
+| `filter_product_refs` | Références produits pour filtrage intel |
+| `filter_product_families` | Familles de produits pour filtrage intel |
 
 #### Algorithme de génération
 
@@ -1245,62 +1258,102 @@ CREATE TABLE playlist_configs (
 Pour chaque commercial (user.role in ['sales', 'manager', 'admin']) :
 
 1. Charger la PlaylistConfig (ou valeurs par défaut)
-2. Calculer les slots : total_size × pct / 100
+2. Charger les entrées pending existantes du user (toutes dates)
+   → leurs client_ids alimentent seen_clients au démarrage (stacking)
+3. Calculer les slots : total_size × pct / 100
+   Les 4 pourcentages éditables : pct_dormant (35%), pct_churn_risk (25%),
+   pct_upsell (25%), pct_prospect (15%)
 
-3. CALLBACKS (rappels planifiés)
-   Qualifications avec next_step_date = TODAY
-   Min 3 slots garantis
+4. CALLBACKS (rappels planifiés) — HORS BUDGET
+   Qualifications avec next_step_date ≤ TODAY
+   Ajoutés en plus de total_size (ne consomment aucun slot)
+   pct_callback existe en config mais les rappels sont toujours ajoutés
 
-4. DORMANTS (clients inactifs)
+5. DORMANTS (clients inactifs)
    Clients is_dormant = TRUE, triés par ancienneté
    Matching flexible sur sales_rep (ILIKE)
 
-5. CHURN RISK (risque de perte)
+6. CHURN RISK (risque de perte)
    Clients actifs avec churn_risk_score ≥ seuil configuré
    Triés par score décroissant
 
-6. UPSELL (vente additionnelle)
+7. UPSELL (vente additionnelle)
    Clients avec upsell_score ≥ seuil configuré
    Triés par score décroissant
 
-7. PROSPECTS (nouveaux clients)
+8. PROSPECTS (nouveaux clients)
    Clients is_prospect = TRUE, sélection aléatoire
+   ⚠ Si filter_mode = "replace_prospects" : les slots prospect sont
+   remplis par des clients correspondant aux filtres intel
 
-8. COMPLÉMENT (relation client)
-   Si pas assez d'entrées, complète avec clients actifs
-   aléatoires pour maintien de la relation
+9. FILTER MODE "dedicated_pool" (opé éclair)
+   100% du To Do est rempli exclusivement par des clients correspondant
+   aux filtres intel (concurrents, fournisseurs, produits, familles)
+
+Stacking : la génération ne supprime jamais les entrées pending existantes.
+Les nouveaux leads sont ajoutés par-dessus.
+
+Entrées protégées : les entrées manuelles et callback ne sont jamais
+supprimées par un clear ou une régénération.
 
 Total configurable : 5 à 50 clients/jour par commercial
 ```
 
-#### Protection anti-doublons inter-commerciaux
+#### Protection anti-doublons
 
-Lors de la génération batch (tous les commerciaux), un `global_seen: set[str]` est partagé entre toutes les itérations. Un client attribué dans la playlist d'un commercial ne sera jamais proposé à un autre, empêchant deux sales d'appeler le même prospect/client le même jour.
+Trois mécanismes complémentaires empêchent les doublons :
+
+**1. Cross-user dedup (7 jours glissants)**
+
+Les clients ayant une entrée au statut `pending` dans le To Do d'un autre commercial sur les **7 derniers jours** sont exclus de la génération (pas uniquement le jour même).
 
 ```
 Génération batch :
     global_seen = ∅
-    
+    pending_7d = SELECT DISTINCT client_id FROM playlist_entries
+                 WHERE status = 'pending'
+                 AND created_at ≥ NOW() - INTERVAL '7 days'
+
     Pour chaque commercial :
-        seen_clients = copy(global_seen)   ← hérite des clients déjà attribués
+        seen_clients = copy(global_seen) ∪ pending_7d
         ... sélection clients ...
-        global_seen ∪= seen_clients        ← met à jour le set global
-    
-    Résultat : aucun doublon inter-commerciaux
+        global_seen ∪= seen_clients
+
+    Résultat : aucun doublon inter-commerciaux sur 7 jours
 ```
 
-> **Note :** Lors d'une génération individuelle (`user_id` spécifié), `global_seen` est vide — la protection ne s'applique qu'en mode batch.
+**2. Phone e164 dedup**
+
+Les clients partageant le même `phone_e164` sont dédupliqués pour éviter qu'un même numéro de téléphone apparaisse dans plusieurs To Do (ou plusieurs fois dans le même To Do).
+
+**3. Stacking (préservation des pending)**
+
+Les entrées pending existantes (toutes dates confondues) sont chargées dans `seen_clients` au démarrage de la génération pour chaque commercial. Cela garantit qu'un client déjà présent dans le To Do ne sera pas ajouté une seconde fois.
+
+> **Note :** Les entrées manuelles (`source = 'manual'`) et les rappels (`source = 'callback'`) sont **protégées** : elles ne sont jamais supprimées par un clear ou une régénération.
 
 #### Réassignation de clients
 
-L'admin peut transférer des clients d'un commercial à un autre via la page `/admin/assignments`. Cela met à jour `assigned_user_id` et `sales_rep` sur la table `clients`, ce qui impacte directement la prochaine génération de playlist.
+L'admin peut transférer des clients d'un commercial à un autre via la page `/admin/assignments`. Cela met à jour `assigned_user_id` et `sales_rep` sur la table `clients`, ce qui impacte directement la prochaine génération de To Do.
 
 #### Assistant d'opportunité (Insight)
 
-Chaque entrée de playlist peut être inspectée via l'endpoint `/api/playlists/{id}/insight` :
+Chaque entrée de To Do peut être inspectée via l'endpoint `/api/playlists/{id}/insight` :
 - **KPIs client** : CA total, CA 12 mois, panier moyen, scores churn/upsell — calculés en temps réel directement depuis `sales_lines` (pas depuis les scores pré-calculés, pour garantir la fraîcheur)
 - **Top 10 produits** commandés avec quantités, CA, dernière date
 - **Recommandation IA** (optionnelle, `with_ai=true`) : GPT-4o-mini génère 3-5 points d'action contextués selon le type d'opportunité (upsell, churn, dormant, prospect...)
+
+#### Endpoints admin To Do
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/admin/playlist/overview` | Progression To Do par commercial avec entrées détaillées |
+| `DELETE` | `/api/admin/playlist/entries` | Suppression d'entrées (unitaire ou en masse) |
+| `POST` | `/api/admin/playlist/add-entry` | Ajout manuel d'un client dans le To Do d'un commercial |
+| `GET` | `/api/admin/filters/competitors` | Données dropdown concurrents pour filtres intel |
+| `GET` | `/api/admin/filters/suppliers` | Données dropdown fournisseurs pour filtres intel |
+| `GET` | `/api/admin/filters/product-families` | Données dropdown familles de produits pour filtres intel |
+| `GET` | `/api/admin/filters/products` | Données dropdown produits pour filtres intel |
 
 ---
 

@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy import String, Integer, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from core.database import Base
 
@@ -23,11 +24,15 @@ class PlaylistConfig(Base):
     churn_min_score: Mapped[int] = mapped_column(Integer, default=40)
     upsell_min_score: Mapped[int] = mapped_column(Integer, default=30)
 
-    # "own" = uniquement les entreprises assignées au sales
-    # "sage_rep" = entreprises du rep Sage indiqué dans sage_rep_filter
-    # "all" = comportement actuel (assigned_user_id OU sales_rep)
     client_scope: Mapped[str | None] = mapped_column(String(20), default="own")
     sage_rep_filter: Mapped[str | None] = mapped_column(String(70), default=None)
+
+    # Filtres opération éclair
+    filter_mode: Mapped[str | None] = mapped_column(String(30), default="disabled")
+    filter_competitor_ids = mapped_column(ARRAY(String), default=list)
+    filter_supplier_ids = mapped_column(ARRAY(String), default=list)
+    filter_product_refs = mapped_column(ARRAY(String), default=list)
+    filter_product_families = mapped_column(ARRAY(String), default=list)
 
     user = relationship("User", backref="playlist_config")
 

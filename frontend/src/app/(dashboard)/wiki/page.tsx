@@ -102,11 +102,11 @@ const ARTICLES: ArticleMeta[] = [
   },
   {
     id: "playlist",
-    title: "Playlist quotidienne",
+    title: "To do quotidienne",
     icon: ListMusic,
     category: "sales",
     summary: "Votre liste de clients à appeler chaque jour, générée automatiquement selon des critères intelligents.",
-    tags: ["appels", "priorité", "prospect", "dormant", "callback"],
+    tags: ["appels", "priorité", "prospect", "dormant", "callback", "todo"],
   },
   {
     id: "clients",
@@ -286,10 +286,10 @@ const ARTICLES: ArticleMeta[] = [
   },
   {
     id: "admin-playlist",
-    title: "Configuration Playlists (Admin)",
+    title: "Configuration To do (Admin)",
     icon: ListMusic,
     category: "admin",
-    summary: "Régler la taille, la répartition et les seuils des playlists pour chaque commercial.",
+    summary: "Régler la taille, la répartition et les seuils des To do pour chaque commercial.",
     tags: ["config", "répartition", "seuils", "pourcentage"],
   },
   {
@@ -398,7 +398,7 @@ export default function WikiPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Rechercher un sujet (ex: churn, playlist, qualification...)"
+          placeholder="Rechercher un sujet (ex: churn, to do, qualification...)"
           className="pl-10"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -514,7 +514,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
 
           <Section title="Filtrer par période">
             <p>Utilisez les boutons <strong>Aujourd&apos;hui</strong>, <strong>Hier</strong>, <strong>7j</strong>, <strong>30j</strong>, <strong>90j</strong> ou le <strong>calendrier</strong> pour choisir une plage libre. Toutes les données se mettent à jour instantanément.</p>
-            <p>Les managers et admins ont un sélecteur <strong>&quot;Voir en tant que&quot;</strong> qui filtre <strong>toutes</strong> les données du dashboard : stats, marges, appels, rappels, playlist, objectifs, top clients et produits.</p>
+            <p>Les managers et admins ont un sélecteur <strong>&quot;Voir en tant que&quot;</strong> qui filtre <strong>toutes</strong> les données du dashboard : stats, marges, appels, rappels, To do, objectifs, top clients et produits.</p>
           </Section>
 
           <Section title="Rappels & Alertes">
@@ -552,8 +552,8 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
     case "playlist":
       return (
         <div className="space-y-4">
-          <Section title="Qu'est-ce que la playlist ?">
-            <p>Chaque matin, le système génère automatiquement une liste de clients à appeler, personnalisée pour vous. C&apos;est votre plan d&apos;action de la journée : au lieu de chercher qui appeler, la playlist vous propose les contacts les plus pertinents selon plusieurs critères.</p>
+          <Section title="Qu'est-ce que la To do ?">
+            <p>Chaque matin, le système génère automatiquement une liste de clients à appeler, personnalisée pour vous. C&apos;est votre plan d&apos;action de la journée : au lieu de chercher qui appeler, la To do vous propose les contacts les plus pertinents selon plusieurs critères.</p>
           </Section>
 
           <Section title="Les catégories de contacts">
@@ -568,7 +568,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
 
           <Section title="Comment l'utiliser">
             <ol className="text-sm space-y-2 list-decimal list-inside">
-              <li>Parcourez votre playlist de haut en bas — les contacts sont triés par priorité.</li>
+              <li>Parcourez votre To do de haut en bas — les contacts sont triés par priorité.</li>
               <li>Cliquez sur le bouton <strong>téléphone</strong> pour appeler directement via Ringover.</li>
               <li>Après l&apos;appel, marquez le contact comme <strong>OK</strong> (traité) ou <strong>Skip</strong> (reporté).</li>
               <li>Vous pouvez <strong>annuler</strong> un statut (bouton ↩️) si vous vous trompez.</li>
@@ -587,31 +587,40 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Périmètre des entreprises">
-            <p>Votre admin configure quelles entreprises remontent dans votre playlist :</p>
+            <p>Votre admin configure quelles entreprises remontent dans votre To do :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Vos entreprises :</strong> uniquement celles qui vous sont assignées dans le CRM.</li>
               <li>• <strong>Vos entreprises + non assignées :</strong> vos clients + les entreprises sans commercial attitré.</li>
               <li>• <strong>Rep Sage :</strong> les clients d&apos;un représentant Sage spécifique.</li>
               <li>• <strong>Sans commercial :</strong> uniquement les entreprises orphelines (sans assignation).</li>
             </ul>
-            <p className="text-sm text-muted-foreground mt-1">Ce périmètre empêche qu&apos;un client d&apos;un autre commercial apparaisse dans votre playlist.</p>
+            <p className="text-sm text-muted-foreground mt-1">Ce périmètre empêche qu&apos;un client d&apos;un autre commercial apparaisse dans votre To do.</p>
+          </Section>
+
+          <Section title="Génération des To Do — comment ça marche">
+            <ul className="space-y-2 text-sm">
+              <li className="flex gap-2"><Clock className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Rappels hors budget :</strong> les callbacks sont ajoutés <strong>en plus</strong> du total_size configuré. Si votre To do fait 15 contacts et que vous avez 3 rappels, vous aurez 18 entrées au total.</span></li>
+              <li className="flex gap-2"><ListMusic className="w-4 h-4 mt-0.5 text-green-600 shrink-0" /><span><strong>Empilement :</strong> la génération <strong>n&apos;écrase jamais</strong> les entrées pending existantes. Les nouveaux contacts sont ajoutés par-dessus, jamais en remplacement.</span></li>
+              <li className="flex gap-2"><Shield className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" /><span><strong>Anti-duplication cross-user :</strong> un client en statut pending chez un commercial ne peut pas apparaître dans la To do d&apos;un autre. Le système vérifie les 7 derniers jours (lookback).</span></li>
+              <li className="flex gap-2"><Phone className="w-4 h-4 mt-0.5 text-red-500 shrink-0" /><span><strong>Anti-duplication téléphone :</strong> deux clients partageant le même numéro de téléphone ne sont <strong>jamais</strong> placés dans la même To do.</span></li>
+            </ul>
           </Section>
 
           <Section title="Ajout manuel & rappels">
             <p>En plus de la génération automatique, vous pouvez :</p>
             <ul className="text-sm space-y-1">
-              <li>• <strong>Ajouter manuellement</strong> un client à votre To do depuis sa <L to="client360">fiche 360°</L> (bouton &quot;Playlist&quot;).</li>
+              <li>• <strong>Ajouter manuellement</strong> un client à votre To do depuis sa <L to="client360">fiche 360°</L> (bouton &quot;To do&quot;).</li>
               <li>• Créer un <L to="reminders">rappel</L> avec date et heure, qui apparaîtra dans votre To do le jour J.</li>
               <li>• Les managers peuvent assigner ces actions à un commercial spécifique.</li>
             </ul>
-            <p className="text-sm text-muted-foreground mt-1">Les entrées manuelles et rappels ne sont <strong>jamais supprimés</strong> par la regénération automatique des playlists.</p>
+            <p className="text-sm text-muted-foreground mt-1">Les entrées manuelles et rappels ne sont <strong>jamais supprimés</strong> par la regénération automatique des To do.</p>
           </Section>
 
           <Section title="Anti-doublons">
-            <p>Un même client ne peut <strong>jamais</strong> apparaître dans deux playlists différentes le même jour :</p>
+            <p>Un même client ne peut <strong>jamais</strong> apparaître dans deux To do différentes le même jour :</p>
             <ul className="text-sm space-y-1">
               <li>• En <strong>mode batch</strong> (toute l&apos;équipe) : un set global de clients vus est partagé entre tous les commerciaux pendant la génération.</li>
-              <li>• En <strong>mode individuel</strong> (un seul commercial) : le système charge d&apos;abord tous les clients déjà présents dans les playlists des autres commerciaux du jour, puis les exclut.</li>
+              <li>• En <strong>mode individuel</strong> (un seul commercial) : le système charge d&apos;abord tous les clients déjà présents dans les To do des autres commerciaux du jour, puis les exclut.</li>
             </ul>
           </Section>
         </div>
@@ -719,7 +728,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>La fiche client affiche une section dédiée à l&apos;<L to="intel">intel commerciale</L> avec les fournisseurs, concurrents et produits d&apos;intérêt du client. Ces données sont modifiables à tout moment directement sur la fiche, ou via le <L to="call-companion">Call Companion</L> pendant un appel.</p>
           </Section>
 
-          <Section title="Actions Playlist & Rappels">
+          <Section title="Actions To do & Rappels">
             <p>Depuis l&apos;en-tête de la fiche client, deux boutons permettent d&apos;ajouter le client à la <strong>To do</strong> ou de créer un <L to="reminders">rappel</L> avec date et heure. Les managers peuvent assigner ces actions à un commercial spécifique via un sélecteur dédié.</p>
           </Section>
 
@@ -1020,10 +1029,10 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Managers : assigner à un commercial">
-            <p>Si vous êtes <strong>manager ou admin</strong>, un sélecteur &quot;Pour quel commercial ?&quot; apparaît dans les popovers de rappel et de playlist. Vous pouvez ainsi :</p>
+            <p>Si vous êtes <strong>manager ou admin</strong>, un sélecteur &quot;Pour quel commercial ?&quot; apparaît dans les popovers de rappel et de To do. Vous pouvez ainsi :</p>
             <ul className="text-sm space-y-1">
               <li>• Créer un rappel pour un commercial spécifique.</li>
-              <li>• Ajouter un client à la &quot;To do&quot; d&apos;un commercial.</li>
+              <li>• Ajouter un client à la To do d&apos;un commercial.</li>
             </ul>
           </Section>
 
@@ -1047,7 +1056,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="To do manuelle">
-            <p>En plus des rappels, vous pouvez <strong>ajouter manuellement un client à votre To do</strong> du jour depuis la fiche client (bouton &quot;Playlist&quot;). Ces entrées manuelles ne sont <strong>jamais supprimées</strong> par la regénération automatique des playlists.</p>
+            <p>En plus des rappels, vous pouvez <strong>ajouter manuellement un client à votre To do</strong> du jour depuis la fiche client (bouton &quot;To do&quot;). Ces entrées manuelles ne sont <strong>jamais supprimées</strong> par la regénération automatique des To do.</p>
           </Section>
         </div>
       );
@@ -1088,8 +1097,8 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>La qualification d&apos;un appel est l&apos;acte le plus important après un échange. Elle permet de :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Alimenter la fiche client</strong> : le mood et l&apos;outcome sont enregistrés sur la <L to="client360">fiche 360°</L>.</li>
-              <li>• <strong>Améliorer la playlist</strong> : les clients avec un mood &quot;chaud&quot; remontent en priorité dans les prochaines <L to="playlist">playlists</L>.</li>
-              <li>• <strong>Planifier des rappels</strong> : si vous définissez une prochaine étape avec date, le client apparaîtra automatiquement dans vos rappels et dans la catégorie &quot;callback&quot; de la playlist.</li>
+              <li>• <strong>Améliorer la To do</strong> : les clients avec un mood &quot;chaud&quot; remontent en priorité dans les prochaines <L to="playlist">To do</L>.</li>
+              <li>• <strong>Planifier des rappels</strong> : si vous définissez une prochaine étape avec date, le client apparaîtra automatiquement dans vos rappels et dans la catégorie &quot;callback&quot; de la To do.</li>
               <li>• <strong>Gagner de l&apos;XP</strong> : chaque qualification rapporte <strong>10 XP</strong> (15 XP si vous remplissez les tags + prochaine étape). Voir <L to="leaderboard">Classement</L>.</li>
               <li>• <strong>Déclencher le lifecycle</strong> : un outcome &quot;pas intéressé&quot; passe le client en statut <L to="statuts">Perdu (Dead)</L>.</li>
             </ul>
@@ -1202,12 +1211,12 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Cooldown dormant">
-            <p>Quand un commercial appelle un client dormant et a une conversation (&gt; 30s), le client <strong>reste dormant</strong> mais sort de la <L to="playlist">playlist</L> pendant <strong>14 jours</strong> (cooldown). Cela évite de saturer le client avec des appels trop rapprochés.</p>
+            <p>Quand un commercial appelle un client dormant et a une conversation (&gt; 30s), le client <strong>reste dormant</strong> mais sort de la <L to="playlist">To do</L> pendant <strong>14 jours</strong> (cooldown). Cela évite de saturer le client avec des appels trop rapprochés.</p>
             <p>Après <strong>5 tentatives sur 6 mois</strong> sans nouvelle commande, le client remonte avec une mention spéciale pour décision managériale : le manager décide s&apos;il passe en &quot;Perdu&quot; ou s&apos;il faut persister.</p>
           </Section>
 
           <Section title="Où voir le statut ?">
-            <p>Le badge de statut apparaît sur la <L to="playlist">playlist</L>, la <L to="clients">liste clients</L> et la <L to="client360">fiche 360°</L>. Survolez-le pour lire l&apos;explication.</p>
+            <p>Le badge de statut apparaît sur la <L to="playlist">To do</L>, la <L to="clients">liste clients</L> et la <L to="client360">fiche 360°</L>. Survolez-le pour lire l&apos;explication.</p>
           </Section>
         </div>
       );
@@ -1242,14 +1251,14 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Score de priorité globale">
-            <p>Combinaison pondérée du churn et de l&apos;upsell. Utilisé par la <L to="playlist">playlist</L> pour ordonner les contacts : les clients à haute priorité apparaissent en premier.</p>
+            <p>Combinaison pondérée du churn et de l&apos;upsell. Utilisé par la <L to="playlist">To do</L> pour ordonner les contacts : les clients à haute priorité apparaissent en premier.</p>
           </Section>
 
           <Section title="Impact sur le système">
             <ul className="text-sm space-y-1">
               <li>• Churn ≥ 60% → le client passe en <L to="statuts">statut « À risque »</L>.</li>
               <li>• Dernière commande ≥ 180 jours → passe en <L to="statuts">« Dormant »</L>.</li>
-              <li>• Le scoring alimente les catégories de la <L to="playlist">playlist</L>.</li>
+              <li>• Le scoring alimente les catégories de la <L to="playlist">To do</L>.</li>
               <li>• Le scoring auto-corrige les <L to="statuts">statuts</L> incohérents (ex : un prospect avec des commandes est requalifié automatiquement).</li>
               <li>• Visible sur la <L to="client360">fiche 360°</L> et la <L to="clients">liste clients</L> (colonnes Statut et Churn séparées).</li>
             </ul>
@@ -1534,12 +1543,12 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
       return (
         <div className="space-y-4">
           <Section title="Configuration par commercial">
-            <p>Chaque commercial a sa propre configuration de playlist. L&apos;admin peut régler la taille, la répartition, les seuils et le <strong>périmètre des entreprises</strong>.</p>
+            <p>Chaque commercial a sa propre configuration de To do. L&apos;admin peut régler la taille, la répartition, les seuils et le <strong>périmètre des entreprises</strong>.</p>
           </Section>
 
           <Section title="Variables disponibles">
             <ul className="space-y-2 text-sm">
-              <li><strong>Taille totale (total_size) :</strong> nombre de contacts dans la playlist quotidienne. Défaut : 15.</li>
+              <li><strong>Taille totale (total_size) :</strong> nombre de contacts dans la To do quotidienne. Défaut : 15.</li>
               <li><strong>% Rappels (pct_callback) :</strong> part dédiée aux rappels planifiés. Défaut : 10%.</li>
               <li><strong>% Dormants (pct_dormant) :</strong> part dédiée aux clients sans commande depuis 180+ jours. Défaut : 30%.</li>
               <li><strong>% Churn (pct_churn_risk) :</strong> part dédiée aux clients à risque de perte. Défaut : 25%.</li>
@@ -1558,7 +1567,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Périmètre des entreprises">
-            <p>Contrôle quelles entreprises remontent dans la playlist de ce commercial :</p>
+            <p>Contrôle quelles entreprises remontent dans la To do de ce commercial :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Ses entreprises uniquement :</strong> seules les entreprises assignées au commercial dans le CRM (par défaut).</li>
               <li>• <strong>Ses entreprises + non assignées :</strong> ses clients + les entreprises sans commercial attitré.</li>
@@ -1566,7 +1575,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>Sans commercial uniquement :</strong> uniquement les entreprises orphelines (ni assignées, ni rattachées à un rep Sage).</li>
               <li>• <strong>Toutes :</strong> combine les entreprises assignées CRM et celles du rep Sage du commercial (le plus large).</li>
             </ul>
-            <p className="text-sm text-muted-foreground mt-1">Cela garantit qu&apos;une playlist ne propose jamais les clients d&apos;un autre commercial.</p>
+            <p className="text-sm text-muted-foreground mt-1">Cela garantit qu&apos;une To do ne propose jamais les clients d&apos;un autre commercial.</p>
           </Section>
 
           <Section title="Barre de visualisation">
@@ -1574,8 +1583,36 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Génération & anti-doublons">
-            <p>L&apos;admin peut générer les playlists pour <strong>un seul commercial</strong> ou <strong>toute l&apos;équipe</strong>.</p>
-            <p>Le système anti-doublons garantit qu&apos;un client n&apos;apparaît que dans <strong>une seule playlist par jour</strong>, même lorsque les playlists sont générées individuellement : le système charge d&apos;abord les clients déjà présents dans les playlists des autres commerciaux et les exclut automatiquement.</p>
+            <p>L&apos;admin peut générer les To do pour <strong>un seul commercial</strong> ou <strong>toute l&apos;équipe</strong>.</p>
+            <ul className="space-y-2 text-sm">
+              <li className="flex gap-2"><Clock className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Rappels hors budget :</strong> les callbacks sont ajoutés <strong>en plus</strong> du total_size. L&apos;admin ne peut pas modifier le % de rappels — c&apos;est informationnel uniquement.</span></li>
+              <li className="flex gap-2"><ListMusic className="w-4 h-4 mt-0.5 text-green-600 shrink-0" /><span><strong>Empilement :</strong> la génération n&apos;écrase jamais les entrées pending existantes. Les nouveaux leads sont empilés par-dessus.</span></li>
+              <li className="flex gap-2"><Shield className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" /><span><strong>Anti-duplication cross-user :</strong> un client pending chez un sales ne peut pas aller chez un autre (lookback 7 jours).</span></li>
+              <li className="flex gap-2"><Phone className="w-4 h-4 mt-0.5 text-red-500 shrink-0" /><span><strong>Anti-duplication téléphone :</strong> deux clients avec le même numéro ne sont jamais dans la même To do.</span></li>
+            </ul>
+          </Section>
+
+          <Section title="Opération éclair — filtres intel">
+            <p>L&apos;admin peut configurer des <strong>filtres d&apos;<L to="intel">intel commerciale</L></strong> pour cibler des entreprises spécifiques dans les To do :</p>
+            <ul className="space-y-2 text-sm">
+              <li className="flex gap-2"><Target className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Mode &quot;Remplacer prospects&quot; :</strong> les slots prospects de la To do sont remplis par des cibles intel au lieu des prospects classiques. Les autres catégories (churn, dormants, upsell) restent inchangées.</span></li>
+              <li className="flex gap-2"><Zap className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" /><span><strong>Mode &quot;100% cibles intel&quot; :</strong> toute la To do est alimentée exclusivement par les filtres intel. Aucune autre catégorie n&apos;est générée.</span></li>
+            </ul>
+            <p className="mt-2">Les filtres configurables sont :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Concurrents identifiés :</strong> cibler les clients travaillant avec un concurrent donné.</li>
+              <li>• <strong>Fournisseurs :</strong> cibler les clients d&apos;un fournisseur spécifique.</li>
+              <li>• <strong>Familles de produits :</strong> cibler les clients intéressés par certains produits.</li>
+            </ul>
+          </Section>
+
+          <Section title="Gestion admin des To Do">
+            <ul className="space-y-2 text-sm">
+              <li className="flex gap-2"><BarChart3 className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Vue d&apos;avancement :</strong> pour chaque commercial, l&apos;admin voit le détail des entrées done, pending, skipped et rappels.</span></li>
+              <li className="flex gap-2"><Search className="w-4 h-4 mt-0.5 text-green-600 shrink-0" /><span><strong>Ajouter un client :</strong> l&apos;admin peut ajouter un client à la To do d&apos;un commercial via une recherche rapide.</span></li>
+              <li className="flex gap-2"><AlertTriangle className="w-4 h-4 mt-0.5 text-red-500 shrink-0" /><span><strong>Supprimer des entrées :</strong> suppression unitaire ou en masse via checkboxes. Utile pour nettoyer une To do avant régénération.</span></li>
+              <li className="flex gap-2"><Bell className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" /><span><strong>% Rappels (lecture seule) :</strong> le pourcentage de rappels est affiché à titre informatif. L&apos;admin ne peut pas le modifier car les rappels sont hors budget (ajoutés en plus du total_size).</span></li>
+            </ul>
           </Section>
         </div>
       );
@@ -1598,7 +1635,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Impact">
-            <p>Les prochaines <L to="playlist">playlists</L> générées prendront en compte la nouvelle assignation. Le commercial cible verra les clients transférés dans sa playlist.</p>
+            <p>Les prochaines <L to="playlist">To do</L> générées prendront en compte la nouvelle assignation. Le commercial cible verra les clients transférés dans sa To do.</p>
           </Section>
         </div>
       );
@@ -1621,7 +1658,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• Taux de décroché global.</li>
               <li>• Appels qualifiés.</li>
               <li>• CA total et marge totale.</li>
-              <li>• Taux de complétion playlist.</li>
+              <li>• Taux de complétion To do.</li>
               <li>• Score IA moyen.</li>
             </ul>
           </Section>
@@ -1632,14 +1669,14 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• Volume d&apos;appels sortants (≥ 15/jour = bon).</li>
               <li>• Taux de décroché (≥ 60% = bon).</li>
               <li>• Taux de qualification (≥ 50% = bon).</li>
-              <li>• Complétion playlist (≥ 80% = bon).</li>
+              <li>• Complétion To do (≥ 80% = bon).</li>
               <li>• Atteinte objectif CA (≥ 80% = bon).</li>
             </ul>
             <p className="mt-1"><strong>A</strong> = top performer, <strong>B</strong> = en bonne voie, <strong>C</strong> = à surveiller, <strong>D</strong> = en retard.</p>
           </Section>
 
           <Section title="Tableau comparatif">
-            <p>Toutes les colonnes sont <strong>triables</strong> (cliquez sur l&apos;en-tête). Survolez les colonnes Out/In pour voir le détail des appels décrochés. La colonne Playlist affiche X/Y avec un code couleur (vert ≥ 80%, jaune ≥ 50%, orange &lt; 50%).</p>
+            <p>Toutes les colonnes sont <strong>triables</strong> (cliquez sur l&apos;en-tête). Survolez les colonnes Out/In pour voir le détail des appels décrochés. La colonne To do affiche X/Y avec un code couleur (vert ≥ 80%, jaune ≥ 50%, orange &lt; 50%).</p>
           </Section>
 
           <Section title="Drill-down">
@@ -1667,7 +1704,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• Définition complète des 6 <L to="statuts">statuts du lifecycle</L> avec les conditions d&apos;entrée et de sortie.</li>
               <li>• Détail du calcul du <L to="scoring">score de churn multi-facteurs</L> avec les tables de seuils exactes.</li>
               <li>• Formules des scores d&apos;upsell et de priorité globale.</li>
-              <li>• Variables de <L to="admin-playlist">configuration des playlists</L> avec valeurs par défaut.</li>
+              <li>• Variables de <L to="admin-playlist">configuration des To do</L> avec valeurs par défaut.</li>
               <li>• Système de cooldown dormant : durée, tentatives max, seuil de revue managériale.</li>
             </ul>
           </Section>

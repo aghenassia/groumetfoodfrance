@@ -63,6 +63,16 @@ class MonthlySales(BaseModel):
     margin_avg: float | None = None
 
 
+class ContactPhoneResponse(BaseModel):
+    id: str
+    phone: str
+    phone_e164: str | None = None
+    label: str | None = None
+    is_primary: bool = False
+
+    model_config = {"from_attributes": True}
+
+
 class ContactBrief(BaseModel):
     id: str
     name: str
@@ -76,6 +86,7 @@ class ContactBrief(BaseModel):
     source: str = "manual"
     assigned_user_id: str | None = None
     assigned_user_name: str | None = None
+    phones: list[ContactPhoneResponse] = []
 
     model_config = {"from_attributes": True}
 

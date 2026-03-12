@@ -174,7 +174,7 @@ export default function AssignmentsPage() {
             Réassignation des clients
           </h2>
           <p className="text-sm text-muted-foreground">
-            Transférez des clients entre commerciaux pour optimiser les playlists
+            Transférez des clients entre commerciaux pour optimiser les To do
           </p>
         </div>
       </div>

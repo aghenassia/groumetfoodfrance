@@ -3,7 +3,8 @@ APScheduler — Jobs automatisés.
 
 - Full sync Sage : tous les jours à 02h00
 - Delta sync Sage : toutes les 15min entre 6h et 22h
-- Sync Ringover : toutes les 3min entre 6h et 22h
+- Ringover fast poll : toutes les 4s (appels uniquement, léger)
+- Ringover post-traitement : toutes les 30s (qualification, lifecycle, playlist)
 - Scoring + playlists : tous les jours à 06h30
 """
 import logging
@@ -11,6 +12,7 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from core.database import async_session
 
@@ -65,16 +67,41 @@ async def job_sage_delta_sync():
             logger.error(f"Delta sync Sage erreur: {e}")
 
 
-async def job_ringover_sync():
-    """Sync appels Ringover."""
-    from connectors.ringover_connector import sync_calls, auto_transcribe_new_calls
+async def job_ringover_fast():
+    """Fast poll Ringover — new calls only, every 4s."""
+    from connectors.ringover_connector import sync_calls_fast
     async with async_session() as db:
         try:
-            result = await sync_calls(db)
-            ai = await auto_transcribe_new_calls(db)
-            logger.info(f"Sync Ringover: {result}, AI: {ai}")
+            result = await sync_calls_fast(db)
+            if result.get("new", 0) > 0:
+                logger.info(f"Ringover fast: {result}")
         except Exception as e:
-            logger.error(f"Sync Ringover erreur: {e}")
+            logger.error(f"Ringover fast erreur: {e}")
+
+
+async def job_ringover_post_process():
+    """Post-processing Ringover — auto-qualify, lifecycle, playlist, sessions. Every 30s."""
+    from connectors.ringover_connector import post_process_calls
+    async with async_session() as db:
+        try:
+            result = await post_process_calls(db)
+            total = sum(result.values())
+            if total > 0:
+                logger.info(f"Ringover post-process: {result}")
+        except Exception as e:
+            logger.error(f"Ringover post-process erreur: {e}")
+
+
+async def job_ringover_transcribe():
+    """AI transcription of new calls — every 5 minutes."""
+    from connectors.ringover_connector import auto_transcribe_new_calls
+    async with async_session() as db:
+        try:
+            ai = await auto_transcribe_new_calls(db)
+            if ai.get("analyzed", 0) > 0:
+                logger.info(f"Ringover AI transcription: {ai}")
+        except Exception as e:
+            logger.error(f"Ringover transcription erreur: {e}")
 
 
 async def job_scoring_and_playlists():
@@ -115,15 +142,37 @@ def setup_scheduler():
         misfire_grace_time=60,
     )
 
-    # Sync Ringover : toutes les 3min entre 6h et 22h
+    # Ringover fast poll : toutes les 4 secondes entre 6h et 22h
     scheduler.add_job(
-        job_ringover_sync,
-        CronTrigger(minute="*/3", hour="6-22"),
-        id="ringover_sync",
-        name="Ringover Sync (journée)",
+        job_ringover_fast,
+        IntervalTrigger(seconds=4),
+        id="ringover_fast",
+        name="Ringover Fast Poll (4s)",
         replace_existing=True,
         max_instances=1,
-        misfire_grace_time=30,
+        misfire_grace_time=5,
+    )
+
+    # Ringover post-processing : toutes les 30 secondes
+    scheduler.add_job(
+        job_ringover_post_process,
+        IntervalTrigger(seconds=30),
+        id="ringover_post_process",
+        name="Ringover Post-Process (30s)",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=15,
+    )
+
+    # Ringover AI transcription : toutes les 5 minutes entre 6h et 22h
+    scheduler.add_job(
+        job_ringover_transcribe,
+        CronTrigger(minute="*/5", hour="6-22"),
+        id="ringover_transcribe",
+        name="Ringover AI Transcription (5min)",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )
 
     # Scoring + playlists : 06h30 tous les jours
@@ -138,4 +187,4 @@ def setup_scheduler():
     )
 
     scheduler.start()
-    logger.info("Scheduler démarré avec 4 jobs configurés")
+    logger.info("Scheduler démarré avec 6 jobs configurés (Ringover fast poll 4s)")

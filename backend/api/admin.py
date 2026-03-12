@@ -678,6 +678,11 @@ class PlaylistConfigPayload(BaseModel):
     upsell_min_score: int = 30
     client_scope: str = "own"
     sage_rep_filter: str | None = None
+    filter_mode: str = "disabled"
+    filter_competitor_ids: list[str] = []
+    filter_supplier_ids: list[str] = []
+    filter_product_refs: list[str] = []
+    filter_product_families: list[str] = []
 
 
 @router.get("/playlist/configs")
@@ -733,6 +738,11 @@ async def get_all_playlist_configs(
                 "upsell_min_score": cfg.upsell_min_score if cfg else 30,
                 "client_scope": cfg.client_scope if cfg else "own",
                 "sage_rep_filter": cfg.sage_rep_filter if cfg else None,
+                "filter_mode": getattr(cfg, "filter_mode", "disabled") or "disabled" if cfg else "disabled",
+                "filter_competitor_ids": getattr(cfg, "filter_competitor_ids", []) or [] if cfg else [],
+                "filter_supplier_ids": getattr(cfg, "filter_supplier_ids", []) or [] if cfg else [],
+                "filter_product_refs": getattr(cfg, "filter_product_refs", []) or [] if cfg else [],
+                "filter_product_families": getattr(cfg, "filter_product_families", []) or [] if cfg else [],
             },
             "today_playlist": today_count,
             "today_done": done_count,
@@ -767,6 +777,11 @@ async def upsert_playlist_config(
         "upsell_min_score": body.upsell_min_score,
         "client_scope": body.client_scope,
         "sage_rep_filter": body.sage_rep_filter,
+        "filter_mode": body.filter_mode,
+        "filter_competitor_ids": body.filter_competitor_ids,
+        "filter_supplier_ids": body.filter_supplier_ids,
+        "filter_product_refs": body.filter_product_refs,
+        "filter_product_families": body.filter_product_families,
     }
 
     stmt = pg_insert(PlaylistConfig).values(**values)
@@ -1446,6 +1461,201 @@ async def auto_assign_clients(
         "assigned": assigned_count,
         "remaining_unassigned": remaining,
     }
+
+
+# ──────────────── PLAYLIST OVERVIEW & MANAGEMENT ────────────────
+
+
+@router.get("/playlist/overview")
+async def playlist_overview(
+    target_date: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Vue d'avancement des To Do pour chaque user."""
+    target = target_date or date.today()
+
+    users_q = await db.execute(
+        select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
+    )
+    users = users_q.scalars().all()
+
+    result = []
+    for u in users:
+        stats = (await db.execute(
+            select(
+                func.count(DailyPlaylist.id),
+                func.count(case((DailyPlaylist.status.in_(["done", "called"]), 1))),
+                func.count(case((DailyPlaylist.status == "pending", 1))),
+                func.count(case((DailyPlaylist.status == "skipped", 1))),
+                func.count(case((DailyPlaylist.reason.in_(["callback", "manual"]), 1))),
+                func.max(DailyPlaylist.called_at),
+            ).where(
+                DailyPlaylist.user_id == u.id,
+                DailyPlaylist.generated_date == target,
+            )
+        )).one()
+
+        entries_q = await db.execute(
+            select(
+                DailyPlaylist.id,
+                DailyPlaylist.client_id,
+                Client.name.label("client_name"),
+                Client.city,
+                DailyPlaylist.reason,
+                DailyPlaylist.reason_detail,
+                DailyPlaylist.status,
+                DailyPlaylist.priority,
+                DailyPlaylist.called_at,
+            )
+            .outerjoin(Client, Client.id == DailyPlaylist.client_id)
+            .where(
+                DailyPlaylist.user_id == u.id,
+                DailyPlaylist.generated_date == target,
+            )
+            .order_by(DailyPlaylist.priority)
+        )
+
+        entries = [
+            {
+                "id": r.id, "client_id": r.client_id,
+                "client_name": r.client_name, "city": r.city,
+                "reason": r.reason, "reason_detail": r.reason_detail,
+                "status": r.status, "priority": r.priority,
+                "called_at": str(r.called_at) if r.called_at else None,
+            }
+            for r in entries_q.all()
+        ]
+
+        total = stats[0] or 0
+        done = stats[1] or 0
+        result.append({
+            "user_id": u.id,
+            "user_name": u.name,
+            "total": total,
+            "done": done,
+            "pending": stats[2] or 0,
+            "skipped": stats[3] or 0,
+            "reminders": stats[4] or 0,
+            "completion_rate": round(done / total * 100, 1) if total else 0,
+            "last_activity": str(stats[5]) if stats[5] else None,
+            "entries": entries,
+        })
+
+    return result
+
+
+class DeleteEntriesRequest(BaseModel):
+    entry_ids: list[str]
+
+
+@router.delete("/playlist/entries")
+async def delete_playlist_entries(
+    body: DeleteEntriesRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Supprime des entrées de la To Do (unitaire ou en masse)."""
+    from sqlalchemy import delete
+    result = await db.execute(
+        delete(DailyPlaylist).where(DailyPlaylist.id.in_(body.entry_ids))
+    )
+    await db.commit()
+    return {"deleted": result.rowcount}
+
+
+@router.post("/playlist/add-entry")
+async def admin_add_playlist_entry(
+    user_id: str = Query(...),
+    client_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Admin ajoute un client à la To Do d'un sales."""
+    client_q = await db.execute(select(Client).where(Client.id == client_id))
+    client = client_q.scalar_one_or_none()
+    if not client:
+        raise HTTPException(404, "Client introuvable")
+
+    today = date.today()
+    max_prio_q = await db.execute(
+        select(func.coalesce(func.max(DailyPlaylist.priority), 0)).where(
+            DailyPlaylist.user_id == user_id,
+            DailyPlaylist.generated_date == today,
+        )
+    )
+    next_priority = (max_prio_q.scalar() or 0) + 1
+
+    stmt = pg_insert(DailyPlaylist).values(
+        user_id=user_id,
+        client_id=client_id,
+        generated_date=today,
+        priority=next_priority,
+        reason="manual",
+        reason_detail=f"Ajouté par {user.name}",
+        score=50,
+        status="pending",
+    )
+    stmt = stmt.on_conflict_do_nothing(constraint="uq_playlist_entry")
+    await db.execute(stmt)
+    await db.commit()
+    return {"ok": True, "client_name": client.name}
+
+
+# ── Dropdown lists for filters ─────────────────────────────────────
+
+
+@router.get("/filters/competitors")
+async def list_competitors_for_filter(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    from models.competitor import Competitor
+    q = await db.execute(select(Competitor.id, Competitor.name).order_by(Competitor.name))
+    return [{"id": r.id, "name": r.name} for r in q.all()]
+
+
+@router.get("/filters/suppliers")
+async def list_suppliers_for_filter(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    from models.supplier import Supplier
+    q = await db.execute(select(Supplier.id, Supplier.name).order_by(Supplier.name))
+    return [{"id": r.id, "name": r.name} for r in q.all()]
+
+
+@router.get("/filters/product-families")
+async def list_product_families_for_filter(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    from models.product import Product
+    q = await db.execute(
+        select(Product.family).where(Product.family.isnot(None), Product.family != "")
+        .distinct().order_by(Product.family)
+    )
+    return [{"value": r[0], "label": r[0]} for r in q.all()]
+
+
+@router.get("/filters/products")
+async def list_products_for_filter(
+    search: str = "",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    from models.product import Product
+    stmt = select(Product.article_ref, Product.name).where(
+        Product.article_ref.isnot(None)
+    )
+    if search:
+        stmt = stmt.where(or_(
+            Product.name.ilike(f"%{search}%"),
+            Product.article_ref.ilike(f"%{search}%"),
+        ))
+    stmt = stmt.order_by(Product.name).limit(50)
+    q = await db.execute(stmt)
+    return [{"ref": r.article_ref, "name": r.name} for r in q.all()]
 
 
 @router.get("/clients/orphans")

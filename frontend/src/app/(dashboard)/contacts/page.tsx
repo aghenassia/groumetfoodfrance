@@ -486,16 +486,6 @@ export default function ContactsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-1 ml-2 shrink-0">
-                        {selectedContact.phone_e164 && (
-                          <ClickToCall
-                            phoneNumber={selectedContact.phone_e164}
-                            contactName={displayName(selectedContact)}
-                            clientId={selectedContact.company_id || undefined}
-                            clientName={selectedContact.company_name || undefined}
-                            variant="cta"
-                            label="Appeler"
-                          />
-                        )}
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={closePanel}>
                           <X className="w-4 h-4" />
                         </Button>
@@ -504,12 +494,33 @@ export default function ContactsPage() {
 
                     {/* Contact info */}
                     <div className="p-4 space-y-3 border-b">
-                      {selectedContact.phone && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="font-mono">{selectedContact.phone}</span>
-                        </div>
-                      )}
+                      {(() => {
+                        const phonesList = selectedContact.phones && selectedContact.phones.length > 0
+                          ? selectedContact.phones
+                          : selectedContact.phone
+                            ? [{ id: '', phone: selectedContact.phone, phone_e164: selectedContact.phone_e164, label: null, is_primary: true }]
+                            : [];
+                        return phonesList.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {phonesList.map((p, idx) => (
+                              <div key={p.id || idx} className="flex items-center gap-2 text-sm">
+                                <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                <span className="font-mono flex-1">{p.phone}</span>
+                                {p.label && <span className="text-[10px] text-muted-foreground border rounded px-1">{p.label}</span>}
+                                {p.is_primary && <span className="text-[10px] text-green-700 bg-green-50 border border-green-300 rounded px-1">1er</span>}
+                                {p.phone_e164 && (
+                                  <ClickToCall
+                                    phoneNumber={p.phone_e164}
+                                    contactName={displayName(selectedContact)}
+                                    clientId={selectedContact.company_id || undefined}
+                                    clientName={selectedContact.company_name || undefined}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
                       {selectedContact.email && (
                         <div className="flex items-center gap-2 text-sm">
                           <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />

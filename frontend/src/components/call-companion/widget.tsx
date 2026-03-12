@@ -378,7 +378,7 @@ function CompanionForm({
           {nextStepDate && (
             <p className="text-[10px] text-blue-600 bg-blue-50 rounded px-2 py-1">
               Un rappel sera créé pour le {new Date(nextStepDate).toLocaleDateString("fr-FR")}
-              {nextStepTime ? ` à ${nextStepTime}` : ""} dans votre playlist
+              {nextStepTime ? ` à ${nextStepTime}` : ""} dans votre To do
             </p>
           )}
         </div>

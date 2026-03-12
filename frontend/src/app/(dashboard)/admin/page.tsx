@@ -384,10 +384,10 @@ export default function AdminPage() {
             <CardContent className="pt-5 space-y-3">
               <div className="flex items-center gap-2">
                 <ListMusic className="w-4 h-4 text-amber-600" />
-                <p className="text-sm font-medium">Playlists</p>
+                <p className="text-sm font-medium">To do</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Générer les playlists d&apos;appels du jour
+                Générer les To do d&apos;appels du jour
               </p>
               <div className="flex gap-2">
                 <Button

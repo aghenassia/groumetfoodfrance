@@ -1,6 +1,11 @@
 """
 Connecteur Ringover API v2.
 Migré depuis le prototype Flask (app.py).
+
+Architecture sync :
+- sync_calls_fast()  : poll léger toutes les 4s, seulement les nouveaux appels
+- post_process_calls() : traitement lourd toutes les 30s (qualification, lifecycle, playlist)
+- sync_calls()       : full sync legacy (gardé pour admin / première exécution)
 """
 import logging
 from datetime import datetime, timezone, timedelta
@@ -8,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 import httpx
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -27,6 +32,13 @@ from models.playlist import DailyPlaylist
 from connectors.phone_normalizer import normalize_phone
 
 settings = get_settings()
+
+_known_cdr_ids: set[str] = set()
+_cdr_cache_loaded = False
+_last_fast_sync_ts: datetime | None = None
+_fast_sync_counter = 0
+_fast_sync_new_total = 0
+_last_heartbeat: datetime | None = None
 
 
 async def ringover_request(endpoint: str, params: dict | None = None) -> dict | None:
@@ -88,23 +100,151 @@ def _resolve_user_id(
     return None
 
 
-async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
-    """Synchronise les appels depuis Ringover vers PostgreSQL."""
-    all_calls = []
-    offset = 0
-    batch_size = 100
+async def _ensure_cdr_cache(db: AsyncSession):
+    """Load known cdr_ids into memory on first run."""
+    global _known_cdr_ids, _cdr_cache_loaded, _last_fast_sync_ts
+    if _cdr_cache_loaded:
+        return
+    result = await db.execute(select(Call.ringover_cdr_id))
+    _known_cdr_ids = {row[0] for row in result.all() if row[0]}
+    ts = (await db.execute(select(func.max(Call.start_time)))).scalar()
+    _last_fast_sync_ts = ts or (datetime.now(timezone.utc) - timedelta(hours=2))
+    _cdr_cache_loaded = True
+    logger.info(f"CDR cache loaded: {len(_known_cdr_ids)} known calls, last={_last_fast_sync_ts}")
 
-    while len(all_calls) < limit:
-        data = await ringover_request("calls", {
-            "limit_count": batch_size,
-            "limit_offset": offset,
-        })
-        if not data or not data.get("call_list"):
-            break
-        all_calls.extend(data["call_list"])
-        if len(data["call_list"]) < batch_size:
-            break
-        offset += batch_size
+
+async def _upsert_call(call_data: dict, phone_map: dict, phone_contact_map: dict,
+                       by_ringover_id: dict, by_email: dict, by_name: dict,
+                       db: AsyncSession) -> bool:
+    """Process a single call from Ringover API. Returns True if new call inserted."""
+    user = call_data.get("user") or {}
+    contact = call_data.get("contact")
+    voicemail = call_data.get("voicemail")
+    record = call_data.get("record")
+
+    voicemail_url = None
+    if voicemail:
+        voicemail_url = voicemail if isinstance(voicemail, str) else voicemail.get("url")
+
+    record_url = None
+    if record:
+        record_url = record if isinstance(record, str) else record.get("url")
+
+    contact_number = call_data.get("contact_number")
+    contact_e164 = normalize_phone(str(contact_number)) if contact_number else None
+
+    client_id = phone_map.get(contact_e164) if contact_e164 else None
+    contact_id = phone_contact_map.get(contact_e164) if contact_e164 else None
+    resolved_user_id = _resolve_user_id(user, by_ringover_id, by_email, by_name)
+
+    if client_id is None and contact_e164:
+        auto_sage_id = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
+        new_client = Client(
+            sage_id=auto_sage_id,
+            name=contact_e164,
+            phone=str(contact_number) if contact_number else contact_e164,
+            phone_e164=contact_e164,
+            status="prospect",
+            is_prospect=True,
+            is_dormant=False,
+            assigned_user_id=resolved_user_id,
+        )
+        db.add(new_client)
+        await db.flush()
+
+        new_contact = Contact(
+            company_id=new_client.id,
+            name=contact_e164,
+            phone=str(contact_number) if contact_number else contact_e164,
+            phone_e164=contact_e164,
+            assigned_user_id=resolved_user_id,
+            is_primary=True,
+            source="ringover",
+        )
+        db.add(new_contact)
+        await db.flush()
+
+        db.add(PhoneIndex(
+            phone_e164=contact_e164,
+            client_id=new_client.id,
+            contact_id=new_contact.id,
+            source="ringover_auto",
+            raw_phone=str(contact_number) if contact_number else contact_e164,
+            label="principal",
+        ))
+        db.add(ClientAuditLog(
+            client_id=new_client.id,
+            contact_id=new_contact.id,
+            user_id=resolved_user_id,
+            user_name=user.get("concat_name") or "system",
+            action="created",
+            details=f"Création auto depuis appel Ringover ({contact_e164})",
+        ))
+
+        client_id = new_client.id
+        contact_id = new_contact.id
+        phone_map[contact_e164] = client_id
+        phone_contact_map[contact_e164] = contact_id
+
+    start_time_raw = call_data.get("start_time")
+    start_time = _parse_ringover_datetime(start_time_raw) or datetime.now(timezone.utc)
+    end_time = _parse_ringover_datetime(call_data.get("end_time"))
+
+    values = {
+        "ringover_cdr_id": call_data["cdr_id"],
+        "call_id": call_data.get("call_id"),
+        "direction": call_data.get("direction", "OUT"),
+        "is_answered": bool(call_data.get("is_answered")),
+        "last_state": call_data.get("last_state"),
+        "start_time": start_time,
+        "end_time": end_time,
+        "total_duration": call_data.get("total_duration") or 0,
+        "incall_duration": call_data.get("incall_duration") or 0,
+        "from_number": call_data.get("from_number"),
+        "to_number": call_data.get("to_number"),
+        "contact_number": str(contact_number) if contact_number else None,
+        "contact_e164": contact_e164,
+        "hangup_by": call_data.get("hangup_by"),
+        "voicemail_url": voicemail_url,
+        "record_url": record_url,
+        "user_id": resolved_user_id,
+        "user_name": user.get("concat_name"),
+        "user_email": user.get("email"),
+        "client_id": client_id,
+        "contact_id": contact_id,
+        "contact_name": contact.get("concat_name") if isinstance(contact, dict) else None,
+        "synced_at": datetime.now(timezone.utc),
+    }
+
+    stmt = pg_insert(Call).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["ringover_cdr_id"],
+        set_={k: v for k, v in values.items() if k != "ringover_cdr_id"},
+    )
+    await db.execute(stmt)
+    return True
+
+
+async def sync_calls_fast(db: AsyncSession) -> dict:
+    """Lightweight fast poll — only fetches new calls, no post-processing.
+    Designed to run every 4 seconds."""
+    global _known_cdr_ids, _last_fast_sync_ts
+
+    await _ensure_cdr_cache(db)
+
+    params: dict = {"limit_count": 30, "limit_offset": 0}
+    if _last_fast_sync_ts:
+        params["after_created_at"] = _last_fast_sync_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    data = await ringover_request("calls", params)
+    if not data or not data.get("call_list"):
+        return {"new": 0, "from_api": 0}
+
+    api_calls = data["call_list"]
+    new_calls = [c for c in api_calls if str(c.get("cdr_id", "")) not in _known_cdr_ids]
+
+    if not new_calls:
+        return {"new": 0, "from_api": len(api_calls)}
 
     q = await db.execute(select(PhoneIndex.phone_e164, PhoneIndex.client_id, PhoneIndex.contact_id))
     phone_map: dict[str, str] = {}
@@ -116,124 +256,66 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
     by_ringover_id, by_email, by_name = await _build_user_maps(db)
 
     created, errors = 0, 0
-
-    for call_data in all_calls:
+    for call_data in new_calls:
         try:
-            user = call_data.get("user") or {}
-            contact = call_data.get("contact")
-            voicemail = call_data.get("voicemail")
-            record = call_data.get("record")
-
-            voicemail_url = None
-            if voicemail:
-                voicemail_url = voicemail if isinstance(voicemail, str) else voicemail.get("url")
-
-            record_url = None
-            if record:
-                record_url = record if isinstance(record, str) else record.get("url")
-
-            contact_number = call_data.get("contact_number")
-            contact_e164 = normalize_phone(str(contact_number)) if contact_number else None
-
-            client_id = phone_map.get(contact_e164) if contact_e164 else None
-            contact_id = phone_contact_map.get(contact_e164) if contact_e164 else None
-            resolved_user_id = _resolve_user_id(user, by_ringover_id, by_email, by_name)
-
-            if client_id is None and contact_e164:
-                auto_sage_id = f"AUTO-{uuid.uuid4().hex[:8].upper()}"
-                new_client = Client(
-                    sage_id=auto_sage_id,
-                    name=contact_e164,
-                    phone=str(contact_number) if contact_number else contact_e164,
-                    phone_e164=contact_e164,
-                    status="prospect",
-                    is_prospect=True,
-                    is_dormant=False,
-                    assigned_user_id=resolved_user_id,
-                )
-                db.add(new_client)
-                await db.flush()
-
-                new_contact = Contact(
-                    company_id=new_client.id,
-                    name=contact_e164,
-                    phone=str(contact_number) if contact_number else contact_e164,
-                    phone_e164=contact_e164,
-                    assigned_user_id=resolved_user_id,
-                    is_primary=True,
-                    source="ringover",
-                )
-                db.add(new_contact)
-                await db.flush()
-
-                db.add(PhoneIndex(
-                    phone_e164=contact_e164,
-                    client_id=new_client.id,
-                    contact_id=new_contact.id,
-                    source="ringover_auto",
-                    raw_phone=str(contact_number) if contact_number else contact_e164,
-                    label="principal",
-                ))
-                db.add(ClientAuditLog(
-                    client_id=new_client.id,
-                    contact_id=new_contact.id,
-                    user_id=resolved_user_id,
-                    user_name=user.get("concat_name") or "system",
-                    action="created",
-                    details=f"Création auto depuis appel Ringover ({contact_e164})",
-                ))
-
-                client_id = new_client.id
-                contact_id = new_contact.id
-                phone_map[contact_e164] = client_id
-                phone_contact_map[contact_e164] = contact_id
-
-            start_time_raw = call_data.get("start_time")
-            start_time = _parse_ringover_datetime(start_time_raw) or datetime.now(timezone.utc)
-            end_time = _parse_ringover_datetime(call_data.get("end_time"))
-
-            values = {
-                "ringover_cdr_id": call_data["cdr_id"],
-                "call_id": call_data.get("call_id"),
-                "direction": call_data.get("direction", "OUT"),
-                "is_answered": bool(call_data.get("is_answered")),
-                "last_state": call_data.get("last_state"),
-                "start_time": start_time,
-                "end_time": end_time,
-                "total_duration": call_data.get("total_duration") or 0,
-                "incall_duration": call_data.get("incall_duration") or 0,
-                "from_number": call_data.get("from_number"),
-                "to_number": call_data.get("to_number"),
-                "contact_number": str(contact_number) if contact_number else None,
-                "contact_e164": contact_e164,
-                "hangup_by": call_data.get("hangup_by"),
-                "voicemail_url": voicemail_url,
-                "record_url": record_url,
-                "user_id": resolved_user_id,
-                "user_name": user.get("concat_name"),
-                "user_email": user.get("email"),
-                "client_id": client_id,
-                "contact_id": contact_id,
-                "contact_name": contact.get("concat_name") if isinstance(contact, dict) else None,
-                "synced_at": datetime.now(timezone.utc),
-            }
-
-            stmt = pg_insert(Call).values(**values)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["ringover_cdr_id"],
-                set_={k: v for k, v in values.items() if k != "ringover_cdr_id"},
-            )
-            await db.execute(stmt)
+            await _upsert_call(call_data, phone_map, phone_contact_map,
+                               by_ringover_id, by_email, by_name, db)
+            cdr_id = str(call_data["cdr_id"])
+            _known_cdr_ids.add(cdr_id)
+            st = _parse_ringover_datetime(call_data.get("start_time"))
+            if st and (_last_fast_sync_ts is None or st > _last_fast_sync_ts):
+                _last_fast_sync_ts = st
             created += 1
-
         except Exception as e:
             errors += 1
             await db.rollback()
-            print(f"Erreur sync appel {call_data.get('cdr_id')}: {e}")
+            logger.warning(f"Fast sync erreur cdr {call_data.get('cdr_id')}: {e}")
 
     await db.commit()
 
-    # Auto-qualifier les appels sortants sans réponse comme "Injoignable"
+    global _fast_sync_counter, _fast_sync_new_total, _last_heartbeat
+    _fast_sync_counter += 1
+    _fast_sync_new_total += created
+
+    if created > 0:
+        log = SyncLog(
+            source="ringover_calls",
+            sync_type="fast",
+            status="success",
+            records_found=len(api_calls),
+            records_created=created,
+            records_errors=errors,
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        await db.commit()
+        logger.info(f"Fast sync: {created} new calls ingested")
+
+    now = datetime.now(timezone.utc)
+    if _last_heartbeat is None or (now - _last_heartbeat).total_seconds() >= 300:
+        log = SyncLog(
+            source="ringover_calls",
+            sync_type="heartbeat",
+            status="success",
+            records_found=_fast_sync_counter,
+            records_created=_fast_sync_new_total,
+            records_errors=0,
+            finished_at=now,
+        )
+        db.add(log)
+        await db.commit()
+        logger.info(f"Ringover heartbeat: {_fast_sync_counter} polls, {_fast_sync_new_total} new calls since last heartbeat")
+        _fast_sync_counter = 0
+        _fast_sync_new_total = 0
+        _last_heartbeat = now
+
+    return {"new": created, "errors": errors, "from_api": len(api_calls)}
+
+
+async def post_process_calls(db: AsyncSession) -> dict:
+    """Heavy post-processing — runs every 30s separately from fast sync.
+    Auto-qualification, lifecycle, playlist updates, session matching."""
+
     auto_qualified = 0
     existing_qualifs = await db.execute(select(CallQualification.call_id))
     qualified_ids = {row[0] for row in existing_qualifs.all()}
@@ -262,7 +344,6 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
     if auto_qualified:
         await db.commit()
 
-    # Appliquer les transitions lifecycle pour les appels fraîchement synchés
     from engines.lifecycle_engine import on_call_answered
     lifecycle_applied = 0
     answered_calls = await db.execute(
@@ -281,7 +362,6 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
     if lifecycle_applied:
         await db.commit()
 
-    # Auto-valider les entrées playlist quand un appel correspond
     from datetime import date as date_type
     today = date_type.today()
     playlist_updated = 0
@@ -318,14 +398,71 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
         if playlist_updated:
             await db.commit()
 
-    # Match call_sessions to newly synced calls
     sessions_matched = 0
     try:
         sessions_matched = await _match_call_sessions(db)
     except Exception as e:
         logger.warning(f"Erreur matching call_sessions: {e}")
 
-    # Log de sync dans une opération séparée
+    return {
+        "auto_qualified": auto_qualified,
+        "lifecycle": lifecycle_applied,
+        "playlist_updated": playlist_updated,
+        "sessions_matched": sessions_matched,
+    }
+
+
+async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
+    """Full sync legacy — used for admin-triggered syncs and first run."""
+    global _known_cdr_ids, _cdr_cache_loaded, _last_fast_sync_ts
+
+    all_calls = []
+    offset = 0
+    batch_size = 100
+
+    while len(all_calls) < limit:
+        data = await ringover_request("calls", {
+            "limit_count": batch_size,
+            "limit_offset": offset,
+        })
+        if not data or not data.get("call_list"):
+            break
+        all_calls.extend(data["call_list"])
+        if len(data["call_list"]) < batch_size:
+            break
+        offset += batch_size
+
+    q = await db.execute(select(PhoneIndex.phone_e164, PhoneIndex.client_id, PhoneIndex.contact_id))
+    phone_map: dict[str, str] = {}
+    phone_contact_map: dict[str, str | None] = {}
+    for row in q.all():
+        phone_map[row[0]] = row[1]
+        phone_contact_map[row[0]] = row[2]
+
+    by_ringover_id, by_email, by_name = await _build_user_maps(db)
+
+    created, errors = 0, 0
+
+    for call_data in all_calls:
+        try:
+            await _upsert_call(call_data, phone_map, phone_contact_map,
+                               by_ringover_id, by_email, by_name, db)
+            _known_cdr_ids.add(str(call_data["cdr_id"]))
+            created += 1
+        except Exception as e:
+            errors += 1
+            await db.rollback()
+            print(f"Erreur sync appel {call_data.get('cdr_id')}: {e}")
+
+    await db.commit()
+
+    pp = await post_process_calls(db)
+
+    _cdr_cache_loaded = True
+    ts = (await db.execute(select(func.max(Call.start_time)))).scalar()
+    if ts:
+        _last_fast_sync_ts = ts
+
     log = SyncLog(
         source="ringover_calls",
         sync_type="delta",
@@ -341,9 +478,9 @@ async def sync_calls(db: AsyncSession, limit: int = 500) -> dict:
     return {
         "synced": created,
         "errors": errors,
-        "auto_qualified": auto_qualified,
-        "playlist_auto_called": playlist_updated,
-        "sessions_matched": sessions_matched,
+        "auto_qualified": pp.get("auto_qualified", 0),
+        "playlist_auto_called": pp.get("playlist_updated", 0),
+        "sessions_matched": pp.get("sessions_matched", 0),
         "total_from_api": len(all_calls),
     }
 

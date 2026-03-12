@@ -391,12 +391,12 @@ export default function SalesDashboardPage() {
             <p className="text-muted-foreground leading-relaxed">
               <strong className="text-foreground">Cards du haut :</strong> vision
               d&apos;ensemble de l&apos;équipe — appels sortants/entrants, taux de décroché,
-              CA, marge, complétion playlist, score IA moyen.
+              CA, marge, complétion To do, score IA moyen.
             </p>
             <p className="text-muted-foreground leading-relaxed">
               <strong className="text-foreground">Note A/B/C/D :</strong> note composite
               de chaque commercial basée sur le volume d&apos;appels sortants, le taux de
-              décroché, la qualification, la playlist et l&apos;atteinte d&apos;objectif.
+              décroché, la qualification, la To do et l&apos;atteinte d&apos;objectif.
               Permet d&apos;identifier en un coup d&apos;oeil qui performe et qui est en retard.
             </p>
             <p className="text-muted-foreground leading-relaxed">
@@ -546,7 +546,7 @@ export default function SalesDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                Playlist
+                To do
               </p>
               <ListChecks className="w-3.5 h-3.5 text-kiku" />
             </div>
@@ -605,7 +605,7 @@ export default function SalesDashboardPage() {
                   <SortHeader k="target_progress" label="Obj." className="text-right" />
                   <SortHeader k="ai_overall" label="IA" className="text-right" />
                   <SortHeader k="qualification_rate" label="Qual.%" className="text-right" />
-                  <SortHeader k="playlist_rate" label="Playlist" className="text-right" />
+                  <SortHeader k="playlist_rate" label="To do" className="text-right" />
                   <th className="px-2 py-2 text-xs font-medium text-muted-foreground text-center">
                     Humeurs
                   </th>
@@ -690,7 +690,7 @@ function RepRow({
             </TooltipTrigger>
             <TooltipContent>
               Performance composite : appels sortants, taux décroché,
-              qualification, playlist, objectif
+              qualification, To do, objectif
             </TooltipContent>
           </Tooltip>
         </td>
@@ -788,7 +788,7 @@ function RepRow({
                 </span>
               </TooltipTrigger>
               <TooltipContent>
-                {rep.playlist_rate}% de la playlist traitée
+                {rep.playlist_rate}% de la To do traitée
               </TooltipContent>
             </Tooltip>
           ) : (

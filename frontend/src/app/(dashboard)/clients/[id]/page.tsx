@@ -199,7 +199,7 @@ export default function ClientDetailPage() {
 
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactType | null>(null);
-  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; phone: string; emails: string[]; is_primary: boolean}>({name: '', first_name: '', last_name: '', role: '', phone: '', emails: [''], is_primary: false});
+  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; phones: {id?: string; phone: string; label: string; is_primary: boolean}[]; emails: string[]; is_primary: boolean}>({name: '', first_name: '', last_name: '', role: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false});
   const [savingContact, setSavingContact] = useState(false);
   const [showMoveContactDialog, setShowMoveContactDialog] = useState(false);
   const [movingContactId, setMovingContactId] = useState<string | null>(null);
@@ -285,7 +285,7 @@ export default function ClientDetailPage() {
       setShowPlaylistPopover(false);
       setPlaylistNote("");
       setPlaylistTargetUser("");
-    } catch { toast.error("Erreur lors de l'ajout à la playlist"); }
+    } catch { toast.error("Erreur lors de l'ajout à la To do"); }
     setAddingToPlaylist(false);
   };
 
@@ -530,7 +530,7 @@ export default function ClientDetailPage() {
 
   const openNewContact = () => {
     setEditingContact(null);
-    setContactForm({ name: '', first_name: '', last_name: '', role: '', phone: '', emails: [''], is_primary: false });
+    setContactForm({ name: '', first_name: '', last_name: '', role: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false });
     setShowContactDialog(true);
   };
 
@@ -548,12 +548,17 @@ export default function ClientDetailPage() {
         lastName = parts[0];
       }
     }
+    const existingPhones = contact.phones && contact.phones.length > 0
+      ? contact.phones.map(p => ({ id: p.id, phone: p.phone, label: p.label || '', is_primary: p.is_primary }))
+      : contact.phone
+        ? [{ phone: contact.phone, label: '', is_primary: true }]
+        : [{ phone: '', label: '', is_primary: true }];
     setContactForm({
       name: contact.name || '',
       first_name: firstName,
       last_name: lastName,
       role: contact.role || '',
-      phone: contact.phone || '',
+      phones: existingPhones,
       emails: emails.length > 0 ? emails : [''],
       is_primary: contact.is_primary,
     });
@@ -574,6 +579,7 @@ export default function ClientDetailPage() {
     }
     const fullName = buildContactName(first, last);
     const email = contactForm.emails.map(e => e.trim()).filter(Boolean).join(', ') || undefined;
+    const primaryPhone = contactForm.phones.find(p => p.is_primary && p.phone.trim());
     setSavingContact(true);
     try {
       const payload = {
@@ -581,15 +587,53 @@ export default function ClientDetailPage() {
         first_name: first || undefined,
         last_name: last || undefined,
         role: contactForm.role || undefined,
-        phone: contactForm.phone || undefined,
+        phone: primaryPhone?.phone || contactForm.phones.find(p => p.phone.trim())?.phone || undefined,
         email,
         is_primary: contactForm.is_primary,
       };
+      let contactId: string;
       if (editingContact) {
         await api.updateContact(editingContact.id, payload);
+        contactId = editingContact.id;
+
+        const oldPhoneIds = new Set((editingContact.phones || []).map(p => p.id));
+        const newPhoneIds = new Set(contactForm.phones.filter(p => p.id).map(p => p.id!));
+
+        for (const oldId of oldPhoneIds) {
+          if (!newPhoneIds.has(oldId)) {
+            await api.deleteContactPhone(contactId, oldId);
+          }
+        }
+
+        for (const p of contactForm.phones) {
+          if (!p.phone.trim()) continue;
+          if (p.id) {
+            const orig = editingContact.phones?.find(op => op.id === p.id);
+            if (orig && (orig.phone !== p.phone || orig.label !== p.label || orig.is_primary !== p.is_primary)) {
+              await api.updateContactPhone(contactId, p.id, { phone: p.phone, label: p.label || undefined, is_primary: p.is_primary });
+            }
+          } else {
+            await api.addContactPhone(contactId, { phone: p.phone, label: p.label || undefined });
+            if (p.is_primary) {
+              const refreshed = await api.getContact(contactId);
+              const newPhone = refreshed.phones?.find(rp => rp.phone === p.phone);
+              if (newPhone) await api.updateContactPhone(contactId, newPhone.id, { is_primary: true });
+            }
+          }
+        }
+
         toast.success('Contact mis à jour');
       } else {
-        await api.createContact({ ...payload, company_id: id });
+        const created = await api.createContact({ ...payload, company_id: id });
+        contactId = created.id;
+
+        for (let i = 1; i < contactForm.phones.length; i++) {
+          const p = contactForm.phones[i];
+          if (p.phone.trim()) {
+            await api.addContactPhone(contactId, { phone: p.phone, label: p.label || undefined });
+          }
+        }
+
         toast.success('Contact créé');
       }
       setShowContactDialog(false);
@@ -763,17 +807,17 @@ export default function ClientDetailPage() {
             ) : null;
           })()}
 
-          {/* Playlist & Rappel */}
+          {/* To do & Rappel */}
           <Popover open={showPlaylistPopover} onOpenChange={(open) => { setShowPlaylistPopover(open); if (!open) { setPlaylistNote(""); setPlaylistTargetUser(""); } }}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5">
                 <ListPlus className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Playlist</span>
+                <span className="hidden sm:inline">To do</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-72" align="end">
               <div className="space-y-3">
-                <h4 className="font-medium text-sm">Ajouter à la playlist du jour</h4>
+                <h4 className="font-medium text-sm">Ajouter à la To do du jour</h4>
                 {isManager && allUsers.length > 0 && (
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
@@ -1217,27 +1261,45 @@ export default function ClientDetailPage() {
             {(!client.contacts || client.contacts.length === 0) ? (
               <p className="text-xs text-muted-foreground">Aucun contact</p>
             ) : (
-              client.contacts.map((ct) => (
-                <div key={ct.id} className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{ct.name}</p>
-                      {ct.is_primary && <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>}
-                      {ct.role && <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>}
+              client.contacts.map((ct) => {
+                const phonesList = ct.phones && ct.phones.length > 0 ? ct.phones : ct.phone ? [{ id: '', phone: ct.phone, phone_e164: ct.phone_e164, label: null, is_primary: true }] : [];
+                return (
+                <div key={ct.id} className="py-2 px-2 rounded hover:bg-accent group">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{ct.name}</p>
+                        {ct.is_primary && <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>}
+                        {ct.role && <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>}
+                      </div>
+                      {ct.email && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                      {ct.phone && <span className="flex items-center gap-1 whitespace-nowrap"><Phone className="w-3 h-3 shrink-0" />{ct.phone}</span>}
-                      {ct.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                  </div>
+                  {phonesList.length > 0 && (
+                    <div className="mt-1 space-y-0.5 ml-1">
+                      {phonesList.map((p, idx) => (
+                        <div key={p.id || idx} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="w-3 h-3 shrink-0" />
+                          <span className="whitespace-nowrap">{p.phone}</span>
+                          {p.label && <Badge variant="outline" className="text-[9px] px-1 py-0">{p.label}</Badge>}
+                          {p.is_primary && <Badge variant="outline" className="text-[9px] px-1 py-0 border-green-300 text-green-700 bg-green-50">1er</Badge>}
+                          {p.phone_e164 && <ClickToCall phoneNumber={p.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -2253,37 +2315,55 @@ export default function ClientDetailPage() {
             {(!client.contacts || client.contacts.length === 0) ? (
               <p className="text-xs text-muted-foreground">Aucun contact</p>
             ) : (
-              client.contacts.map((ct) => (
-                <div key={ct.id} className="flex items-center gap-3 py-2 px-2 rounded hover:bg-accent group">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{ct.name}</p>
-                      {ct.is_primary && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>
-                      )}
-                      {ct.role && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>
+              client.contacts.map((ct) => {
+                const phonesList = ct.phones && ct.phones.length > 0 ? ct.phones : ct.phone ? [{ id: '', phone: ct.phone, phone_e164: ct.phone_e164, label: null, is_primary: true }] : [];
+                return (
+                <div key={ct.id} className="py-2 px-2 rounded hover:bg-accent group">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{ct.name}</p>
+                        {ct.is_primary && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>
+                        )}
+                        {ct.role && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>
+                        )}
+                      </div>
+                      {ct.email && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>
+                        </div>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                      {ct.phone && <span className="flex items-center gap-1 whitespace-nowrap"><Phone className="w-3 h-3 shrink-0" />{ct.phone}</span>}
-                      {ct.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{ct.email}</span></span>}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openMoveContact(ct.id)}>
+                        <ArrowUpDown className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDeleteContact(ct.id, ct.name)}>
+                        <Trash2 className="w-3 h-3 text-red-600" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {ct.phone_e164 && <ClickToCall phoneNumber={ct.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditContact(ct)}>
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openMoveContact(ct.id)}>
-                      <ArrowUpDown className="w-3 h-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDeleteContact(ct.id, ct.name)}>
-                      <Trash2 className="w-3 h-3 text-red-600" />
-                    </Button>
-                  </div>
+                  {phonesList.length > 0 && (
+                    <div className="mt-1 space-y-0.5 ml-1">
+                      {phonesList.map((p, idx) => (
+                        <div key={p.id || idx} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="w-3 h-3 shrink-0" />
+                          <span className="whitespace-nowrap">{p.phone}</span>
+                          {p.label && <Badge variant="outline" className="text-[9px] px-1 py-0">{p.label}</Badge>}
+                          {p.is_primary && <Badge variant="outline" className="text-[9px] px-1 py-0 border-green-300 text-green-700 bg-green-50">1er</Badge>}
+                          {p.phone_e164 && <ClickToCall phoneNumber={p.phone_e164} clientId={id} clientName={client.name} contactName={ct.name} />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -2500,7 +2580,7 @@ export default function ClientDetailPage() {
               </p>
               <ul className="text-xs space-y-0.5 ml-5.5 list-disc">
                 <li>Tous les contacts seront supprimés</li>
-                <li>Les entrées playlist seront supprimées</li>
+                <li>Les entrées To do seront supprimées</li>
                 <li>Les appels et ventes seront dissociés (conservés sans lien)</li>
               </ul>
             </div>
@@ -2725,13 +2805,66 @@ export default function ClientDetailPage() {
               <Input className="h-8 text-sm" value={contactForm.role} onChange={(e) => setContactForm({...contactForm, role: e.target.value})} placeholder="Ex: Directeur, Acheteur..." />
             </div>
             <div>
-              <Label className="text-xs">Téléphone</Label>
-              <Input
-                className="h-8 text-sm"
-                value={contactForm.phone}
-                onChange={(e) => setContactForm({...contactForm, phone: e.target.value})}
-                placeholder="+33 6 12 34 56 78"
-              />
+              <Label className="text-xs flex items-center justify-between">
+                <span>Téléphones</span>
+                <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => setContactForm({...contactForm, phones: [...contactForm.phones, {phone: '', label: '', is_primary: false}]})}>
+                  + Ajouter un numéro
+                </button>
+              </Label>
+              <div className="space-y-1.5">
+                {contactForm.phones.map((ph, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <Input
+                      className="h-8 text-sm flex-1"
+                      value={ph.phone}
+                      onChange={(e) => {
+                        const updated = [...contactForm.phones];
+                        updated[idx] = {...updated[idx], phone: e.target.value};
+                        setContactForm({...contactForm, phones: updated});
+                      }}
+                      placeholder={idx === 0 ? "+33 6 12 34 56 78" : "Autre numéro..."}
+                    />
+                    <select
+                      className="h-8 text-xs border rounded px-1 bg-background"
+                      value={ph.label}
+                      onChange={(e) => {
+                        const updated = [...contactForm.phones];
+                        updated[idx] = {...updated[idx], label: e.target.value};
+                        setContactForm({...contactForm, phones: updated});
+                      }}
+                    >
+                      <option value="">Type</option>
+                      <option value="mobile">Mobile</option>
+                      <option value="fixe">Fixe</option>
+                      <option value="bureau">Bureau</option>
+                      <option value="perso">Perso</option>
+                      <option value="autre">Autre</option>
+                    </select>
+                    <button
+                      type="button"
+                      className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${ph.is_primary ? 'bg-green-50 border-green-300 text-green-700 font-medium' : 'border-gray-200 text-muted-foreground hover:bg-accent'}`}
+                      title={ph.is_primary ? 'Numéro principal' : 'Définir comme principal'}
+                      onClick={() => {
+                        const updated = contactForm.phones.map((p, i) => ({...p, is_primary: i === idx}));
+                        setContactForm({...contactForm, phones: updated});
+                      }}
+                    >
+                      {ph.is_primary ? '1er' : '○'}
+                    </button>
+                    {contactForm.phones.length > 1 && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => {
+                        let updated = contactForm.phones.filter((_, i) => i !== idx);
+                        if (ph.is_primary && updated.length > 0) {
+                          updated = updated.map((p, i) => i === 0 ? {...p, is_primary: true} : p);
+                        }
+                        setContactForm({...contactForm, phones: updated});
+                      }}>
+                        <X className="w-3 h-3 text-muted-foreground" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input

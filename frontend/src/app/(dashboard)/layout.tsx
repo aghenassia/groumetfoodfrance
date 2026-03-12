@@ -45,7 +45,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: "/admin", label: "Admin", icon: Shield },
   { href: "/admin/users", label: "Utilisateurs", icon: UserCog },
-  { href: "/admin/playlists", label: "Playlists Admin", icon: ListMusic },
+  { href: "/admin/playlists", label: "To do Admin", icon: ListMusic },
   { href: "/admin/sales-dashboard", label: "Pilotage Sales", icon: BarChart3 },
   { href: "/admin/assignments", label: "Assignation Clients", icon: Users },
   { href: "/admin/margins", label: "Règles de marge", icon: Calculator },

@@ -231,6 +231,18 @@ class ApiClient {
     return this.delete<{ deleted: boolean }>(`/api/contacts/${contactId}`);
   }
 
+  addContactPhone(contactId: string, data: { phone: string; label?: string }) {
+    return this.post<ContactPhoneItem>(`/api/contacts/${contactId}/phones`, data);
+  }
+
+  updateContactPhone(contactId: string, phoneId: string, data: { phone?: string; label?: string; is_primary?: boolean }) {
+    return this.put<ContactPhoneItem>(`/api/contacts/${contactId}/phones/${phoneId}`, data);
+  }
+
+  deleteContactPhone(contactId: string, phoneId: string) {
+    return this.delete<{ deleted: boolean }>(`/api/contacts/${contactId}/phones/${phoneId}`);
+  }
+
   getContactCalls(contactId: string) {
     return this.get<ContactCallEntry[]>(`/api/contacts/${contactId}/calls`);
   }
@@ -311,6 +323,48 @@ class ApiClient {
   clearPlaylistsToday(userId?: string) {
     const qs = userId ? `?user_id=${userId}` : "";
     return this.delete(`/api/admin/playlist/clear${qs}`);
+  }
+
+  getPlaylistOverview(targetDate?: string) {
+    const qs = targetDate ? `?target_date=${targetDate}` : "";
+    return this.get<PlaylistOverviewUser[]>(`/api/admin/playlist/overview${qs}`);
+  }
+
+  deletePlaylistEntries(entryIds: string[]) {
+    return this.request<{ deleted: number }>("/api/admin/playlist/entries", {
+      method: "DELETE",
+      body: JSON.stringify({ entry_ids: entryIds }),
+    });
+  }
+
+  adminAddPlaylistEntry(userId: string, clientId: string) {
+    return this.post<{ ok: boolean; client_name: string }>(
+      `/api/admin/playlist/add-entry?user_id=${userId}&client_id=${clientId}`,
+    );
+  }
+
+  getFilterCompetitors() {
+    return this.get<FilterOption[]>("/api/admin/filters/competitors");
+  }
+
+  getFilterSuppliers() {
+    return this.get<FilterOption[]>("/api/admin/filters/suppliers");
+  }
+
+  getFilterProductFamilies() {
+    return this.get<FilterOption[]>("/api/admin/filters/product-families");
+  }
+
+  getFilterProducts(search?: string) {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+    return this.get<FilterOption[]>(`/api/admin/filters/products${qs}`);
+  }
+
+  async searchClients(search: string) {
+    const res = await this.get<{ clients: { id: string; name: string; sage_id: string; city: string }[] }>(
+      `/api/clients?search=${encodeURIComponent(search)}&limit=15`,
+    );
+    return res.clients || [];
   }
 
   getClientAssignments() {
@@ -794,6 +848,14 @@ export interface SalesSummary {
   distinct_products: number;
 }
 
+export interface ContactPhoneItem {
+  id: string;
+  phone: string;
+  phone_e164?: string | null;
+  label?: string | null;
+  is_primary: boolean;
+}
+
 export interface Contact {
   id: string;
   company_id?: string | null;
@@ -811,6 +873,7 @@ export interface Contact {
   assigned_user_name?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  phones?: ContactPhoneItem[];
 }
 
 export interface ContactCallEntry {
@@ -1034,6 +1097,44 @@ export interface PlaylistConfigPayload {
   upsell_min_score: number;
   client_scope: string;
   sage_rep_filter: string | null;
+  filter_mode: string;
+  filter_competitor_ids: string[];
+  filter_supplier_ids: string[];
+  filter_product_refs: string[];
+  filter_product_families: string[];
+}
+
+export interface PlaylistOverviewUser {
+  user_id: string;
+  user_name: string;
+  total: number;
+  done: number;
+  pending: number;
+  skipped: number;
+  reminders: number;
+  completion_rate: number;
+  last_activity: string | null;
+  entries: PlaylistOverviewEntry[];
+}
+
+export interface PlaylistOverviewEntry {
+  id: string;
+  client_id: string;
+  client_name: string;
+  city: string | null;
+  reason: string;
+  reason_detail: string;
+  status: string;
+  priority: number;
+  called_at: string | null;
+}
+
+export interface FilterOption {
+  id?: string;
+  name?: string;
+  value?: string;
+  label?: string;
+  ref?: string;
 }
 
 export interface PlaylistConfigItem {

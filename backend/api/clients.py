@@ -442,28 +442,34 @@ async def get_client(
     ]
 
     # Contacts
+    from models.contact_phone import ContactPhone
+    from schemas.client import ContactPhoneResponse
     contacts_result = await db.execute(
         select(Contact, User.name.label("user_name"))
         .outerjoin(User, User.id == Contact.assigned_user_id)
+        .options(selectinload(Contact.phones))
         .where(Contact.company_id == client_id)
         .order_by(Contact.is_primary.desc(), Contact.name)
     )
     contacts = []
-    for row in contacts_result.all():
+    for row in contacts_result.unique().all():
         ct = row[0]
+        phone_list = [ContactPhoneResponse.model_validate(p) for p in ct.phones] if ct.phones else []
+        primary_phone = next((p for p in phone_list if p.is_primary), phone_list[0] if phone_list else None)
         contacts.append(ContactBrief(
             id=ct.id,
             name=ct.name,
             first_name=ct.first_name,
             last_name=ct.last_name,
             role=ct.role,
-            phone=ct.phone,
-            phone_e164=ct.phone_e164,
+            phone=primary_phone.phone if primary_phone else ct.phone,
+            phone_e164=primary_phone.phone_e164 if primary_phone else ct.phone_e164,
             email=ct.email,
             is_primary=ct.is_primary,
             source=ct.source,
             assigned_user_id=ct.assigned_user_id,
             assigned_user_name=row[1],
+            phones=phone_list,
         ))
 
     # Derniers appels avec qualifications + analyses IA

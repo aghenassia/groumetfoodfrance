@@ -29,6 +29,7 @@ class Contact(Base):
     company = relationship("Client", back_populates="contacts")
     assigned_user = relationship("User", back_populates="contacts")
     phone_numbers = relationship("PhoneIndex", back_populates="contact", cascade="all, delete-orphan")
+    phones = relationship("ContactPhone", back_populates="contact", cascade="all, delete-orphan", order_by="ContactPhone.created_at")
     calls = relationship("Call", back_populates="contact")
 
     __table_args__ = (

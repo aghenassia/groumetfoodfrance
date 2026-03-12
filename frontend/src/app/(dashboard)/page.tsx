@@ -829,7 +829,7 @@ export default function DashboardPage() {
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-base">
             <ListMusic className="w-4 h-4 inline mr-2" />
-            Playlist du jour
+            To do du jour
           </CardTitle>
           <Link href="/playlist">
             <Button variant="ghost" size="sm" className="h-7 text-xs">
@@ -1382,7 +1382,7 @@ function AdminPilotingView({
             <p className="text-2xl font-extrabold mt-1">{team.avg_ai_score > 0 ? `${team.avg_ai_score}/10` : "—"}</p>
             <div className="flex items-center gap-2 mt-1.5">
               <span className="text-[11px] text-muted-foreground">Qualif. {team.qualification_rate}%</span>
-              <span className="text-[11px] text-muted-foreground">Playlist {team.playlist_rate}%</span>
+              <span className="text-[11px] text-muted-foreground">To do {team.playlist_rate}%</span>
             </div>
           </CardContent>
         </Card>
@@ -1411,7 +1411,7 @@ function AdminPilotingView({
                   <SortHeader label="Décroché" k="answer_rate" className="text-right" />
                   <SortHeader label="Temps tél." k="total_talk_time" className="text-right" />
                   <SortHeader label="Score IA" k="ai_overall" className="text-right" />
-                  <SortHeader label="Playlist" k="playlist_rate" className="text-right" />
+                  <SortHeader label="To do" k="playlist_rate" className="text-right" />
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -1512,7 +1512,7 @@ function AdminPilotingView({
                         )}
                       </td>
 
-                      {/* Playlist */}
+                      {/* To do */}
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         {rep.playlist_total > 0 ? (
                           <>

@@ -88,7 +88,7 @@ const STATUSES = [
     label: "Perdu",
     badgeClass: "bg-muted text-muted-foreground border-border",
     description:
-      "Contact définitivement perdu. Exclu de toutes les playlists. C'est la seule transition manuelle du système.",
+      "Contact définitivement perdu. Exclu de toutes les To do. C'est la seule transition manuelle du système.",
     entry:
       "Qualification manuelle avec outcome = « pas intéressé » + confirmation",
     exit: "Aucune — statut terminal",
@@ -218,7 +218,7 @@ const SCORES = [
     icon: Target,
     color: "text-kiku",
     description:
-      "Score composite qui détermine l'ordre d'appel dans la playlist. Formule : churn × 0.5 + upsell × 0.3 + min(100, CA_12m / 100) × 0.2",
+      "Score composite qui détermine l'ordre d'appel dans la To do. Formule : churn × 0.5 + upsell × 0.3 + min(100, CA_12m / 100) × 0.2",
     thresholds: [
       { label: "Poids churn", meaning: "50% — rétention prioritaire" },
       {
@@ -237,17 +237,17 @@ const PLAYLIST_VARS = [
   {
     variable: "total_size",
     defaut: "15",
-    description: "Nombre total d'entrées dans la playlist quotidienne",
+    description: "Nombre total d'entrées dans la To do quotidienne",
   },
   {
     variable: "pct_callback",
-    defaut: "10%",
+    defaut: "10% (info)",
     description:
-      "Rappels planifiés — clients ayant un next_step_date = aujourd'hui",
+      "Rappels planifiés — HORS BUDGET. Les rappels sont ajoutés automatiquement en plus du total_size, pas comptabilisés dans les slots %",
   },
   {
     variable: "pct_dormant",
-    defaut: "30%",
+    defaut: "35%",
     description:
       "Clients dormants (180+ jours sans commande, hors cooldown, hors dead)",
   },
@@ -259,7 +259,7 @@ const PLAYLIST_VARS = [
   },
   {
     variable: "pct_upsell",
-    defaut: "20%",
+    defaut: "25%",
     description:
       "Clients actifs avec un upsell_score ≥ seuil configuré (défaut : 30)",
   },
@@ -299,18 +299,52 @@ const PLAYLIST_VARS = [
     description:
       "Nom du rep Sage ciblé (utilisé uniquement quand client_scope = sage_rep). Sélectionné dans une liste des reps présents en base",
   },
+  {
+    variable: "filter_mode",
+    defaut: "disabled",
+    description:
+      "Mode de filtrage intel : disabled (normal), replace_prospects (remplacer les prospects par cibles intel) ou dedicated_pool (100% opé éclair)",
+  },
+  {
+    variable: "filter_competitor_ids",
+    defaut: "[]",
+    description:
+      "Liste des IDs concurrents ciblés pour l'opé éclair",
+  },
+  {
+    variable: "filter_supplier_ids",
+    defaut: "[]",
+    description:
+      "Liste des IDs fournisseurs ciblés pour l'opé éclair",
+  },
+  {
+    variable: "filter_product_families",
+    defaut: "[]",
+    description:
+      "Familles de produits ciblées pour l'opé éclair",
+  },
 ];
 
 const DEDUP_VARS = [
   {
     variable: "global_seen (batch)",
     description:
-      "Set partagé entre tous les commerciaux lors de la génération en batch. Chaque client ajouté est marqué, empêchant son apparition dans les playlists suivantes",
+      "Set partagé entre tous les commerciaux lors de la génération en batch. Inclut aussi les clients pending des 7 derniers jours des autres users (anti-duplication cross-user)",
   },
   {
     variable: "already_assigned (individuel)",
     description:
-      "Lors de la génération individuelle, le système charge d'abord les client_id des playlists du jour des autres commerciaux et les exclut automatiquement",
+      "Lors de la génération individuelle, les clients pending des 7 derniers jours (tous users) et tous les clients pending de l'utilisateur (empilement) sont automatiquement exclus",
+  },
+  {
+    variable: "phone_seen (phone e164)",
+    description:
+      "Set de numéros e164 déjà attribués. Empêche d'attribuer deux clients différents ayant le même numéro de téléphone dans les To Do",
+  },
+  {
+    variable: "stacking (empilement)",
+    description:
+      "La génération charge tous les client_id pending existants de l'utilisateur dans seen_clients au démarrage. Les nouveaux leads s'empilent sans écraser les anciens. Le bouton 'Vider tout' permet un reset (préserve rappels/manuels)",
   },
 ];
 
@@ -318,7 +352,7 @@ const COOLDOWN_VARS = [
   {
     variable: "contact_cooldown_until",
     description:
-      "Date jusqu'à laquelle un dormant contacté est exclu de la playlist (14 jours après le dernier appel)",
+      "Date jusqu'à laquelle un dormant contacté est exclu de la To do (14 jours après le dernier appel)",
   },
   {
     variable: "dormant_contact_count",
@@ -751,7 +785,7 @@ export default function GlossairePage() {
       <section>
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Target className="w-5 h-5 text-sora" />
-          Variables de playlist
+          Variables de la To do
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
           Chaque commercial possède une <strong>PlaylistConfig</strong>{" "}
@@ -805,11 +839,11 @@ export default function GlossairePage() {
       <section>
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Target className="w-5 h-5 text-kiku" />
-          Anti-doublons entre playlists
+          Anti-doublons entre To do
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Un client ne peut jamais apparaître dans les playlists de deux
-          commerciaux différents le même jour, que les playlists soient
+          Un client ne peut jamais apparaître dans les To do de deux
+          commerciaux différents le même jour, que les To do soient
           générées en batch ou individuellement.
         </p>
 
@@ -1619,7 +1653,7 @@ export default function GlossairePage() {
                     <tr>
                       <td className="px-3 py-2 font-mono text-sora">reason=&quot;manual&quot;</td>
                       <td className="px-3 py-2 font-mono text-sora">daily_playlists.reason</td>
-                      <td className="px-3 py-2 text-muted-foreground">Entrée ajoutée manuellement (bouton &quot;Playlist&quot; sur fiche client). Protégée contre la suppression auto.</td>
+                      <td className="px-3 py-2 text-muted-foreground">Entrée ajoutée manuellement (bouton &quot;To do&quot; sur fiche client). Protégée contre la suppression auto.</td>
                     </tr>
                     <tr>
                       <td className="px-3 py-2 font-mono text-sora">reason=&quot;callback&quot;</td>

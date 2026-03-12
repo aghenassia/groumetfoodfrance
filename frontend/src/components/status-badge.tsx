@@ -45,7 +45,7 @@ const STATUS_CONFIG: Record<
     label: "Perdu",
     class: "bg-muted text-muted-foreground border-border",
     explanation:
-      "Marqué manuellement comme perdu lors d'une qualification (« pas intéressé »). Exclu de toutes les playlists. Seule transition manuelle du système.",
+      "Marqué manuellement comme perdu lors d'une qualification (« pas intéressé »). Exclu de toutes les To do. Seule transition manuelle du système.",
   },
 };
 

@@ -2,18 +2,20 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.database import get_db
 from core.security import get_current_user
 from models.user import User
 from models.client import Client
 from models.contact import Contact
+from models.contact_phone import ContactPhone
 from models.call import Call
 from models.phone_index import PhoneIndex
 from models.client_audit import ClientAuditLog
-from schemas.client import ContactResponse, ContactBrief
+from schemas.client import ContactResponse, ContactBrief, ContactPhoneResponse
 from connectors.phone_normalizer import normalize_phone
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -40,15 +42,23 @@ class UpdateContactRequest(BaseModel):
     is_primary: bool | None = None
 
 
-def _contact_to_response(contact: Contact, company_name: str | None = None, user_name: str | None = None) -> ContactResponse:
+def _contact_to_response(contact: Contact, company_name: str | None = None, user_name: str | None = None, phones: list | None = None) -> ContactResponse:
+    phone_list = []
+    if phones is not None:
+        phone_list = [ContactPhoneResponse.model_validate(p) for p in phones]
+    elif hasattr(contact, "phones") and contact.phones:
+        phone_list = [ContactPhoneResponse.model_validate(p) for p in contact.phones]
+
+    primary_phone = next((p for p in phone_list if p.is_primary), phone_list[0] if phone_list else None)
+
     return ContactResponse(
         id=contact.id,
         name=contact.name,
         first_name=contact.first_name,
         last_name=contact.last_name,
         role=contact.role,
-        phone=contact.phone,
-        phone_e164=contact.phone_e164,
+        phone=primary_phone.phone if primary_phone else contact.phone,
+        phone_e164=primary_phone.phone_e164 if primary_phone else contact.phone_e164,
         email=contact.email,
         is_primary=contact.is_primary,
         source=contact.source,
@@ -58,6 +68,7 @@ def _contact_to_response(contact: Contact, company_name: str | None = None, user
         company_name=company_name,
         created_at=contact.created_at,
         updated_at=contact.updated_at,
+        phones=phone_list,
     )
 
 
@@ -114,10 +125,10 @@ async def list_contacts(
     }
     sort_col = sort_col_map.get(sort_by, Contact.name)
     order = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
-    stmt = base.order_by(order).offset(offset).limit(limit)
+    stmt = base.options(selectinload(Contact.phones)).order_by(order).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
-    rows = result.all()
+    rows = result.unique().all()
 
     return {
         "contacts": [_contact_to_response(row[0], row[1], row[2]) for row in rows],
@@ -135,9 +146,10 @@ async def get_contact(
         select(Contact, Client.name.label("company_name"), User.name.label("user_name"))
         .outerjoin(Client, Client.id == Contact.company_id)
         .outerjoin(User, User.id == Contact.assigned_user_id)
+        .options(selectinload(Contact.phones))
         .where(Contact.id == contact_id)
     )
-    row = result.one_or_none()
+    row = result.unique().one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Contact introuvable")
     return _contact_to_response(row[0], row[1], row[2])
@@ -185,6 +197,16 @@ async def create_contact(
     )
     db.add(contact)
     await db.flush()
+
+    if body.phone:
+        cp = ContactPhone(
+            contact_id=contact.id,
+            phone=body.phone,
+            phone_e164=phone_e164,
+            label="principal",
+            is_primary=True,
+        )
+        db.add(cp)
 
     if body.is_primary and body.company_id:
         await db.execute(
@@ -508,5 +530,212 @@ async def delete_contact(
     )
 
     await db.delete(contact)
+    await db.commit()
+    return {"deleted": True}
+
+
+# ── Phone CRUD ────────────────────────────────────────────
+
+
+class AddPhoneRequest(BaseModel):
+    phone: str
+    label: str | None = None
+
+
+class UpdatePhoneRequest(BaseModel):
+    phone: str | None = None
+    label: str | None = None
+    is_primary: bool | None = None
+
+
+async def _auto_promote_primary(db: AsyncSession, contact_id: str):
+    """If no primary phone exists, promote the oldest one."""
+    phones = (await db.execute(
+        select(ContactPhone).where(ContactPhone.contact_id == contact_id).order_by(ContactPhone.created_at)
+    )).scalars().all()
+    if not phones:
+        return
+    has_primary = any(p.is_primary for p in phones)
+    if not has_primary:
+        phones[0].is_primary = True
+
+
+async def _sync_contact_phone_field(db: AsyncSession, contact: Contact):
+    """Keep the legacy Contact.phone / phone_e164 in sync with the primary ContactPhone."""
+    primary = (await db.execute(
+        select(ContactPhone)
+        .where(ContactPhone.contact_id == contact.id, ContactPhone.is_primary == True)
+        .limit(1)
+    )).scalar_one_or_none()
+    if primary:
+        contact.phone = primary.phone
+        contact.phone_e164 = primary.phone_e164
+    else:
+        first = (await db.execute(
+            select(ContactPhone)
+            .where(ContactPhone.contact_id == contact.id)
+            .order_by(ContactPhone.created_at)
+            .limit(1)
+        )).scalar_one_or_none()
+        if first:
+            contact.phone = first.phone
+            contact.phone_e164 = first.phone_e164
+        else:
+            contact.phone = None
+            contact.phone_e164 = None
+
+
+@router.get("/{contact_id}/phones")
+async def list_contact_phones(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    contact = (await db.execute(select(Contact).where(Contact.id == contact_id))).scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact introuvable")
+    result = await db.execute(
+        select(ContactPhone).where(ContactPhone.contact_id == contact_id).order_by(ContactPhone.created_at)
+    )
+    phones = result.scalars().all()
+    return [ContactPhoneResponse.model_validate(p) for p in phones]
+
+
+@router.post("/{contact_id}/phones", response_model=ContactPhoneResponse)
+async def add_contact_phone(
+    contact_id: str,
+    body: AddPhoneRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    contact = (await db.execute(select(Contact).where(Contact.id == contact_id))).scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact introuvable")
+
+    phone_e164 = normalize_phone(body.phone) if body.phone else None
+
+    existing_count = (await db.execute(
+        select(func.count()).where(ContactPhone.contact_id == contact_id)
+    )).scalar() or 0
+
+    is_primary = existing_count == 0
+
+    cp = ContactPhone(
+        contact_id=contact_id,
+        phone=body.phone,
+        phone_e164=phone_e164,
+        label=body.label,
+        is_primary=is_primary,
+    )
+    db.add(cp)
+    await db.flush()
+
+    if phone_e164 and contact.company_id:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        stmt = pg_insert(PhoneIndex).values(
+            phone_e164=phone_e164,
+            client_id=contact.company_id,
+            contact_id=contact_id,
+            source="crm_manual",
+            raw_phone=body.phone,
+            label="contact",
+        ).on_conflict_do_nothing()
+        await db.execute(stmt)
+
+    await _sync_contact_phone_field(db, contact)
+
+    db.add(ClientAuditLog(
+        client_id=contact.company_id,
+        contact_id=contact.id,
+        user_id=user.id,
+        user_name=user.name,
+        action="phone_added",
+        details=f"Numéro ajouté sur {contact.name} : {body.phone}",
+    ))
+
+    await db.commit()
+    await db.refresh(cp)
+    return ContactPhoneResponse.model_validate(cp)
+
+
+@router.put("/{contact_id}/phones/{phone_id}", response_model=ContactPhoneResponse)
+async def update_contact_phone(
+    contact_id: str,
+    phone_id: str,
+    body: UpdatePhoneRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    cp = (await db.execute(
+        select(ContactPhone).where(ContactPhone.id == phone_id, ContactPhone.contact_id == contact_id)
+    )).scalar_one_or_none()
+    if not cp:
+        raise HTTPException(status_code=404, detail="Numéro introuvable")
+
+    contact = (await db.execute(select(Contact).where(Contact.id == contact_id))).scalar_one_or_none()
+
+    if body.phone is not None:
+        cp.phone = body.phone
+        cp.phone_e164 = normalize_phone(body.phone)
+    if body.label is not None:
+        cp.label = body.label
+    if body.is_primary is True:
+        await db.execute(
+            update(ContactPhone)
+            .where(ContactPhone.contact_id == contact_id, ContactPhone.id != phone_id)
+            .values(is_primary=False)
+        )
+        cp.is_primary = True
+
+    if contact:
+        await _sync_contact_phone_field(db, contact)
+
+    await db.commit()
+    await db.refresh(cp)
+    return ContactPhoneResponse.model_validate(cp)
+
+
+@router.delete("/{contact_id}/phones/{phone_id}")
+async def delete_contact_phone(
+    contact_id: str,
+    phone_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    cp = (await db.execute(
+        select(ContactPhone).where(ContactPhone.id == phone_id, ContactPhone.contact_id == contact_id)
+    )).scalar_one_or_none()
+    if not cp:
+        raise HTTPException(status_code=404, detail="Numéro introuvable")
+
+    contact = (await db.execute(select(Contact).where(Contact.id == contact_id))).scalar_one_or_none()
+    was_primary = cp.is_primary
+
+    if cp.phone_e164:
+        await db.execute(
+            sa_delete(PhoneIndex).where(
+                PhoneIndex.contact_id == contact_id,
+                PhoneIndex.phone_e164 == cp.phone_e164,
+            )
+        )
+
+    db.add(ClientAuditLog(
+        client_id=contact.company_id if contact else None,
+        contact_id=contact_id,
+        user_id=user.id,
+        user_name=user.name,
+        action="phone_deleted",
+        details=f"Numéro supprimé sur {contact.name if contact else contact_id} : {cp.phone}",
+    ))
+
+    await db.delete(cp)
+    await db.flush()
+
+    if was_primary:
+        await _auto_promote_primary(db, contact_id)
+
+    if contact:
+        await _sync_contact_phone_field(db, contact)
+
     await db.commit()
     return {"deleted": True}

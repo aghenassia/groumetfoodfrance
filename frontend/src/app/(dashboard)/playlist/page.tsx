@@ -107,7 +107,7 @@ export default function PlaylistPage() {
     api
       .getPlaylist()
       .then(setItems)
-      .catch(() => toast.error("Impossible de charger la playlist"))
+      .catch(() => toast.error("Impossible de charger la To do"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -245,7 +245,7 @@ export default function PlaylistPage() {
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
             <ListMusic className="w-5 h-5 sm:w-6 sm:h-6" />
-            Playlist du jour
+            To do du jour
           </h2>
           <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
             <span className="text-green-600 font-medium">{doneCount} fait{doneCount > 1 ? "s" : ""}</span>
@@ -288,7 +288,7 @@ export default function PlaylistPage() {
           ) : items.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
-                Aucune playlist pour aujourd&apos;hui. Lancez la génération depuis
+                Aucune To do pour aujourd&apos;hui. Lancez la génération depuis
                 l&apos;admin.
               </CardContent>
             </Card>
