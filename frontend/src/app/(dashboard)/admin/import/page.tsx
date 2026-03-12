@@ -53,7 +53,7 @@ export default function AdminImportPage() {
   const [jobStatus, setJobStatus] = useState<ImportJobStatus | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const handleFile = useCallback((f: File) => {
     if (!f.name.toLowerCase().endsWith(".csv")) {
