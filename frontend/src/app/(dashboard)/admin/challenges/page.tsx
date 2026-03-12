@@ -64,7 +64,7 @@ export default function AdminChallengesPage() {
     article_ref: "",
     article_name: "",
     article_refs: [] as { ref: string; name: string }[],
-    article_family: "",
+    article_families: [] as string[],
     metric: "quantity_kg",
     target_value: "",
     reward: "",
@@ -142,7 +142,7 @@ export default function AdminChallengesPage() {
       article_ref: "",
       article_name: "",
       article_refs: [],
-      article_family: "",
+      article_families: [],
       metric: "quantity_kg",
       target_value: "",
       reward: "",
@@ -156,7 +156,8 @@ export default function AdminChallengesPage() {
   const openEdit = (ch: ChallengeEntry) => {
     setEditingId(ch.id);
     const refs = (ch.article_refs || []).map((r) => ({ ref: r, name: r }));
-    const mode: FilterMode = ch.article_family ? "family" : refs.length > 0 ? "products" : "none";
+    const fams = ch.article_families || (ch.article_family ? [ch.article_family] : []);
+    const mode: FilterMode = fams.length > 0 ? "family" : refs.length > 0 ? "products" : "none";
     setFilterMode(mode);
     setForm({
       name: ch.name,
@@ -164,7 +165,7 @@ export default function AdminChallengesPage() {
       article_ref: ch.article_ref || "",
       article_name: ch.article_name || "",
       article_refs: refs,
-      article_family: ch.article_family || "",
+      article_families: fams,
       metric: ch.metric,
       target_value: ch.target_value?.toString() || "",
       reward: ch.reward || "",
@@ -183,7 +184,7 @@ export default function AdminChallengesPage() {
     setSaving(true);
     try {
       const refs = filterMode === "products" ? form.article_refs.map((r) => r.ref) : undefined;
-      const family = filterMode === "family" ? form.article_family : undefined;
+      const families = filterMode === "family" && form.article_families.length > 0 ? form.article_families : undefined;
 
       if (editingId) {
         await api.updateChallenge(editingId, {
@@ -194,7 +195,7 @@ export default function AdminChallengesPage() {
           status: form.status,
           end_date: form.end_date,
           article_refs: refs || [],
-          article_family: family || "",
+          article_families: families || [],
         });
         toast.success("Challenge mis à jour");
       } else {
@@ -202,7 +203,7 @@ export default function AdminChallengesPage() {
           name: form.name,
           description: form.description || undefined,
           article_refs: refs,
-          article_family: family,
+          article_families: families,
           metric: form.metric,
           target_value: form.target_value ? parseFloat(form.target_value) : undefined,
           reward: form.reward || undefined,
@@ -297,19 +298,21 @@ export default function AdminChallengesPage() {
                       <BarChart3 className="w-3 h-3" />
                       {METRIC_LABELS[ch.metric] || ch.metric}
                     </span>
-                    {ch.article_family && (
+                    {(ch.article_families?.length || ch.article_family) && (
                       <span className="flex items-center gap-1">
                         <Tag className="w-3 h-3" />
-                        Famille : {ch.article_family}
+                        {(ch.article_families?.length ?? 0) > 1
+                          ? `${ch.article_families!.length} familles`
+                          : `Famille : ${ch.article_families?.[0] || ch.article_family}`}
                       </span>
                     )}
-                    {!ch.article_family && ch.article_refs && ch.article_refs.length > 0 && (
+                    {!ch.article_families?.length && !ch.article_family && ch.article_refs && ch.article_refs.length > 0 && (
                       <span className="flex items-center gap-1">
                         <Package className="w-3 h-3" />
                         {ch.article_refs.length} produit{ch.article_refs.length > 1 ? "s" : ""}
                       </span>
                     )}
-                    {!ch.article_family && !ch.article_refs?.length && ch.article_name && (
+                    {!ch.article_families?.length && !ch.article_family && !ch.article_refs?.length && ch.article_name && (
                       <span className="flex items-center gap-1">
                         <Target className="w-3 h-3" />
                         {ch.article_name}
@@ -383,8 +386,8 @@ export default function AdminChallengesPage() {
                     className="h-7 text-xs flex-1"
                     onClick={() => {
                       setFilterMode(m.key);
-                      if (m.key === "none") setForm({ ...form, article_refs: [], article_family: "" });
-                      if (m.key === "products") setForm({ ...form, article_family: "" });
+                      if (m.key === "none") setForm({ ...form, article_refs: [], article_families: [] });
+                      if (m.key === "products") setForm({ ...form, article_families: [] });
                       if (m.key === "family") setForm({ ...form, article_refs: [] });
                     }}
                   >
@@ -448,24 +451,57 @@ export default function AdminChallengesPage() {
               )}
 
               {filterMode === "family" && (
-                <Select
-                  value={form.article_family || ""}
-                  onValueChange={(v) => setForm({ ...form, article_family: v })}
-                >
-                  <SelectTrigger className="h-9">
-                    <div className="flex items-center gap-2">
-                      <Tag className="w-3.5 h-3.5 text-muted-foreground" />
-                      <SelectValue placeholder="Choisir une famille de produits" />
+                <div className="space-y-2">
+                  <Select
+                    value=""
+                    onValueChange={(v) => {
+                      if (!form.article_families.includes(v)) {
+                        setForm({ ...form, article_families: [...form.article_families, v] });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-9">
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {form.article_families.length === 0
+                            ? "Ajouter une famille de produits"
+                            : `${form.article_families.length} famille${form.article_families.length > 1 ? "s" : ""} sélectionnée${form.article_families.length > 1 ? "s" : ""}`}
+                        </span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {families
+                        .filter((f) => !form.article_families.includes(f.family))
+                        .map((f) => (
+                          <SelectItem key={f.family} value={f.family}>
+                            {f.family} ({f.count} produits)
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {form.article_families.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.article_families.map((fam) => (
+                        <Badge key={fam} variant="secondary" className="text-xs gap-1 pr-1">
+                          {fam}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                article_families: form.article_families.filter((f) => f !== fam),
+                              })
+                            }
+                            className="ml-0.5 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
                     </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {families.map((f) => (
-                      <SelectItem key={f.family} value={f.family}>
-                        {f.family} ({f.count} produits)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  )}
+                </div>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">

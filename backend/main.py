@@ -37,6 +37,7 @@ async def _run_migrations(conn):
         # challenges
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_refs TEXT",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_family VARCHAR(50)",
+        "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_families TEXT",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS reward VARCHAR(200)",
     ]
     for sql in migrations:

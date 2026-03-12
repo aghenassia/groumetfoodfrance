@@ -23,6 +23,7 @@ class ChallengeCreate(BaseModel):
     article_name: str | None = None
     article_refs: list[str] | None = None
     article_family: str | None = None
+    article_families: list[str] | None = None
     metric: str
     target_value: float | None = None
     reward: str | None = None
@@ -36,6 +37,7 @@ class ChallengeUpdate(BaseModel):
     description: str | None = None
     article_refs: list[str] | None = None
     article_family: str | None = None
+    article_families: list[str] | None = None
     target_value: float | None = None
     reward: str | None = None
     status: str | None = None
@@ -50,6 +52,7 @@ class ChallengeResponse(BaseModel):
     article_name: str | None
     article_refs: list[str] | None = None
     article_family: str | None = None
+    article_families: list[str] | None = None
     metric: str
     target_value: float | None
     reward: str | None = None
@@ -83,6 +86,31 @@ def _require_admin(user: User):
         raise HTTPException(403, "Admin/manager requis")
 
 
+def _get_families(ch: Challenge) -> list[str] | None:
+    if ch.article_families:
+        return [f.strip() for f in ch.article_families.split(",") if f.strip()]
+    if ch.article_family:
+        return [ch.article_family]
+    return None
+
+
+def _build_response(ch: Challenge, creator_name: str | None = None) -> ChallengeResponse:
+    refs = ch.article_refs.split(",") if ch.article_refs else None
+    families = _get_families(ch)
+    return ChallengeResponse(
+        id=ch.id, name=ch.name, description=ch.description,
+        article_ref=ch.article_ref, article_name=ch.article_name,
+        article_refs=refs,
+        article_family=families[0] if families and len(families) == 1 else None,
+        article_families=families,
+        metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
+        reward=ch.reward,
+        start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
+        created_by=ch.created_by, creator_name=creator_name,
+        created_at=ch.created_at, updated_at=ch.updated_at,
+    )
+
+
 @router.get("", response_model=list[ChallengeResponse])
 async def list_challenges(
     status: str | None = None,
@@ -100,17 +128,7 @@ async def list_challenges(
     out = []
     for row in result.all():
         ch = row[0]
-        refs = ch.article_refs.split(",") if ch.article_refs else None
-        out.append(ChallengeResponse(
-            id=ch.id, name=ch.name, description=ch.description,
-            article_ref=ch.article_ref, article_name=ch.article_name,
-            article_refs=refs, article_family=ch.article_family,
-            metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
-            reward=ch.reward,
-            start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
-            created_by=ch.created_by, creator_name=row[1],
-            created_at=ch.created_at, updated_at=ch.updated_at,
-        ))
+        out.append(_build_response(ch, creator_name=row[1]))
     return out
 
 
@@ -125,9 +143,11 @@ async def create_challenge(
         raise HTTPException(400, f"Métrique invalide. Valeurs: {list(METRIC_AGG.keys())}")
 
     refs_str = ",".join(body.article_refs) if body.article_refs else None
-    # Backwards compat: if single ref provided but not refs list, use it
     if not refs_str and body.article_ref:
         refs_str = body.article_ref
+
+    families_str = ",".join(body.article_families) if body.article_families else None
+    single_family = body.article_family if not families_str else None
 
     ch = Challenge(
         id=str(uuid.uuid4()),
@@ -136,7 +156,8 @@ async def create_challenge(
         article_ref=body.article_ref,
         article_name=body.article_name,
         article_refs=refs_str,
-        article_family=body.article_family or None,
+        article_family=single_family,
+        article_families=families_str,
         metric=body.metric,
         target_value=body.target_value,
         reward=body.reward,
@@ -148,17 +169,7 @@ async def create_challenge(
     db.add(ch)
     await db.commit()
     await db.refresh(ch)
-    refs = ch.article_refs.split(",") if ch.article_refs else None
-    return ChallengeResponse(
-        id=ch.id, name=ch.name, description=ch.description,
-        article_ref=ch.article_ref, article_name=ch.article_name,
-        article_refs=refs, article_family=ch.article_family,
-        metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
-        reward=ch.reward,
-        start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
-        created_by=ch.created_by, creator_name=user.name,
-        created_at=ch.created_at, updated_at=ch.updated_at,
-    )
+    return _build_response(ch, creator_name=user.name)
 
 
 @router.put("/{challenge_id}", response_model=ChallengeResponse)
@@ -188,8 +199,16 @@ async def update_challenge(
         ch.article_refs = ",".join(body.article_refs) if body.article_refs else None
         ch.article_ref = body.article_refs[0] if body.article_refs else None
         ch.article_family = None
-    if body.article_family is not None:
+        ch.article_families = None
+    if body.article_families is not None:
+        ch.article_families = ",".join(body.article_families) if body.article_families else None
+        ch.article_family = None
+        if ch.article_families:
+            ch.article_refs = None
+            ch.article_ref = None
+    elif body.article_family is not None:
         ch.article_family = body.article_family or None
+        ch.article_families = None
         if ch.article_family:
             ch.article_refs = None
             ch.article_ref = None
@@ -197,17 +216,7 @@ async def update_challenge(
     await db.commit()
     await db.refresh(ch)
     creator_name = (await db.execute(select(User.name).where(User.id == ch.created_by))).scalar()
-    refs = ch.article_refs.split(",") if ch.article_refs else None
-    return ChallengeResponse(
-        id=ch.id, name=ch.name, description=ch.description,
-        article_ref=ch.article_ref, article_name=ch.article_name,
-        article_refs=refs, article_family=ch.article_family,
-        metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
-        reward=ch.reward,
-        start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
-        created_by=ch.created_by, creator_name=creator_name,
-        created_at=ch.created_at, updated_at=ch.updated_at,
-    )
+    return _build_response(ch, creator_name=creator_name)
 
 
 @router.delete("/{challenge_id}")
@@ -245,8 +254,9 @@ async def challenge_ranking(
         .where(SalesLine.date >= ch.start_date, SalesLine.date <= ch.end_date)
     )
 
-    if ch.article_family:
-        family_refs = select(Product.article_ref).where(Product.family == ch.article_family).scalar_subquery()
+    families = _get_families(ch)
+    if families:
+        family_refs = select(Product.article_ref).where(Product.family.in_(families)).scalar_subquery()
         stmt = stmt.where(SalesLine.article_ref.in_(family_refs))
     elif ch.article_refs:
         refs_list = [r.strip() for r in ch.article_refs.split(",") if r.strip()]

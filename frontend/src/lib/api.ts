@@ -1713,6 +1713,7 @@ export interface ChallengeEntry {
   article_name?: string | null;
   article_refs?: string[] | null;
   article_family?: string | null;
+  article_families?: string[] | null;
   metric: string;
   target_value?: number | null;
   reward?: string | null;
