@@ -20,6 +20,7 @@ import {
   BarChart3,
   ContactRound,
   Calculator,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -50,6 +51,7 @@ const ADMIN_ITEMS = [
   { href: "/admin/assignments", label: "Assignation Clients", icon: Users },
   { href: "/admin/margins", label: "Règles de marge", icon: Calculator },
   { href: "/admin/challenges", label: "Challenges", icon: Trophy },
+  { href: "/admin/import", label: "Import leads", icon: Upload },
   { href: "/admin/glossaire", label: "Glossaire", icon: BookOpen },
 ];
 

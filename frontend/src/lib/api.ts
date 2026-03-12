@@ -647,6 +647,38 @@ class ApiClient {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return this.get<PipelineStats>(`/api/me/pipeline${qs}`);
   }
+
+  // Import CSV
+  async parseImportCSV(file: File, mode: string): Promise<ImportParseResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/api/admin/import/parse?mode=${mode}`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Erreur ${res.status}`);
+    }
+    return res.json();
+  }
+
+  executeImport(parsedFileId: string, duplicateActions: Record<string, string>) {
+    return this.post<{ job_id: string }>("/api/admin/import/execute", {
+      parsed_file_id: parsedFileId,
+      duplicate_actions: duplicateActions,
+    });
+  }
+
+  getImportStatus(jobId: string) {
+    return this.get<ImportJobStatus>(`/api/admin/import/status/${jobId}`);
+  }
+
+  getImportTemplateUrl(mode: string) {
+    return `${API_BASE}/api/admin/import/template?mode=${mode}`;
+  }
 }
 
 export const api = new ApiClient();
@@ -1794,4 +1826,31 @@ export interface ClientNoteResponse {
   user_name?: string | null;
   content: string;
   created_at: string;
+}
+
+// ── Import CSV ──────────────────────────────────────────────────────
+
+export interface ImportParseResponse {
+  total: number;
+  valid: number;
+  errors: { line: number; field: string; message: string }[];
+  duplicates: {
+    line: number;
+    csv_name: string;
+    existing_id: string;
+    existing_name: string;
+    match_type: string;
+  }[];
+  preview: Record<string, string | number | boolean | null>[];
+  parsed_file_id: string;
+}
+
+export interface ImportJobStatus {
+  status: "running" | "completed" | "error";
+  total: number;
+  done: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { line: number | string; message: string }[];
 }

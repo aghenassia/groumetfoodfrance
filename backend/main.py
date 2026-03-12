@@ -100,6 +100,7 @@ from api.challenges import router as challenges_router
 from api.orders import router as orders_router
 from api.intel import router as intel_router
 from api.call_sessions import router as call_sessions_router
+from api.import_leads import router as import_leads_router
 
 app.include_router(auth_router)
 app.include_router(clients_router)
@@ -116,6 +117,7 @@ app.include_router(challenges_router)
 app.include_router(orders_router)
 app.include_router(intel_router)
 app.include_router(call_sessions_router)
+app.include_router(import_leads_router)
 
 
 @app.get("/api/health")
