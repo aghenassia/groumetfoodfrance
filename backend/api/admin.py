@@ -1632,10 +1632,11 @@ async def list_product_families_for_filter(
 ):
     from models.product import Product
     q = await db.execute(
-        select(Product.family).where(Product.family.isnot(None), Product.family != "")
-        .distinct().order_by(Product.family)
+        select(Product.family, func.max(Product.family_label))
+        .where(Product.family.isnot(None), Product.family != "")
+        .group_by(Product.family).order_by(Product.family)
     )
-    return [{"value": r[0], "label": r[0]} for r in q.all()]
+    return [{"value": r[0], "label": r[1] or r[0]} for r in q.all()]
 
 
 @router.get("/filters/products")

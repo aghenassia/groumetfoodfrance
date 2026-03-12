@@ -22,6 +22,7 @@ class ProductResponse(BaseModel):
     article_ref: str
     designation: str | None = None
     family: str | None = None
+    family_label: str | None = None
     sub_family: str | None = None
     unit: str | None = None
     sale_price: float | None = None
@@ -367,14 +368,14 @@ async def get_families(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Retourne les familles de produits distinctes."""
+    """Retourne les familles de produits distinctes avec leur intitulé."""
     result = await db.execute(
-        select(Product.family, func.count(Product.id))
+        select(Product.family, func.max(Product.family_label), func.count(Product.id))
         .where(Product.family != None)
         .group_by(Product.family)
         .order_by(func.count(Product.id).desc())
     )
-    return [{"family": r[0], "count": r[1]} for r in result.all()]
+    return [{"family": r[0], "label": r[1] or r[0], "count": r[2]} for r in result.all()]
 
 
 @router.get("/depots")

@@ -160,7 +160,7 @@ function ProductsPageInner() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [hasSales, setHasSales] = useState<string>("all");
   const [family, setFamily] = useState<string>("all");
-  const [families, setFamilies] = useState<{ family: string; count: number }[]>(
+  const [families, setFamilies] = useState<{ family: string; label: string; count: number }[]>(
     []
   );
   const [stockFilter, setStockFilter] = useState<StockFilter>("");
@@ -286,7 +286,7 @@ function ProductsPageInner() {
           <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
             {total} produit{total > 1 ? "s" : ""}
             {debouncedSearch && ` · "${debouncedSearch}"`}
-            {family !== "all" && ` · ${family}`}
+            {family !== "all" && ` · ${families.find(f => f.family === family)?.label || family}`}
           </p>
         </div>
 
@@ -370,7 +370,7 @@ function ProductsPageInner() {
                   <SelectItem value="all">Toutes les familles</SelectItem>
                   {families.map((f) => (
                     <SelectItem key={f.family} value={f.family}>
-                      {f.family} ({f.count})
+                      {f.label} ({f.count})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -541,9 +541,10 @@ function ProductsPageInner() {
                               {p.family && (
                                 <Badge
                                   variant="outline"
-                                  className="text-xs h-4 px-1 py-0"
+                                  className="text-xs h-4 px-1 py-0 max-w-[120px] truncate"
+                                  title={p.family_label || p.family}
                                 >
-                                  {p.family}
+                                  {p.family_label || p.family}
                                 </Badge>
                               )}
                               {!p.is_active && (
@@ -654,9 +655,10 @@ function ProductsPageInner() {
                         {p.family && (
                           <Badge
                             variant="outline"
-                            className="text-xs h-4 px-1 py-0"
+                            className="text-xs h-4 px-1 py-0 max-w-[120px] truncate"
+                            title={p.family_label || p.family}
                           >
-                            {p.family}
+                            {p.family_label || p.family}
                           </Badge>
                         )}
                       </div>
@@ -995,8 +997,8 @@ function DetailPanel({
             </p>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               {detail.family && (
-                <Badge variant="outline" className="text-xs">
-                  {detail.family}
+                <Badge variant="outline" className="text-xs" title={detail.family}>
+                  {detail.family_label || detail.family}
                 </Badge>
               )}
               {detail.sub_family && (

@@ -32,6 +32,7 @@ async def _run_migrations(conn):
         "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_product_families TEXT[] DEFAULT '{}'",
         # products
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS family_label VARCHAR(100)",
         # clients
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS margin_group VARCHAR(50)",
         # challenges

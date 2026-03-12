@@ -192,6 +192,20 @@ class SageConnector:
         logger.info(f"Sage: {len(results)} articles récupérés ({'delta' if since else 'full'})")
         return results
 
+    def get_families(self) -> list[dict]:
+        """Récupère la table des familles d'articles (F_FAMILLE)."""
+        conn = self.connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT FA_CodeFamille, FA_Intitule
+            FROM F_FAMILLE
+            WHERE FA_Type = 0
+        """)
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor]
+        logger.info(f"Sage: {len(results)} familles récupérées")
+        return results
+
     def get_collaborateurs(self) -> list[dict]:
         """Récupère la table des collaborateurs/commerciaux."""
         conn = self.connect()

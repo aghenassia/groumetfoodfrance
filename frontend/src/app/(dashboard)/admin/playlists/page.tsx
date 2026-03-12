@@ -823,8 +823,8 @@ export default function AdminPlaylistsPage() {
                       <Label className="text-xs text-muted-foreground mb-1 block">Familles de produits</Label>
                       <div className="flex flex-wrap gap-1 mb-1">
                         {form.filter_product_families.map((f) => (
-                          <Badge key={f} variant="outline" className="text-xs bg-purple-50">
-                            {f}
+                          <Badge key={f} variant="outline" className="text-xs bg-purple-50" title={f}>
+                            {productFamilies.find((pf) => pf.value === f)?.label || f}
                             <button
                               className="ml-1"
                               onClick={() => setForm({ ...form, filter_product_families: form.filter_product_families.filter((x) => x !== f) })}

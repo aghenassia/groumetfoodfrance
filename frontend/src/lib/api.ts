@@ -517,7 +517,7 @@ class ApiClient {
   }
 
   getProductFamilies() {
-    return this.get<{ family: string; count: number }[]>("/api/products/families");
+    return this.get<{ family: string; label: string; count: number }[]>("/api/products/families");
   }
 
   getProductDepots() {
@@ -1289,6 +1289,7 @@ export interface ProductListItem {
   article_ref: string;
   designation?: string;
   family?: string;
+  family_label?: string;
   sub_family?: string;
   unit?: string;
   sale_price?: number;

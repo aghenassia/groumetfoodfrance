@@ -543,6 +543,19 @@ async def sync_products_from_sage(
         sage_articles = await asyncio.to_thread(connector.get_articles, since)
         log.records_found = len(sage_articles)
 
+        # Récupérer le mapping code famille → intitulé
+        family_map: dict[str, str] = {}
+        try:
+            sage_families = await asyncio.to_thread(connector.get_families)
+            for fam in sage_families:
+                code = _clean(str(fam.get("FA_CodeFamille", "")))
+                label = _clean(str(fam.get("FA_Intitule", "")))
+                if code and label:
+                    family_map[code] = label
+            logger.info(f"Mapping familles chargé : {len(family_map)} entrées")
+        except Exception as e:
+            logger.warning(f"Impossible de charger les familles Sage : {e}")
+
         SERVICE_REFS = {
             "TRANSPORT", "ARTDIVERS", "ARTDIVERS20", "ARTDIVERS5",
             "ZACOMPTE", "ZAVOIR", "ZESCOMPTE",
@@ -557,10 +570,12 @@ async def sync_products_from_sage(
                 if not ref:
                     continue
 
+                family_code = _clean(str(sa.get("FA_CodeFamille", "")))
                 values = {
                     "article_ref": ref,
                     "designation": _clean(str(sa.get("AR_Design", ""))),
-                    "family": _clean(str(sa.get("FA_CodeFamille", ""))),
+                    "family": family_code,
+                    "family_label": family_map.get(family_code) if family_code else None,
                     "sub_family": _clean(str(sa.get("FA_CodeSousFamille", ""))) or None,
                     "unit": _clean(str(sa.get("AR_UniteVen", ""))),
                     "sale_price": sa.get("AR_PrixVen"),

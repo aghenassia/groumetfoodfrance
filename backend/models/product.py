@@ -12,6 +12,7 @@ class Product(Base):
     article_ref: Mapped[str] = mapped_column(String(18), unique=True, nullable=False)
     designation: Mapped[str | None] = mapped_column(String(255))
     family: Mapped[str | None] = mapped_column(String(35))
+    family_label: Mapped[str | None] = mapped_column(String(100))
     sub_family: Mapped[str | None] = mapped_column(String(35))
     unit: Mapped[str | None] = mapped_column(String(10))
     sale_price: Mapped[float | None] = mapped_column(Numeric(15, 4))

@@ -85,7 +85,7 @@ export default function AdminChallengesPage() {
   const [productResults, setProductResults] = useState<ProductListItem[]>([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [showProductResults, setShowProductResults] = useState(false);
-  const [families, setFamilies] = useState<{ family: string; count: number }[]>([]);
+  const [families, setFamilies] = useState<{ family: string; label: string; count: number }[]>([]);
 
   useEffect(() => {
     api.getProductFamilies().then(setFamilies).catch(() => {});
@@ -308,7 +308,7 @@ export default function AdminChallengesPage() {
                         <Tag className="w-3 h-3" />
                         {(ch.article_families?.length ?? 0) > 1
                           ? `${ch.article_families!.length} familles`
-                          : `Famille : ${ch.article_families?.[0] || ch.article_family}`}
+                          : `${families.find(f => f.family === (ch.article_families?.[0] || ch.article_family))?.label || ch.article_families?.[0] || ch.article_family}`}
                       </span>
                     )}
                     {!ch.article_families?.length && !ch.article_family && ch.article_refs && ch.article_refs.length > 0 && (
@@ -444,7 +444,7 @@ export default function AdminChallengesPage() {
                               <p className="text-sm truncate">{p.designation || p.article_ref}</p>
                               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                                 <span className="font-mono">{p.article_ref}</span>
-                                {p.family && <span>· {p.family}</span>}
+                                {p.family && <span>· {p.family_label || p.family}</span>}
                               </div>
                             </div>
                           </button>
@@ -488,7 +488,7 @@ export default function AdminChallengesPage() {
                                 setForm({ ...form, article_families: [...form.article_families, f.family] })
                               }
                             >
-                              {f.family} <span className="text-muted-foreground">({f.count} produits)</span>
+                              {f.label} <span className="text-muted-foreground">({f.count})</span>
                             </button>
                           ))
                       )}
@@ -497,8 +497,8 @@ export default function AdminChallengesPage() {
                   {form.article_families.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {form.article_families.map((fam) => (
-                        <Badge key={fam} variant="secondary" className="text-xs gap-1 pr-1">
-                          {fam}
+                        <Badge key={fam} variant="secondary" className="text-xs gap-1 pr-1" title={fam}>
+                          {families.find(f => f.family === fam)?.label || fam}
                           <button
                             type="button"
                             onClick={() =>
