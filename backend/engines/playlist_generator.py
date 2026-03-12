@@ -165,6 +165,8 @@ def _build_assigned_filter(user: User, config: dict | None = None):
             ),
         )
     if scope == "all":
+        if user.role == "admin":
+            return True
         conditions = []
         if user.sage_rep_name:
             conditions.append(Client.sales_rep.ilike(f"%{user.sage_rep_name}%"))
