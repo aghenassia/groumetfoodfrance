@@ -334,7 +334,7 @@ async def list_users(
         .outerjoin(Call, (Call.user_id == User.id) | (Call.user_name == User.name))
         .outerjoin(
             SalesLine,
-            (SalesLine.user_id == User.id) | (SalesLine.sales_rep == User.sage_rep_name),
+            (SalesLine.user_id == User.id) | (SalesLine.sales_rep.ilike(func.concat("%", User.sage_rep_name, "%"))),
         )
         .group_by(User.id)
         .order_by(User.name)
@@ -394,7 +394,7 @@ async def get_user_detail(
             func.count(distinct(SalesLine.sage_piece_id)),
             func.count(distinct(SalesLine.client_sage_id)),
         )
-        .where((SalesLine.user_id == user_id) | (SalesLine.sales_rep == u.sage_rep_name))
+        .where((SalesLine.user_id == user_id) | (SalesLine.sales_rep.ilike(f"%{u.sage_rep_name}%") if u.sage_rep_name else False))
     )
     ss = sales_stats.one()
     resp["sales_stats"] = {
@@ -405,7 +405,7 @@ async def get_user_detail(
 
     assigned_clients = await db.execute(
         select(func.count(Client.id)).where(
-            (Client.assigned_user_id == user_id) | (Client.sales_rep == u.sage_rep_name)
+            (Client.assigned_user_id == user_id) | (Client.sales_rep.ilike(f"%{u.sage_rep_name}%") if u.sage_rep_name else False)
         )
     )
     resp["assigned_clients"] = assigned_clients.scalar() or 0
@@ -926,7 +926,7 @@ async def sales_dashboard(
         # -- Revenue (split invoiced vs pipeline) --
         sconds = [SalesLine.user_id == u.id]
         if u.sage_rep_name:
-            sconds.append(SalesLine.sales_rep == u.sage_rep_name)
+            sconds.append(SalesLine.sales_rep.ilike(f"%{u.sage_rep_name}%"))
         user_date_filter = [or_(*sconds), SalesLine.date >= d_start, SalesLine.date <= d_end]
 
         sr_inv = (await db.execute(

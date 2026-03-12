@@ -14,14 +14,45 @@ from core.database import engine, Base
 settings = get_settings()
 
 
+async def _run_migrations(conn):
+    """Add missing columns to existing tables (safe, idempotent)."""
+    from sqlalchemy import text
+
+    migrations = [
+        # daily_playlists
+        "ALTER TABLE daily_playlists ADD COLUMN IF NOT EXISTS reminder_time TIME",
+        "ALTER TABLE daily_playlists ADD COLUMN IF NOT EXISTS created_by VARCHAR(36)",
+        # playlist_configs
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS client_scope VARCHAR(20) DEFAULT 'own'",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS sage_rep_filter VARCHAR(70)",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_mode VARCHAR(30) DEFAULT 'disabled'",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_competitor_ids TEXT[] DEFAULT '{}'",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_supplier_ids TEXT[] DEFAULT '{}'",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_product_refs TEXT[] DEFAULT '{}'",
+        "ALTER TABLE playlist_configs ADD COLUMN IF NOT EXISTS filter_product_families TEXT[] DEFAULT '{}'",
+        # products
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT FALSE",
+        # clients
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS margin_group VARCHAR(50)",
+        # challenges
+        "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_refs TEXT",
+        "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_family VARCHAR(50)",
+        "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS reward VARCHAR(200)",
+    ]
+    for sql in migrations:
+        try:
+            await conn.execute(text(sql))
+        except Exception as e:
+            print(f"[migration] skip: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup : créer les tables si elles n'existent pas
     async with engine.begin() as conn:
         import models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
+        await _run_migrations(conn)
 
-    # Démarrer le scheduler (syncs automatiques)
     from core.scheduler import setup_scheduler, scheduler
     setup_scheduler()
 

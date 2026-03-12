@@ -57,7 +57,7 @@ async def list_orders(
         target = await db.get(User, user_id)
         if target:
             filters.append(
-                or_(SalesLine.user_id == target.id, SalesLine.sales_rep == target.name)
+                or_(SalesLine.user_id == target.id, SalesLine.sales_rep.ilike(f"%{target.name}%"))
             )
 
     base = (

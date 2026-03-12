@@ -34,7 +34,7 @@ def _user_sales_filter(user: User):
     """Filtre ventes pour un utilisateur (user_id ou fallback sage_rep_name)."""
     conditions = [SalesLine.user_id == user.id]
     if user.sage_rep_name:
-        conditions.append(SalesLine.sales_rep == user.sage_rep_name)
+        conditions.append(SalesLine.sales_rep.ilike(f"%{user.sage_rep_name}%"))
     return or_(*conditions)
 
 
@@ -42,7 +42,7 @@ def _user_clients_filter(user: User):
     """Filtre clients assignés à un utilisateur."""
     conditions = [Client.assigned_user_id == user.id]
     if user.sage_rep_name:
-        conditions.append(Client.sales_rep == user.sage_rep_name)
+        conditions.append(Client.sales_rep.ilike(f"%{user.sage_rep_name}%"))
     return or_(*conditions)
 
 
