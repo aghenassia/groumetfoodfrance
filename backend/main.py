@@ -35,6 +35,8 @@ async def _run_migrations(conn):
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS family_label VARCHAR(100)",
         # clients
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS margin_group VARCHAR(50)",
+        # contacts
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS title VARCHAR(100)",
         # challenges
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_refs TEXT",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_family VARCHAR(50)",

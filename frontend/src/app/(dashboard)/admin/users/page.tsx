@@ -46,6 +46,8 @@ import {
   Shield,
   UserCog,
   Trash2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -92,6 +94,7 @@ export default function AdminUsersPage() {
   const [form, setForm] = useState<UserFormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [ringoverLines, setRingoverLines] = useState<RingoverMember[]>([]);
   const [sageCollabs, setSageCollabs] = useState<SageCollaborateur[]>([]);
   const [objectives, setObjectives] = useState<UserObjective[]>([]);
@@ -487,12 +490,23 @@ export default function AdminUsersPage() {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
               />
-              <Input
-                placeholder={editingId ? "Nouveau mot de passe (laisser vide)" : "Mot de passe"}
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-              />
+              <div className="relative">
+                <Input
+                  placeholder={editingId ? "Nouveau mot de passe" : "Mot de passe"}
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground w-12">Rôle :</span>
                 <Select

@@ -126,6 +126,9 @@ async def list_orders(
             or_(
                 SalesLine.sage_piece_id.ilike(pattern),
                 func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).ilike(pattern),
+                func.max(SalesLine.sales_rep).ilike(pattern),
+                func.max(Client.city).ilike(pattern),
+                func.max(SalesLine.client_sage_id).ilike(pattern),
                 SalesLine.sage_piece_id.in_(pieces_with_article),
             )
         )

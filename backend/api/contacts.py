@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update, func, delete as sa_delete
+from sqlalchemy import select, update, func, delete as sa_delete, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,7 @@ from models.contact import Contact
 from models.contact_phone import ContactPhone
 from models.call import Call
 from models.phone_index import PhoneIndex
+from models.sales_line import SalesLine
 from models.client_audit import ClientAuditLog
 from schemas.client import ContactResponse, ContactBrief, ContactPhoneResponse
 from connectors.phone_normalizer import normalize_phone
@@ -26,6 +27,7 @@ class CreateContactRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str | None = None
+    title: str | None = None
     phone: str | None = None
     email: str | None = None
     company_id: str | None = None
@@ -37,6 +39,7 @@ class UpdateContactRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str | None = None
+    title: str | None = None
     phone: str | None = None
     email: str | None = None
     is_primary: bool | None = None
@@ -57,6 +60,7 @@ def _contact_to_response(contact: Contact, company_name: str | None = None, user
         first_name=contact.first_name,
         last_name=contact.last_name,
         role=contact.role,
+        title=contact.title,
         phone=primary_phone.phone if primary_phone else contact.phone,
         phone_e164=primary_phone.phone_e164 if primary_phone else contact.phone_e164,
         email=contact.email,
@@ -104,15 +108,29 @@ async def list_contacts(
         base = base.where(Contact.assigned_user_id == assigned_user_id)
     if search:
         pattern = f"%{search}%"
+        product_match = exists(
+            select(SalesLine.id).where(
+                SalesLine.client_sage_id == Client.sage_id,
+                or_(
+                    SalesLine.article_ref.ilike(pattern),
+                    SalesLine.designation.ilike(pattern),
+                ),
+            )
+        )
         base = base.where(
-            Contact.name.ilike(pattern)
-            | Contact.first_name.ilike(pattern)
-            | Contact.last_name.ilike(pattern)
-            | Contact.phone.ilike(pattern)
-            | Contact.phone_e164.ilike(pattern)
-            | Contact.email.ilike(pattern)
-            | Contact.role.ilike(pattern)
-            | Client.name.ilike(pattern)
+            or_(
+                Contact.name.ilike(pattern),
+                Contact.first_name.ilike(pattern),
+                Contact.last_name.ilike(pattern),
+                Contact.phone.ilike(pattern),
+                Contact.phone_e164.ilike(pattern),
+                Contact.email.ilike(pattern),
+                Contact.role.ilike(pattern),
+                Contact.title.ilike(pattern),
+                Client.name.ilike(pattern),
+                Client.city.ilike(pattern),
+                product_match,
+            )
         )
 
     count_stmt = select(func.count()).select_from(base.subquery())
@@ -187,6 +205,7 @@ async def create_contact(
         first_name=body.first_name,
         last_name=body.last_name,
         role=body.role,
+        title=body.title,
         phone=body.phone,
         phone_e164=phone_e164,
         email=body.email,

@@ -199,7 +199,7 @@ export default function ClientDetailPage() {
 
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactType | null>(null);
-  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; phones: {id?: string; phone: string; label: string; is_primary: boolean}[]; emails: string[]; is_primary: boolean}>({name: '', first_name: '', last_name: '', role: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false});
+  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; title: string; phones: {id?: string; phone: string; label: string; is_primary: boolean}[]; emails: string[]; is_primary: boolean}>({name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false});
   const [savingContact, setSavingContact] = useState(false);
   const [showMoveContactDialog, setShowMoveContactDialog] = useState(false);
   const [movingContactId, setMovingContactId] = useState<string | null>(null);
@@ -530,7 +530,7 @@ export default function ClientDetailPage() {
 
   const openNewContact = () => {
     setEditingContact(null);
-    setContactForm({ name: '', first_name: '', last_name: '', role: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false });
+    setContactForm({ name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false });
     setShowContactDialog(true);
   };
 
@@ -558,6 +558,7 @@ export default function ClientDetailPage() {
       first_name: firstName,
       last_name: lastName,
       role: contact.role || '',
+      title: contact.title || '',
       phones: existingPhones,
       emails: emails.length > 0 ? emails : [''],
       is_primary: contact.is_primary,
@@ -587,6 +588,7 @@ export default function ClientDetailPage() {
         first_name: first || undefined,
         last_name: last || undefined,
         role: contactForm.role || undefined,
+        title: contactForm.title || undefined,
         phone: primaryPhone?.phone || contactForm.phones.find(p => p.phone.trim())?.phone || undefined,
         email,
         is_primary: contactForm.is_primary,
@@ -1271,6 +1273,7 @@ export default function ClientDetailPage() {
                         <p className="text-sm font-medium truncate">{ct.name}</p>
                         {ct.is_primary && <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-700 bg-green-50 shrink-0">principal</Badge>}
                         {ct.role && <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>}
+                        {ct.title && <span className="text-[10px] text-muted-foreground shrink-0">{ct.title}</span>}
                       </div>
                       {ct.email && (
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -2329,6 +2332,7 @@ export default function ClientDetailPage() {
                         {ct.role && (
                           <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ct.role}</Badge>
                         )}
+                        {ct.title && <span className="text-[10px] text-muted-foreground shrink-0">{ct.title}</span>}
                       </div>
                       {ct.email && (
                         <div className="text-xs text-muted-foreground mt-0.5">
@@ -2803,6 +2807,10 @@ export default function ClientDetailPage() {
             <div>
               <Label className="text-xs">Rôle / Fonction</Label>
               <Input className="h-8 text-sm" value={contactForm.role} onChange={(e) => setContactForm({...contactForm, role: e.target.value})} placeholder="Ex: Directeur, Acheteur..." />
+            </div>
+            <div>
+              <Label className="text-xs">Titre / Poste</Label>
+              <Input className="h-8 text-sm" value={contactForm.title} onChange={(e) => setContactForm({...contactForm, title: e.target.value})} placeholder="Ex: Chef de cuisine, Responsable achats..." />
             </div>
             <div>
               <Label className="text-xs flex items-center justify-between">

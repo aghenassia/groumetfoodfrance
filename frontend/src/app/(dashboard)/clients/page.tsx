@@ -308,7 +308,7 @@ export default function ClientsPage() {
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Rechercher par nom, ville, email, téléphone, code sage..."
+            placeholder="Rechercher par nom, ville, produit acheté, fournisseur, concurrent, commercial..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

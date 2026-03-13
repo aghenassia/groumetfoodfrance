@@ -8,6 +8,14 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -45,11 +53,16 @@ import {
   Search,
   Zap,
   Check,
+  Plus,
+  Clock,
+  Bell,
+  ListPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ClickToCall } from "@/components/click-to-call";
 import { StatusBadge } from "@/components/status-badge";
+import { useAuth } from "@/lib/auth-context";
 
 function reasonLabel(reason: string) {
   const map: Record<string, string> = {
@@ -101,7 +114,79 @@ export default function PlaylistPage() {
   const [enrichSelectedFields, setEnrichSelectedFields] = useState<Record<string, boolean>>({});
   const [enrichSaving, setEnrichSaving] = useState(false);
 
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [addTab, setAddTab] = useState<"todo" | "reminder">("todo");
+  const [addClientSearch, setAddClientSearch] = useState("");
+  const [addClientResults, setAddClientResults] = useState<{ id: string; name: string }[]>([]);
+  const [addSelectedClient, setAddSelectedClient] = useState<{ id: string; name: string } | null>(null);
+  const [addNote, setAddNote] = useState("");
+  const [addTargetUser, setAddTargetUser] = useState("");
+  const [addReminderDate, setAddReminderDate] = useState("");
+  const [addReminderTime, setAddReminderTime] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
+  const [allUsers, setAllUsers] = useState<{ id: string; name: string; role: string }[]>([]);
+
+  const { user: currentUser } = useAuth();
+  const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
+
   const selectedItem = items.find((i) => i.playlist_id === selectedId) || null;
+
+  useEffect(() => {
+    if (isManager && allUsers.length === 0) {
+      api.getUsersList().then(setAllUsers).catch(() => {});
+    }
+  }, [isManager]);
+
+  useEffect(() => {
+    if (!addClientSearch || addClientSearch.length < 2) { setAddClientResults([]); return; }
+    const timer = setTimeout(() => {
+      api.searchClients(addClientSearch).then((res) => setAddClientResults(res.slice(0, 8))).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [addClientSearch]);
+
+  const openAddDialog = () => {
+    setAddTab("todo");
+    setAddClientSearch("");
+    setAddClientResults([]);
+    setAddSelectedClient(null);
+    setAddNote("");
+    setAddTargetUser("");
+    setAddReminderDate("");
+    setAddReminderTime("");
+    setShowAddDialog(true);
+  };
+
+  const handleAddSubmit = async () => {
+    if (!addSelectedClient) { toast.error("Sélectionnez un client"); return; }
+    setAddSaving(true);
+    try {
+      if (addTab === "todo") {
+        const data: { client_id: string; user_id?: string; reason_detail?: string } = { client_id: addSelectedClient.id };
+        if (isManager && addTargetUser) data.user_id = addTargetUser;
+        if (addNote.trim()) data.reason_detail = addNote.trim();
+        const res = await api.addToPlaylist(data);
+        toast.success(res.message);
+      } else {
+        if (!addReminderDate) { toast.error("Sélectionnez une date"); setAddSaving(false); return; }
+        const data: { client_id: string; user_id?: string; target_date: string; target_time?: string; reason_detail?: string } = {
+          client_id: addSelectedClient.id,
+          target_date: addReminderDate,
+        };
+        if (addReminderTime) data.target_time = addReminderTime;
+        if (isManager && addTargetUser) data.user_id = addTargetUser;
+        if (addNote.trim()) data.reason_detail = addNote.trim();
+        const res = await api.createReminder(data);
+        toast.success(res.message);
+      }
+      setShowAddDialog(false);
+      api.getPlaylist().then(setItems).catch(() => {});
+    } catch {
+      toast.error("Erreur lors de l'ajout");
+    } finally {
+      setAddSaving(false);
+    }
+  };
 
   useEffect(() => {
     api
@@ -255,8 +340,14 @@ export default function PlaylistPage() {
             <span>{pendingCount} en attente</span>
           </div>
         </div>
-        <div className="text-right text-sm font-semibold text-muted-foreground">
-          {total} appels prévus
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-muted-foreground">
+            {total} appels prévus
+          </span>
+          <Button size="sm" onClick={openAddDialog}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            Ajouter
+          </Button>
         </div>
       </div>
 
@@ -724,6 +815,136 @@ export default function PlaylistPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Add to-do / reminder dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Ajouter
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Tabs */}
+            <div className="flex border rounded-lg overflow-hidden">
+              <button
+                type="button"
+                className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${addTab === "todo" ? "bg-primary text-primary-foreground" : "bg-muted/30 hover:bg-muted/60"}`}
+                onClick={() => setAddTab("todo")}
+              >
+                <ListPlus className="w-3.5 h-3.5" />
+                To do
+              </button>
+              <button
+                type="button"
+                className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${addTab === "reminder" ? "bg-primary text-primary-foreground" : "bg-muted/30 hover:bg-muted/60"}`}
+                onClick={() => setAddTab("reminder")}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                Rappel
+              </button>
+            </div>
+
+            {/* Client search */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Client *</label>
+              {addSelectedClient ? (
+                <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/30">
+                  <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm flex-1 truncate font-medium">{addSelectedClient.name}</span>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddSelectedClient(null)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="h-8 text-sm pl-8"
+                    value={addClientSearch}
+                    onChange={(e) => setAddClientSearch(e.target.value)}
+                    placeholder="Rechercher un client..."
+                    autoFocus
+                  />
+                  {addClientResults.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-background border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {addClientResults.map((c) => (
+                        <button
+                          key={c.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2"
+                          onClick={() => {
+                            setAddSelectedClient(c);
+                            setAddClientSearch("");
+                            setAddClientResults([]);
+                          }}
+                        >
+                          <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate">{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* User selection (admin/manager only) */}
+            {isManager && allUsers.length > 0 && (
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
+                <Select value={addTargetUser} onValueChange={setAddTargetUser}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Moi-même" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allUsers.filter((u) => ["sales", "manager", "admin"].includes(u.role)).map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-xs">{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Reminder-specific: date & time */}
+            {addTab === "reminder" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Date *</label>
+                  <Input type="date" className="h-8 text-sm" value={addReminderDate} onChange={(e) => setAddReminderDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Heure</label>
+                  <Input type="time" className="h-8 text-sm" value={addReminderTime} onChange={(e) => setAddReminderTime(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {/* Note */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                {addTab === "todo" ? "Commentaire (optionnel)" : "Note du rappel (optionnel)"}
+              </label>
+              <Input
+                className="h-8 text-sm"
+                value={addNote}
+                onChange={(e) => setAddNote(e.target.value)}
+                placeholder={addTab === "todo" ? "Raison de l'ajout..." : "Ex: Relancer devis poisson..."}
+              />
+            </div>
+
+            {/* Submit */}
+            <Button
+              className="w-full"
+              onClick={handleAddSubmit}
+              disabled={addSaving || !addSelectedClient || (addTab === "reminder" && !addReminderDate)}
+            >
+              {addSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : addTab === "todo" ? <ListPlus className="w-4 h-4 mr-2" /> : <Bell className="w-4 h-4 mr-2" />}
+              {addTab === "todo" ? "Ajouter à la To do" : "Créer le rappel"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Enrich dialog */}
       <Dialog open={!!enrichSuggestions} onOpenChange={(open) => { if (!open) { setEnrichSuggestions(null); setEnrichTargetId(null); } }}>

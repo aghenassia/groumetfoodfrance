@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -21,6 +22,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ContactRound,
   Search,
@@ -41,9 +48,13 @@ import {
   Briefcase,
   ExternalLink,
   Loader2,
+  Plus,
+  Save,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 50;
 
@@ -91,6 +102,127 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [contactCalls, setContactCalls] = useState<ContactCallEntry[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
+
+  const [showDialog, setShowDialog] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [contactForm, setContactForm] = useState({
+    first_name: "", last_name: "", role: "", title: "",
+    phones: [{ phone: "", label: "", is_primary: true }],
+    emails: [""], is_primary: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [companySearch, setCompanySearch] = useState("");
+  const [companyResults, setCompanyResults] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [selectedCompanyName, setSelectedCompanyName] = useState("");
+
+  const emptyForm = () => ({
+    first_name: "", last_name: "", role: "", title: "",
+    phones: [{ phone: "", label: "", is_primary: true }],
+    emails: [""], is_primary: false,
+  });
+
+  const openNewContact = () => {
+    setEditingContact(null);
+    setContactForm(emptyForm());
+    setSelectedCompanyId(null);
+    setSelectedCompanyName("");
+    setCompanySearch("");
+    setCompanyResults([]);
+    setShowDialog(true);
+  };
+
+  const openEditContact = (ct: Contact) => {
+    setEditingContact(ct);
+    const phones = ct.phones && ct.phones.length > 0
+      ? ct.phones.map((p) => ({ phone: p.phone, label: p.label || "", is_primary: p.is_primary }))
+      : ct.phone ? [{ phone: ct.phone, label: "", is_primary: true }] : [{ phone: "", label: "", is_primary: true }];
+    setContactForm({
+      first_name: ct.first_name || "",
+      last_name: ct.last_name || "",
+      role: ct.role || "",
+      title: ct.title || "",
+      phones,
+      emails: ct.email ? ct.email.split(",").map((e) => e.trim()) : [""],
+      is_primary: ct.is_primary,
+    });
+    setSelectedCompanyId(ct.company_id || null);
+    setSelectedCompanyName(ct.company_name || "");
+    setCompanySearch("");
+    setCompanyResults([]);
+    setShowDialog(true);
+  };
+
+  useEffect(() => {
+    if (!companySearch || companySearch.length < 2) { setCompanyResults([]); return; }
+    const timer = setTimeout(() => {
+      api.searchClients(companySearch).then((res) => setCompanyResults(res.slice(0, 8))).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [companySearch]);
+
+  const handleSaveContact = async () => {
+    const first = contactForm.first_name.trim();
+    const last = contactForm.last_name.trim();
+    if (!first && !last) { toast.error("Saisissez au moins le prénom ou le nom"); return; }
+    const fullName = [first, last].filter(Boolean).join(" ");
+    const email = contactForm.emails.map((e) => e.trim()).filter(Boolean).join(", ") || undefined;
+    const primaryPhone = contactForm.phones.find((p) => p.is_primary && p.phone.trim());
+    setSaving(true);
+    try {
+      const payload = {
+        name: fullName,
+        first_name: first || undefined,
+        last_name: last || undefined,
+        role: contactForm.role || undefined,
+        title: contactForm.title || undefined,
+        phone: primaryPhone?.phone || contactForm.phones.find((p) => p.phone.trim())?.phone || undefined,
+        email,
+        is_primary: contactForm.is_primary,
+      };
+      if (editingContact) {
+        await api.updateContact(editingContact.id, payload);
+        const oldPhoneIds = new Set((editingContact.phones || []).map((p) => p.id));
+        for (const oldId of oldPhoneIds) {
+          await api.deleteContactPhone(editingContact.id, oldId);
+        }
+        for (const p of contactForm.phones) {
+          if (p.phone.trim()) {
+            await api.addContactPhone(editingContact.id, { phone: p.phone, label: p.label || undefined });
+          }
+        }
+        toast.success("Contact mis à jour");
+      } else {
+        const created = await api.createContact({ ...payload, company_id: selectedCompanyId || undefined });
+        for (let i = 1; i < contactForm.phones.length; i++) {
+          const p = contactForm.phones[i];
+          if (p.phone.trim()) {
+            await api.addContactPhone(created.id, { phone: p.phone, label: p.label || undefined });
+          }
+        }
+        toast.success("Contact créé");
+      }
+      setShowDialog(false);
+      fetchContacts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erreur";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteContact = async (ct: Contact) => {
+    if (!confirm(`Supprimer le contact "${ct.first_name || ""} ${ct.last_name || ct.name}" ?`)) return;
+    try {
+      await api.deleteContact(ct.id);
+      toast.success("Contact supprimé");
+      if (selectedContact?.id === ct.id) closePanel();
+      fetchContacts();
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    }
+  };
 
   useEffect(() => {
     api.getUsersList().then((users) => {
@@ -192,6 +324,10 @@ export default function ContactsPage() {
             {debouncedSearch && ` · recherche "${debouncedSearch}"`}
           </p>
         </div>
+        <Button size="sm" onClick={openNewContact}>
+          <Plus className="w-4 h-4 mr-1.5" />
+          Ajouter
+        </Button>
       </div>
 
       {/* Filters bar */}
@@ -199,7 +335,7 @@ export default function ContactsPage() {
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Rechercher par nom, prénom, téléphone, email, entreprise…"
+            placeholder="Rechercher par nom, téléphone, email, entreprise, ville, produit acheté…"
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -318,7 +454,7 @@ export default function ContactsPage() {
                             <SortIcon col="company_name" />
                           </span>
                         </TableHead>
-                        <TableHead className="hidden md:table-cell">Fonction</TableHead>
+                        <TableHead className="hidden md:table-cell">Fonction / Titre</TableHead>
                         <TableHead className="hidden sm:table-cell">Téléphone</TableHead>
                         <TableHead className="hidden lg:table-cell">Email</TableHead>
                         <TableHead className="hidden xl:table-cell">Source</TableHead>
@@ -373,7 +509,10 @@ export default function ContactsPage() {
                           </TableCell>
 
                           <TableCell className="hidden md:table-cell">
-                            <span className="text-sm text-muted-foreground">{ct.role || "—"}</span>
+                            <div>
+                              <span className="text-sm text-muted-foreground">{ct.role || "—"}</span>
+                              {ct.title && <span className="block text-[11px] text-muted-foreground/70">{ct.title}</span>}
+                            </div>
                           </TableCell>
 
                           <TableCell className="hidden sm:table-cell">
@@ -462,6 +601,133 @@ export default function ContactsPage() {
           )}
         </div>
 
+        {/* Create/edit dialog */}
+        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{editingContact ? "Modifier le contact" : "Nouveau contact"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Prénom *</Label>
+                  <Input className="h-8 text-sm" value={contactForm.first_name} onChange={(e) => setContactForm({ ...contactForm, first_name: e.target.value })} placeholder="Prénom" autoFocus />
+                </div>
+                <div>
+                  <Label className="text-xs">Nom *</Label>
+                  <Input className="h-8 text-sm" value={contactForm.last_name} onChange={(e) => setContactForm({ ...contactForm, last_name: e.target.value })} placeholder="Nom de famille" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Rôle / Fonction</Label>
+                <Input className="h-8 text-sm" value={contactForm.role} onChange={(e) => setContactForm({ ...contactForm, role: e.target.value })} placeholder="Ex: Directeur, Acheteur..." />
+              </div>
+              <div>
+                <Label className="text-xs">Titre / Poste</Label>
+                <Input className="h-8 text-sm" value={contactForm.title} onChange={(e) => setContactForm({ ...contactForm, title: e.target.value })} placeholder="Ex: Chef de cuisine, Responsable achats..." />
+              </div>
+              <div>
+                <Label className="text-xs flex items-center justify-between">
+                  <span>Téléphones</span>
+                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => setContactForm({ ...contactForm, phones: [...contactForm.phones, { phone: "", label: "", is_primary: false }] })}>
+                    + Ajouter un numéro
+                  </button>
+                </Label>
+                <div className="space-y-1.5">
+                  {contactForm.phones.map((ph, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
+                      <Input className="h-8 text-sm flex-1 font-mono" value={ph.phone} onChange={(e) => {
+                        const updated = [...contactForm.phones]; updated[idx] = { ...updated[idx], phone: e.target.value }; setContactForm({ ...contactForm, phones: updated });
+                      }} placeholder={idx === 0 ? "+33 6 12 34 56 78" : "Autre numéro..."} />
+                      <Select value={ph.label} onValueChange={(v) => {
+                        const updated = [...contactForm.phones]; updated[idx] = { ...updated[idx], label: v }; setContactForm({ ...contactForm, phones: updated });
+                      }}>
+                        <SelectTrigger className="h-8 w-[90px] text-xs"><SelectValue placeholder="Label" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="principal">Principal</SelectItem>
+                          <SelectItem value="mobile">Mobile</SelectItem>
+                          <SelectItem value="direct">Direct</SelectItem>
+                          <SelectItem value="standard">Standard</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <button type="button" className={`text-[10px] px-1.5 py-0.5 rounded border ${ph.is_primary ? "bg-green-50 border-green-300 text-green-700" : "border-muted text-muted-foreground hover:border-primary"}`}
+                        onClick={() => { const updated = contactForm.phones.map((p, i) => ({ ...p, is_primary: i === idx })); setContactForm({ ...contactForm, phones: updated }); }}>
+                        {ph.is_primary ? "1er" : "○"}
+                      </button>
+                      {contactForm.phones.length > 1 && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => {
+                          let updated = contactForm.phones.filter((_, i) => i !== idx);
+                          if (ph.is_primary && updated.length > 0) updated = updated.map((p, i) => i === 0 ? { ...p, is_primary: true } : p);
+                          setContactForm({ ...contactForm, phones: updated });
+                        }}><X className="w-3 h-3 text-muted-foreground" /></Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs flex items-center justify-between">
+                  <span>Emails</span>
+                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => setContactForm({ ...contactForm, emails: [...contactForm.emails, ""] })}>
+                    + Ajouter un email
+                  </button>
+                </Label>
+                <div className="space-y-1.5">
+                  {contactForm.emails.map((email, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
+                      <Input className="h-8 text-sm flex-1" type="email" value={email} onChange={(e) => {
+                        const updated = [...contactForm.emails]; updated[idx] = e.target.value; setContactForm({ ...contactForm, emails: updated });
+                      }} placeholder={idx === 0 ? "email@entreprise.fr" : "autre email..."} />
+                      {contactForm.emails.length > 1 && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => {
+                          setContactForm({ ...contactForm, emails: contactForm.emails.filter((_, i) => i !== idx) });
+                        }}><X className="w-3 h-3 text-muted-foreground" /></Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {!editingContact && (
+                <div>
+                  <Label className="text-xs">Entreprise (optionnel)</Label>
+                  {selectedCompanyId ? (
+                    <div className="flex items-center gap-2 p-2 rounded-lg border bg-muted/30">
+                      <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm flex-1 truncate">{selectedCompanyName}</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setSelectedCompanyId(null); setSelectedCompanyName(""); }}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Input className="h-8 text-sm" value={companySearch} onChange={(e) => setCompanySearch(e.target.value)} placeholder="Rechercher une entreprise..." />
+                      {companyResults.length > 0 && (
+                        <div className="absolute z-10 mt-1 w-full bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                          {companyResults.map((c) => (
+                            <button key={c.id} className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors" onClick={() => {
+                              setSelectedCompanyId(c.id); setSelectedCompanyName(c.name); setCompanySearch(""); setCompanyResults([]);
+                            }}>
+                              <Building2 className="w-3 h-3 inline mr-1.5 text-muted-foreground" />{c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="new_contact_primary" checked={contactForm.is_primary} onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })} className="h-4 w-4 rounded border-gray-300 accent-green-600" />
+                <Label htmlFor="new_contact_primary" className="text-xs cursor-pointer">Contact principal de l&apos;entreprise</Label>
+              </div>
+              <Button className="w-full" onClick={handleSaveContact} disabled={saving || (!contactForm.first_name.trim() && !contactForm.last_name.trim())}>
+                {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                {editingContact ? "Enregistrer" : "Créer le contact"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Side panel */}
         {selectedContact && (
           <>
@@ -478,14 +744,20 @@ export default function ContactsPage() {
                         <h3 className="font-semibold text-base truncate">
                           {displayName(selectedContact)}
                         </h3>
-                        {selectedContact.role && (
+                        {(selectedContact.role || selectedContact.title) && (
                           <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                             <Briefcase className="w-3 h-3" />
-                            {selectedContact.role}
+                            {[selectedContact.role, selectedContact.title].filter(Boolean).join(" · ")}
                           </p>
                         )}
                       </div>
                       <div className="flex items-center gap-1 ml-2 shrink-0">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditContact(selectedContact)} title="Modifier">
+                          <Save className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDeleteContact(selectedContact)} title="Supprimer">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={closePanel}>
                           <X className="w-4 h-4" />
                         </Button>

@@ -209,11 +209,11 @@ class ApiClient {
     return this.get<Contact>(`/api/contacts/${id}`);
   }
 
-  createContact(data: { name: string; first_name?: string; last_name?: string; role?: string; phone?: string; email?: string; company_id?: string; is_primary?: boolean }) {
+  createContact(data: { name: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; company_id?: string; is_primary?: boolean }) {
     return this.post<Contact>("/api/contacts", data);
   }
 
-  updateContact(contactId: string, data: { name?: string; first_name?: string; last_name?: string; role?: string; phone?: string; email?: string; is_primary?: boolean }) {
+  updateContact(contactId: string, data: { name?: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; is_primary?: boolean }) {
     return this.put<Contact>(`/api/contacts/${contactId}`, data);
   }
 
@@ -896,6 +896,7 @@ export interface Contact {
   first_name?: string | null;
   last_name?: string | null;
   role?: string | null;
+  title?: string | null;
   phone?: string | null;
   phone_e164?: string | null;
   email?: string | null;

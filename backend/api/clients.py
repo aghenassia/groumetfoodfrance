@@ -18,6 +18,9 @@ from models.contact import Contact
 from models.client_audit import ClientAuditLog
 from models.product import Product
 from models.playlist import DailyPlaylist
+from models.client_intel import ClientSupplier, ClientCompetitor, ClientProductInterest
+from models.supplier import Supplier
+from models.competitor import Competitor
 from schemas.client import (
     ClientResponse,
     ClientListItem,
@@ -99,6 +102,29 @@ async def list_clients(
                 ),
             )
         )
+        product_match = exists(
+            select(SalesLine.id).where(
+                SalesLine.client_sage_id == Client.sage_id,
+                or_(
+                    SalesLine.article_ref.ilike(pattern),
+                    SalesLine.designation.ilike(pattern),
+                ),
+            )
+        )
+        supplier_match = exists(
+            select(ClientSupplier.id).where(
+                ClientSupplier.client_id == Client.id,
+            ).join(Supplier, Supplier.id == ClientSupplier.supplier_id).where(
+                Supplier.name.ilike(pattern),
+            )
+        )
+        competitor_match = exists(
+            select(ClientCompetitor.id).where(
+                ClientCompetitor.client_id == Client.id,
+            ).join(Competitor, Competitor.id == ClientCompetitor.competitor_id).where(
+                Competitor.name.ilike(pattern),
+            )
+        )
         base = base.where(
             or_(
                 Client.name.ilike(pattern),
@@ -107,7 +133,11 @@ async def list_clients(
                 Client.contact_name.ilike(pattern),
                 Client.phone.ilike(pattern),
                 Client.email.ilike(pattern),
+                Client.sales_rep.ilike(pattern),
                 contact_match,
+                product_match,
+                supplier_match,
+                competitor_match,
             )
         )
 

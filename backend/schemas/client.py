@@ -79,6 +79,7 @@ class ContactBrief(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str | None = None
+    title: str | None = None
     phone: str | None = None
     phone_e164: str | None = None
     email: str | None = None
