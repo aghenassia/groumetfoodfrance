@@ -533,7 +533,7 @@ function ProductsPageInner() {
                       >
                         <TableCell>
                           <div className="min-w-0">
-                            <p className="font-medium text-sm truncate max-w-[280px]">
+                            <p className="font-medium text-sm truncate">
                               {p.designation || p.article_ref}
                             </p>
                             <div className="flex items-center gap-1.5 mt-0.5">
