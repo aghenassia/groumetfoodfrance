@@ -133,12 +133,14 @@ async def list_products(
         base = base.where(Product.article_ref.in_(refs_in_depot))
 
     if search:
-        pattern = f"%{search}%"
-        base = base.having(
-            Product.designation.ilike(pattern)
-            | Product.article_ref.ilike(pattern)
-            | Product.family.ilike(pattern)
-        )
+        for word in search.strip().split():
+            p = f"%{word}%"
+            base = base.having(
+                Product.designation.ilike(p)
+                | Product.article_ref.ilike(p)
+                | Product.family.ilike(p)
+                | Product.family_label.ilike(p)
+            )
 
     if family:
         base = base.having(Product.family == family)

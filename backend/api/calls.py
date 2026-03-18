@@ -132,16 +132,19 @@ async def list_calls(
     if client_id:
         stmt = stmt.where(Call.client_id == client_id)
     if search:
-        pattern = f"%{search}%"
-        stmt = stmt.where(
-            Call.contact_number.ilike(pattern)
-            | Call.contact_name.ilike(pattern)
-            | Call.user_name.ilike(pattern)
-            | Client.name.ilike(pattern)
-            | Contact.name.ilike(pattern)
-            | Contact.first_name.ilike(pattern)
-            | Contact.last_name.ilike(pattern)
-        )
+        for word in search.strip().split():
+            p = f"%{word}%"
+            stmt = stmt.where(
+                or_(
+                    Call.contact_number.ilike(p),
+                    Call.contact_name.ilike(p),
+                    Call.user_name.ilike(p),
+                    Client.name.ilike(p),
+                    Contact.name.ilike(p),
+                    Contact.first_name.ilike(p),
+                    Contact.last_name.ilike(p),
+                )
+            )
     if date_from:
         stmt = stmt.where(func.date(Call.start_time) >= date_from)
     if date_to:

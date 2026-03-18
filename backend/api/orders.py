@@ -111,27 +111,28 @@ async def list_orders(
         )
 
     if search:
-        pattern = f"%{search}%"
-        pieces_with_article = (
-            select(SalesLine.sage_piece_id)
-            .where(
+        for word in search.strip().split():
+            p = f"%{word}%"
+            pieces_with_article = (
+                select(SalesLine.sage_piece_id)
+                .where(
+                    or_(
+                        SalesLine.article_ref.ilike(p),
+                        SalesLine.designation.ilike(p),
+                    )
+                )
+                .distinct()
+            )
+            base = base.having(
                 or_(
-                    SalesLine.article_ref.ilike(pattern),
-                    SalesLine.designation.ilike(pattern),
+                    SalesLine.sage_piece_id.ilike(p),
+                    func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).ilike(p),
+                    func.max(SalesLine.sales_rep).ilike(p),
+                    func.max(Client.city).ilike(p),
+                    func.max(SalesLine.client_sage_id).ilike(p),
+                    SalesLine.sage_piece_id.in_(pieces_with_article),
                 )
             )
-            .distinct()
-        )
-        base = base.having(
-            or_(
-                SalesLine.sage_piece_id.ilike(pattern),
-                func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).ilike(pattern),
-                func.max(SalesLine.sales_rep).ilike(pattern),
-                func.max(Client.city).ilike(pattern),
-                func.max(SalesLine.client_sage_id).ilike(pattern),
-                SalesLine.sage_piece_id.in_(pieces_with_article),
-            )
-        )
 
     count_q = await db.execute(select(func.count()).select_from(base.subquery()))
     total = count_q.scalar() or 0

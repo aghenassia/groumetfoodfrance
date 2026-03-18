@@ -89,57 +89,59 @@ async def list_clients(
     )
 
     if search:
-        pattern = f"%{search}%"
-        contact_match = exists(
-            select(Contact.id).where(
-                Contact.company_id == Client.id,
+        words = search.strip().split()
+        for word in words:
+            p = f"%{word}%"
+            contact_match = exists(
+                select(Contact.id).where(
+                    Contact.company_id == Client.id,
+                    or_(
+                        Contact.name.ilike(p),
+                        Contact.phone.ilike(p),
+                        Contact.phone_e164.ilike(p),
+                        Contact.email.ilike(p),
+                        Contact.role.ilike(p),
+                    ),
+                )
+            )
+            product_match = exists(
+                select(SalesLine.id).where(
+                    SalesLine.client_sage_id == Client.sage_id,
+                    or_(
+                        SalesLine.article_ref.ilike(p),
+                        SalesLine.designation.ilike(p),
+                    ),
+                )
+            )
+            supplier_match = exists(
+                select(ClientSupplier.id).where(
+                    ClientSupplier.client_id == Client.id,
+                ).join(Supplier, Supplier.id == ClientSupplier.supplier_id).where(
+                    Supplier.name.ilike(p),
+                )
+            )
+            competitor_match = exists(
+                select(ClientCompetitor.id).where(
+                    ClientCompetitor.client_id == Client.id,
+                ).join(Competitor, Competitor.id == ClientCompetitor.competitor_id).where(
+                    Competitor.name.ilike(p),
+                )
+            )
+            base = base.where(
                 or_(
-                    Contact.name.ilike(pattern),
-                    Contact.phone.ilike(pattern),
-                    Contact.phone_e164.ilike(pattern),
-                    Contact.email.ilike(pattern),
-                    Contact.role.ilike(pattern),
-                ),
+                    Client.name.ilike(p),
+                    Client.sage_id.ilike(p),
+                    Client.city.ilike(p),
+                    Client.contact_name.ilike(p),
+                    Client.phone.ilike(p),
+                    Client.email.ilike(p),
+                    Client.sales_rep.ilike(p),
+                    contact_match,
+                    product_match,
+                    supplier_match,
+                    competitor_match,
+                )
             )
-        )
-        product_match = exists(
-            select(SalesLine.id).where(
-                SalesLine.client_sage_id == Client.sage_id,
-                or_(
-                    SalesLine.article_ref.ilike(pattern),
-                    SalesLine.designation.ilike(pattern),
-                ),
-            )
-        )
-        supplier_match = exists(
-            select(ClientSupplier.id).where(
-                ClientSupplier.client_id == Client.id,
-            ).join(Supplier, Supplier.id == ClientSupplier.supplier_id).where(
-                Supplier.name.ilike(pattern),
-            )
-        )
-        competitor_match = exists(
-            select(ClientCompetitor.id).where(
-                ClientCompetitor.client_id == Client.id,
-            ).join(Competitor, Competitor.id == ClientCompetitor.competitor_id).where(
-                Competitor.name.ilike(pattern),
-            )
-        )
-        base = base.where(
-            or_(
-                Client.name.ilike(pattern),
-                Client.sage_id.ilike(pattern),
-                Client.city.ilike(pattern),
-                Client.contact_name.ilike(pattern),
-                Client.phone.ilike(pattern),
-                Client.email.ilike(pattern),
-                Client.sales_rep.ilike(pattern),
-                contact_match,
-                product_match,
-                supplier_match,
-                competitor_match,
-            )
-        )
 
     if assigned_user_id == "__none__":
         base = base.where(Client.assigned_user_id.is_(None))

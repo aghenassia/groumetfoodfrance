@@ -107,31 +107,32 @@ async def list_contacts(
     if assigned_user_id:
         base = base.where(Contact.assigned_user_id == assigned_user_id)
     if search:
-        pattern = f"%{search}%"
-        product_match = exists(
-            select(SalesLine.id).where(
-                SalesLine.client_sage_id == Client.sage_id,
+        for word in search.strip().split():
+            p = f"%{word}%"
+            product_match = exists(
+                select(SalesLine.id).where(
+                    SalesLine.client_sage_id == Client.sage_id,
+                    or_(
+                        SalesLine.article_ref.ilike(p),
+                        SalesLine.designation.ilike(p),
+                    ),
+                )
+            )
+            base = base.where(
                 or_(
-                    SalesLine.article_ref.ilike(pattern),
-                    SalesLine.designation.ilike(pattern),
-                ),
+                    Contact.name.ilike(p),
+                    Contact.first_name.ilike(p),
+                    Contact.last_name.ilike(p),
+                    Contact.phone.ilike(p),
+                    Contact.phone_e164.ilike(p),
+                    Contact.email.ilike(p),
+                    Contact.role.ilike(p),
+                    Contact.title.ilike(p),
+                    Client.name.ilike(p),
+                    Client.city.ilike(p),
+                    product_match,
+                )
             )
-        )
-        base = base.where(
-            or_(
-                Contact.name.ilike(pattern),
-                Contact.first_name.ilike(pattern),
-                Contact.last_name.ilike(pattern),
-                Contact.phone.ilike(pattern),
-                Contact.phone_e164.ilike(pattern),
-                Contact.email.ilike(pattern),
-                Contact.role.ilike(pattern),
-                Contact.title.ilike(pattern),
-                Client.name.ilike(pattern),
-                Client.city.ilike(pattern),
-                product_match,
-            )
-        )
 
     count_stmt = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
