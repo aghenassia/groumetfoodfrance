@@ -1713,6 +1713,8 @@ export interface UpdateClientPayload {
   vat_number?: string;
   naf_code?: string;
   tariff_category?: string;
+  client_type?: string;
+  client_subtype?: string;
 }
 
 export interface EnrichSuggestion {
