@@ -57,8 +57,8 @@ import Link from "next/link";
 
 const PAGE_SIZE = 50;
 
-type DatePreset = "7d" | "30d" | "90d" | "ytd" | "12m" | "all" | "custom";
-const PRESETS: DatePreset[] = ["7d", "30d", "90d", "ytd", "12m", "all"];
+type DatePreset = "month" | "7d" | "30d" | "90d" | "ytd" | "12m" | "all" | "custom";
+const PRESETS: DatePreset[] = ["month", "7d", "30d", "90d", "ytd", "12m", "all"];
 
 function toISO(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -68,6 +68,7 @@ function addDays(d: Date, n: number): Date {
 }
 function presetLabel(p: DatePreset): string {
   switch (p) {
+    case "month": return "Mois";
     case "7d": return "7j";
     case "30d": return "30j";
     case "90d": return "90j";
@@ -80,13 +81,14 @@ function presetLabel(p: DatePreset): string {
 function presetRange(p: DatePreset): { from: Date; to: Date } | null {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   switch (p) {
+    case "month": return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
     case "7d": return { from: addDays(today, -6), to: today };
     case "30d": return { from: addDays(today, -29), to: today };
     case "90d": return { from: addDays(today, -89), to: today };
     case "ytd": return { from: new Date(today.getFullYear(), 0, 1), to: today };
     case "12m": return { from: addDays(today, -364), to: today };
     case "all": return null;
-    default: return { from: addDays(today, -29), to: today };
+    default: return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
   }
 }
 function formatDateRange(from: Date, to: Date): string {
@@ -216,8 +218,8 @@ function OrdersPageInner() {
   const [docFilter, setDocFilter] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [animKey, setAnimKey] = useState(0);
-  const [preset, setPreset] = useState<DatePreset>("all");
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date } | null>(null);
+  const [preset, setPreset] = useState<DatePreset>("month");
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date } | null>(presetRange("month"));
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [salesFilter, setSalesFilter] = useState<string>("all");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");

@@ -106,6 +106,7 @@ export default function AdminMarginsPage() {
           description: form.description || undefined,
           value: parseFloat(form.value),
           applies_to: form.applies_to,
+          effective_from: form.effective_from,
           effective_to: form.effective_to || undefined,
         });
         toast.success("Règle mise à jour");
@@ -131,10 +132,10 @@ export default function AdminMarginsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Désactiver cette règle ?")) return;
+    if (!confirm("Supprimer cette règle ? La marge nette sera recalculée sans cette déduction.")) return;
     try {
       await api.deleteMarginRule(id);
-      toast.success("Règle désactivée");
+      toast.success("Règle supprimée");
       fetchRules();
     } catch {
       toast.error("Erreur");
@@ -198,10 +199,8 @@ export default function AdminMarginsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rules.map((r) => {
-                  const expired = r.effective_to && new Date(r.effective_to) < new Date();
-                  return (
-                    <TableRow key={r.id} className={expired ? "opacity-50" : ""}>
+                {rules.map((r) => (
+                    <TableRow key={r.id}>
                       <TableCell>
                         <div>
                           <span className="font-medium text-sm">{r.name}</span>
@@ -230,16 +229,13 @@ export default function AdminMarginsPage() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)}>
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
-                          {!expired && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(r.id)}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => handleDelete(r.id)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
-                  );
-                })}
+                ))}
               </TableBody>
             </Table>
           )}
@@ -292,7 +288,7 @@ export default function AdminMarginsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Date début</Label>
-                <Input type="date" value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} disabled={!!editingId} />
+                <Input type="date" value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label>Date fin (optionnel)</Label>

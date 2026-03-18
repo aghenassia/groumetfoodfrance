@@ -84,7 +84,7 @@ import {
   ReferenceLine,
 } from "recharts";
 
-type DatePreset = "today" | "yesterday" | "7d" | "30d" | "90d" | "custom";
+type DatePreset = "month" | "today" | "yesterday" | "7d" | "30d" | "90d" | "custom";
 
 function toISO(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -98,6 +98,7 @@ function addDays(d: Date, n: number): Date {
 
 function presetLabel(p: DatePreset): string {
   switch (p) {
+    case "month": return "Mois";
     case "today": return "Aujourd'hui";
     case "yesterday": return "Hier";
     case "7d": return "7 jours";
@@ -111,6 +112,8 @@ function presetRange(p: DatePreset): { from: Date; to: Date } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   switch (p) {
+    case "month":
+      return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
     case "today":
       return { from: today, to: today };
     case "yesterday": {
@@ -124,7 +127,7 @@ function presetRange(p: DatePreset): { from: Date; to: Date } {
     case "90d":
       return { from: addDays(today, -89), to: today };
     default:
-      return { from: addDays(today, -6), to: today };
+      return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
   }
 }
 
@@ -190,8 +193,8 @@ export default function DashboardPage() {
   const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
   const [salesDashboard, setSalesDashboard] = useState<SalesDashboardResponse | null>(null);
 
-  const [preset, setPreset] = useState<DatePreset>("30d");
-  const [dateRange, setDateRange] = useState(presetRange("30d"));
+  const [preset, setPreset] = useState<DatePreset>("month");
+  const [dateRange, setDateRange] = useState(presetRange("month"));
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [viewAs, setViewAs] = useState<string>("me");
   const [allUsers, setAllUsers] = useState<{ id: string; name: string }[]>([]);
@@ -314,7 +317,7 @@ export default function DashboardPage() {
     }
   };
 
-  const presets: DatePreset[] = ["today", "yesterday", "7d", "30d", "90d"];
+  const presets: DatePreset[] = ["month", "today", "yesterday", "7d", "30d", "90d"];
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "manager";
   const targetCA = myStats?.target?.monthly;

@@ -31,6 +31,7 @@ class MarginRuleUpdate(BaseModel):
     description: str | None = None
     value: float | None = None
     applies_to: str | None = None
+    effective_from: date | None = None
     effective_to: date | None = None
 
 
@@ -114,6 +115,8 @@ async def update_rule(
         rule.value = body.value
     if body.applies_to is not None:
         rule.applies_to = body.applies_to
+    if body.effective_from is not None:
+        rule.effective_from = body.effective_from
     if body.effective_to is not None:
         rule.effective_to = body.effective_to
     rule.updated_at = datetime.now(timezone.utc)
@@ -123,7 +126,7 @@ async def update_rule(
 
 
 @router.delete("/{rule_id}")
-async def deactivate_rule(
+async def delete_rule(
     rule_id: str,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -132,8 +135,7 @@ async def deactivate_rule(
     rule = await db.get(MarginRule, rule_id)
     if not rule:
         raise HTTPException(404, "Règle non trouvée")
-    rule.effective_to = date.today()
-    rule.updated_at = datetime.now(timezone.utc)
+    await db.delete(rule)
     await db.commit()
     return {"ok": True}
 
