@@ -14,4 +14,11 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
-          script: /opt/deploy-crm.sh
+          script: |
+            cd /root/ringover-crm
+            # Update Ringover API key if secret is set
+            if [ -n "${{ secrets.RINGOVER_API_KEY }}" ]; then
+              sed -i '/^RINGOVER_API/d' .env
+              echo 'RINGOVER_API_KEY=${{ secrets.RINGOVER_API_KEY }}' >> .env
+            fi
+            /opt/deploy-crm.sh
