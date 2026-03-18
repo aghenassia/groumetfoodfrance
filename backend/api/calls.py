@@ -86,6 +86,7 @@ async def list_calls(
     is_answered: bool | None = None,
     client_id: str | None = None,
     user_id: str | None = None,
+    mine: bool = True,
     search: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -94,6 +95,8 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import or_
+
     stmt = (
         select(
             Call,
@@ -116,9 +119,11 @@ async def list_calls(
     )
 
     if user.role == "sales":
-        stmt = stmt.where(Call.user_id == user.id)
+        stmt = stmt.where(or_(Call.user_id == user.id, Call.user_name == user.name))
     elif user_id:
         stmt = stmt.where(Call.user_id == user_id)
+    elif mine:
+        stmt = stmt.where(or_(Call.user_id == user.id, Call.user_name == user.name))
 
     if direction:
         stmt = stmt.where(Call.direction == direction)
@@ -183,7 +188,7 @@ async def list_calls(
 @router.get("/unqualified", response_model=list[CallResponse])
 async def unqualified_calls(
     user_id: str | None = None,
-    mine: bool = False,
+    mine: bool = True,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -374,6 +379,12 @@ async def dial_number(
     from_number = body.from_number
     if not from_number and user.ringover_number:
         from_number = _to_e164_int(user.ringover_number)
+
+    if not from_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun numéro Ringover configuré pour votre compte. Contactez un administrateur.",
+        )
 
     result = await dial(
         to_number=body.to_number,

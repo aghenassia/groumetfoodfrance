@@ -7,6 +7,7 @@ import { Phone, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCallCompanion } from "@/components/call-companion/context";
+import { useAuth } from "@/lib/auth-context";
 
 interface ClickToCallProps {
   phoneNumber: string;
@@ -30,8 +31,11 @@ export function ClickToCall({
   clientName,
 }: ClickToCallProps) {
   const [calling, setCalling] = useState(false);
+  const { user } = useAuth();
   let companion: ReturnType<typeof useCallCompanion> | null = null;
   try { companion = useCallCompanion(); } catch {}
+
+  if (!user?.ringover_number) return null;
 
   const handleDial = async () => {
     setCalling(true);

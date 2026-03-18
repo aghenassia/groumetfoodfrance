@@ -62,6 +62,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
+import { useAuth } from "@/lib/auth-context";
 import {
   Popover,
   PopoverContent,
@@ -196,10 +197,13 @@ const OUTCOMES = [
 ];
 
 export default function CallsPage() {
+  const { user: authUser } = useAuth();
+  const isManagerOrAdmin = authUser?.role === "admin" || authUser?.role === "manager";
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
   const [animKey, setAnimKey] = useState(0);
   const [tab, setTab] = useState<"all" | "unqualified">("all");
+  const [viewAll, setViewAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const selectedCallRef = useRef<Call | null>(null);
 
@@ -258,7 +262,10 @@ export default function CallsPage() {
     setLoading(true);
     const params: Record<string, string> = {};
     if (searchQuery.trim()) params.search = searchQuery.trim();
-    const promise = tab === "unqualified" ? api.getUnqualifiedCalls() : api.getCalls(params);
+    if (viewAll && isManagerOrAdmin) params.mine = "false";
+    const promise = tab === "unqualified"
+      ? api.getUnqualifiedCalls(viewAll && isManagerOrAdmin ? { mine: "false" } : undefined)
+      : api.getCalls(params);
     promise.then((freshCalls) => {
       setCalls(freshCalls);
       setAnimKey((k) => k + 1);
@@ -268,9 +275,9 @@ export default function CallsPage() {
         if (updated) setSelectedCall(updated);
       }
     }).catch(() => toast.error("Erreur de chargement")).finally(() => setLoading(false));
-  }, [tab, searchQuery]);
+  }, [tab, searchQuery, viewAll, isManagerOrAdmin]);
 
-  useEffect(() => { fetchCalls(); }, [tab]);
+  useEffect(() => { fetchCalls(); }, [tab, viewAll]);
 
   const prevSearchRef = useRef(searchQuery);
   useEffect(() => {
@@ -601,6 +608,13 @@ export default function CallsPage() {
             )}
           </div>
           <div className="flex gap-1">
+            {isManagerOrAdmin && (
+              <>
+                <Button variant={!viewAll ? "default" : "outline"} size="sm" className="h-9" onClick={() => setViewAll(false)}>Mes appels</Button>
+                <Button variant={viewAll ? "default" : "outline"} size="sm" className="h-9" onClick={() => setViewAll(true)}>Équipe</Button>
+                <div className="w-px bg-border mx-1" />
+              </>
+            )}
             <Button variant={tab === "all" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setTab("all")}>Tous</Button>
             <Button variant={tab === "unqualified" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setTab("unqualified")}>Non qualifiés</Button>
           </div>
