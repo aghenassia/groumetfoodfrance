@@ -167,15 +167,12 @@ async def list_clients(
         )
 
     if supplier_id:
-        from models.client_intel import ClientSupplier
         supplier_clients = select(ClientSupplier.client_id).where(ClientSupplier.supplier_id == supplier_id).distinct()
         base = base.where(Client.id.in_(supplier_clients))
     if competitor_id:
-        from models.client_intel import ClientCompetitor
         competitor_clients = select(ClientCompetitor.client_id).where(ClientCompetitor.competitor_id == competitor_id).distinct()
         base = base.where(Client.id.in_(competitor_clients))
     if product_ref:
-        from models.client_intel import ClientProductInterest
         product_clients = select(ClientProductInterest.client_id).where(ClientProductInterest.article_ref == product_ref).distinct()
         base = base.where(Client.id.in_(product_clients))
 
