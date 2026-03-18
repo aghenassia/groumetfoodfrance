@@ -258,11 +258,15 @@ async def create_contact(
     await db.commit()
     await db.refresh(contact)
 
+    phones = (await db.execute(
+        select(ContactPhone).where(ContactPhone.contact_id == contact.id).order_by(ContactPhone.created_at)
+    )).scalars().all()
+
     company_name = None
     if contact.company_id:
         company_name = (await db.execute(select(Client.name).where(Client.id == contact.company_id))).scalar()
 
-    return _contact_to_response(contact, company_name, user.name)
+    return _contact_to_response(contact, company_name, user.name, phones=phones)
 
 
 @router.put("/{contact_id}", response_model=ContactResponse)
@@ -272,7 +276,9 @@ async def update_contact(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Contact).where(Contact.id == contact_id))
+    result = await db.execute(
+        select(Contact).options(selectinload(Contact.phones)).where(Contact.id == contact_id)
+    )
     contact = result.scalar_one_or_none()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact introuvable")
@@ -333,6 +339,10 @@ async def update_contact(
     await db.commit()
     await db.refresh(contact)
 
+    phones = (await db.execute(
+        select(ContactPhone).where(ContactPhone.contact_id == contact.id).order_by(ContactPhone.created_at)
+    )).scalars().all()
+
     company_name = None
     user_name = None
     if contact.company_id:
@@ -340,7 +350,7 @@ async def update_contact(
     if contact.assigned_user_id:
         user_name = (await db.execute(select(User.name).where(User.id == contact.assigned_user_id))).scalar()
 
-    return _contact_to_response(contact, company_name, user_name)
+    return _contact_to_response(contact, company_name, user_name, phones=phones)
 
 
 @router.post("/{contact_id}/assign/{company_id}")
