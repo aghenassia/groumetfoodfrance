@@ -159,6 +159,12 @@ class ApiClient {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return this.get<NetMarginUserStats[]>(`/api/admin/margin-rules/net-margin-stats${qs}`);
   }
+  getMarginColorThresholds() {
+    return this.get<MarginColorThreshold[]>("/api/admin/margin-rules/color-thresholds");
+  }
+  setMarginColorThresholds(thresholds: MarginColorThreshold[]) {
+    return this.put<MarginColorThreshold[]>("/api/admin/margin-rules/color-thresholds", thresholds);
+  }
 
   // Objectives
   getObjectives(userId?: string) {
@@ -1711,6 +1717,12 @@ export interface MarginRule {
   effective_to?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface MarginColorThreshold {
+  min: number | null;
+  color: string;
+  label: string;
 }
 
 export interface UserObjective {

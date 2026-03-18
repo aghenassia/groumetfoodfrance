@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, MarginRule } from "@/lib/api";
+import { api, MarginRule, MarginColorThreshold } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Calculator, Plus, Pencil, Trash2 } from "lucide-react";
+import { Calculator, Plus, Pencil, Trash2, Palette } from "lucide-react";
 import { toast } from "sonner";
 
 const CALC_LABELS: Record<string, string> = {
@@ -53,6 +53,11 @@ export default function AdminMarginsPage() {
   });
   const [saving, setSaving] = useState(false);
 
+  const [thresholds, setThresholds] = useState<MarginColorThreshold[]>([]);
+  const [editedThresholds, setEditedThresholds] = useState<MarginColorThreshold[]>([]);
+  const [thresholdsChanged, setThresholdsChanged] = useState(false);
+  const [savingThresholds, setSavingThresholds] = useState(false);
+
   const fetchRules = () => {
     setLoading(true);
     api.getMarginRules(!showAll)
@@ -61,9 +66,46 @@ export default function AdminMarginsPage() {
       .finally(() => setLoading(false));
   };
 
+  const fetchThresholds = () => {
+    api.getMarginColorThresholds().then((t) => {
+      setThresholds(t);
+      setEditedThresholds(t);
+      setThresholdsChanged(false);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     fetchRules();
+    fetchThresholds();
   }, [showAll]);
+
+  const updateThreshold = (idx: number, field: keyof MarginColorThreshold, val: string) => {
+    setEditedThresholds((prev) => {
+      const next = [...prev];
+      if (field === "min") {
+        next[idx] = { ...next[idx], min: val === "" ? null : parseFloat(val) };
+      } else {
+        next[idx] = { ...next[idx], [field]: val };
+      }
+      return next;
+    });
+    setThresholdsChanged(true);
+  };
+
+  const saveThresholds = async () => {
+    setSavingThresholds(true);
+    try {
+      const result = await api.setMarginColorThresholds(editedThresholds);
+      setThresholds(result);
+      setEditedThresholds(result);
+      setThresholdsChanged(false);
+      toast.success("Seuils de couleur mis à jour");
+    } catch {
+      toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setSavingThresholds(false);
+    }
+  };
 
   const openNew = () => {
     setEditingId(null);
@@ -238,6 +280,68 @@ export default function AdminMarginsPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Color thresholds config */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Palette className="w-4 h-4" />
+            Code couleur des marges
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-[12px] text-muted-foreground mb-4">
+            Définissez les seuils de % de marge pour chaque couleur. Les seuils sont évalués du plus haut au plus bas.
+          </p>
+          <div className="space-y-2.5">
+            {editedThresholds.map((t, i) => {
+              const colorMap: Record<string, string> = {
+                green: "bg-green-500",
+                orange: "bg-amber-500",
+                red: "bg-red-500",
+              };
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full shrink-0 ${colorMap[t.color] || "bg-gray-400"}`} />
+                  <Select value={t.color} onValueChange={(v) => updateThreshold(i, "color", v)}>
+                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="green">Vert</SelectItem>
+                      <SelectItem value="orange">Orange</SelectItem>
+                      <SelectItem value="red">Rouge</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="w-[100px] h-8 text-xs"
+                    value={t.label}
+                    onChange={(e) => updateThreshold(i, "label", e.target.value)}
+                    placeholder="Label"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground shrink-0">≥</span>
+                    <Input
+                      type="number"
+                      className="w-[80px] h-8 text-xs"
+                      value={t.min ?? ""}
+                      onChange={(e) => updateThreshold(i, "min", e.target.value)}
+                      placeholder="—"
+                      disabled={i === editedThresholds.length - 1}
+                    />
+                    <span className="text-xs text-muted-foreground">%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {thresholdsChanged && (
+            <Button className="mt-4" size="sm" onClick={saveThresholds} disabled={savingThresholds}>
+              {savingThresholds ? "Enregistrement…" : "Enregistrer les seuils"}
+            </Button>
           )}
         </CardContent>
       </Card>

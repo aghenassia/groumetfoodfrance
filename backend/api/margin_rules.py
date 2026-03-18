@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import date, datetime, timezone
 
@@ -10,6 +11,7 @@ from core.database import get_db
 from core.security import get_current_user
 from models.user import User
 from models.margin_rule import MarginRule
+from models.app_setting import AppSetting
 from models.sales_line import SalesLine
 from models.client import Client
 
@@ -223,3 +225,54 @@ async def net_margin_stats(
         s["total_margin_net"] += net
 
     return sorted(user_stats.values(), key=lambda x: x["total_ca"], reverse=True)
+
+
+# --- Margin color thresholds ---
+
+DEFAULT_MARGIN_THRESHOLDS = [
+    {"min": 20, "color": "green", "label": "Bonne"},
+    {"min": 0, "color": "orange", "label": "Moyenne"},
+    {"min": None, "color": "red", "label": "Négative"},
+]
+
+SETTING_KEY = "margin_color_thresholds"
+
+
+@router.get("/color-thresholds")
+async def get_color_thresholds(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    row = await db.get(AppSetting, SETTING_KEY)
+    if row:
+        return json.loads(row.value)
+    return DEFAULT_MARGIN_THRESHOLDS
+
+
+class ThresholdItem(BaseModel):
+    min: float | None = None
+    color: str
+    label: str
+
+
+@router.put("/color-thresholds")
+async def set_color_thresholds(
+    thresholds: list[ThresholdItem],
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    if len(thresholds) < 2:
+        raise HTTPException(400, "Au moins 2 seuils requis")
+    sorted_t = sorted(
+        [t.model_dump() for t in thresholds],
+        key=lambda x: x["min"] if x["min"] is not None else float("-inf"),
+        reverse=True,
+    )
+    row = await db.get(AppSetting, SETTING_KEY)
+    if row:
+        row.value = json.dumps(sorted_t)
+    else:
+        db.add(AppSetting(key=SETTING_KEY, value=json.dumps(sorted_t)))
+    await db.commit()
+    return sorted_t

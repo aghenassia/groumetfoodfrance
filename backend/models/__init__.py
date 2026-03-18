@@ -23,6 +23,7 @@ from models.client_intel import ClientSupplier, ClientCompetitor, ClientProductI
 from models.call_session import CallSession
 from models.client_note import ClientNote
 from models.contact_phone import ContactPhone
+from models.app_setting import AppSetting
 
 __all__ = [
     "User", "Client", "Contact", "PhoneIndex", "SalesLine", "Call",
@@ -32,4 +33,5 @@ __all__ = [
     "MarginRule", "UserObjective", "Challenge", "ChallengeRanking",
     "Supplier", "Competitor", "ClientSupplier", "ClientCompetitor",
     "ClientProductInterest", "CallSession", "ClientNote", "ContactPhone",
+    "AppSetting",
 ]

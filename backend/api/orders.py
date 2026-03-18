@@ -33,7 +33,7 @@ async def list_orders(
     date_to: str | None = None,
     user_id: str | None = Query(default=None, description="Filtrer par commercial (user_id)"),
     payment_status: str | None = Query(default=None, pattern="^(unpaid|paid|partial)$"),
-    sort_by: str = Query(default="date", pattern="^(date|ca|client|type)$"),
+    sort_by: str = Query(default="date", pattern="^(date|ca|client|type|margin|status)$"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -153,6 +153,8 @@ async def list_orders(
         "ca": func.sum(SalesLine.amount_ht),
         "client": func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)),
         "type": func.max(SalesLine.sage_doc_type),
+        "margin": func.coalesce(func.avg(SalesLine.margin_percent), 0),
+        "status": func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0),
     }.get(sort_by, SalesLine.date)
 
     if sort_dir == "asc":

@@ -8,6 +8,7 @@ import {
   OrderListResponse,
   OrderDetailResponse,
   User,
+  MarginColorThreshold,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -98,7 +99,7 @@ function formatDateRange(from: Date, to: Date): string {
   return `${f} → ${t}`;
 }
 
-type SortKey = "date" | "ca" | "client" | "type";
+type SortKey = "date" | "ca" | "client" | "type" | "margin" | "status";
 
 const DOC_TYPES = [
   { key: "BC", label: "Bon de commande", color: "text-amber-700", bg: "bg-amber-50 border-amber-200", icon: FileText },
@@ -160,21 +161,29 @@ function formatDateShort(d: string | null | undefined): string {
   });
 }
 
-function MarginBadge({ value }: { value?: number | null }) {
+const COLOR_CSS: Record<string, string> = {
+  green: "text-green-600",
+  orange: "text-amber-600",
+  red: "text-red-600",
+};
+
+const DEFAULT_THRESHOLDS: MarginColorThreshold[] = [
+  { min: 20, color: "green", label: "Bonne" },
+  { min: 0, color: "orange", label: "Moyenne" },
+  { min: null, color: "red", label: "Négative" },
+];
+
+function MarginBadge({ value, thresholds }: { value?: number | null; thresholds?: MarginColorThreshold[] }) {
   if (value == null) return <span className="text-muted-foreground">—</span>;
-  return (
-    <span
-      className={
-        value >= 20
-          ? "text-green-600"
-          : value >= 0
-          ? "text-amber-600"
-          : "text-red-600"
-      }
-    >
-      {value.toFixed(1)}%
-    </span>
-  );
+  const t = thresholds && thresholds.length > 0 ? thresholds : DEFAULT_THRESHOLDS;
+  let color = "text-muted-foreground";
+  for (const rule of t) {
+    if (rule.min === null || value >= rule.min) {
+      color = COLOR_CSS[rule.color] || "text-muted-foreground";
+      break;
+    }
+  }
+  return <span className={color}>{value.toFixed(1)}%</span>;
 }
 
 function PaymentBadge({ status, remaining }: { status?: string | null; remaining?: number | null }) {
@@ -225,6 +234,7 @@ function OrdersPageInner() {
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [allUsers, setAllUsers] = useState<{ id: string; name: string }[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [marginThresholds, setMarginThresholds] = useState<MarginColorThreshold[]>(DEFAULT_THRESHOLDS);
 
   const [detail, setDetail] = useState<OrderDetailResponse | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -242,6 +252,7 @@ function OrdersPageInner() {
         }).catch(() => {});
       }
     }).catch(() => {});
+    api.getMarginColorThresholds().then(setMarginThresholds).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -453,7 +464,7 @@ function OrdersPageInner() {
                 </p>
                 {summary.avg_margin != null && (
                   <p className="text-[11px] text-muted-foreground mt-1">
-                    Marge moy. : <MarginBadge value={summary.avg_margin} />
+                    Marge moy. : <MarginBadge value={summary.avg_margin} thresholds={marginThresholds} />
                   </p>
                 )}
               </CardContent>
@@ -588,8 +599,12 @@ function OrdersPageInner() {
                       <TableHead className="cursor-pointer hover:text-foreground text-right select-none" onClick={() => toggleSort("ca")}>
                         Montant HT <SortIcon col="ca" />
                       </TableHead>
-                      <TableHead className="text-right hidden lg:table-cell">Marge</TableHead>
-                      <TableHead className="text-center hidden lg:table-cell">Statut</TableHead>
+                      <TableHead className="cursor-pointer hover:text-foreground text-right hidden lg:table-cell select-none" onClick={() => toggleSort("margin")}>
+                        Marge <SortIcon col="margin" />
+                      </TableHead>
+                      <TableHead className="cursor-pointer hover:text-foreground text-center hidden lg:table-cell select-none" onClick={() => toggleSort("status")}>
+                        Statut <SortIcon col="status" />
+                      </TableHead>
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
@@ -650,7 +665,7 @@ function OrdersPageInner() {
                             </span>
                           </TableCell>
                           <TableCell className="text-right text-sm tabular-nums hidden lg:table-cell">
-                            <MarginBadge value={o.avg_margin} />
+                            <MarginBadge value={o.avg_margin} thresholds={marginThresholds} />
                           </TableCell>
                           <TableCell className="text-center hidden lg:table-cell">
                             <PaymentBadge status={o.payment_status} remaining={o.remaining_due} />
@@ -720,7 +735,7 @@ function OrdersPageInner() {
                       <span>{formatDateShort(o.date)}</span>
                       <span>{o.nb_articles} art.</span>
                       <span>Qté {formatQty(o.total_qty)}</span>
-                      <MarginBadge value={o.avg_margin} />
+                      <MarginBadge value={o.avg_margin} thresholds={marginThresholds} />
                       {o.payment_status && o.payment_status !== "paid" && (
                         <Badge variant="outline" className={`text-[10px] gap-0.5 px-1.5 py-0 ${
                           o.payment_status === "unpaid" ? "text-red-700 bg-red-50 border-red-200" : "text-amber-700 bg-amber-50 border-amber-200"
@@ -893,7 +908,7 @@ function OrderDetailPanel({
           </div>
           {avgMargin != null && (
             <div className="flex items-center justify-center mt-2 text-xs text-muted-foreground">
-              Marge moy. : <MarginBadge value={avgMargin} />
+              Marge moy. : <MarginBadge value={avgMargin} thresholds={marginThresholds} />
             </div>
           )}
           {detail.payment_status && (
@@ -969,7 +984,7 @@ function OrderDetailPanel({
                   <div className="text-right shrink-0 space-y-0.5">
                     <p className="text-xs font-bold tabular-nums">{formatCurrency(l.amount_ht)}</p>
                     {l.margin_percent != null && (
-                      <p className="text-[11px]"><MarginBadge value={l.margin_percent} /></p>
+                      <p className="text-[11px]"><MarginBadge value={l.margin_percent} thresholds={marginThresholds} /></p>
                     )}
                   </div>
                   {l.article_ref && (
