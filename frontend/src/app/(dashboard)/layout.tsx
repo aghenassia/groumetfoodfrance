@@ -21,6 +21,8 @@ import {
   ContactRound,
   Calculator,
   Upload,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -63,6 +65,7 @@ export default function DashboardLayout({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -97,15 +100,26 @@ export default function DashboardLayout({
   const navItems =
     user.role === "admin" ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
 
-  const SidebarContent = () => (
+  const SidebarContent = ({ showCollapse = false }: { showCollapse?: boolean }) => (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       <div className="p-4">
         <div className="flex items-center gap-2">
           <img src="/gff-white.svg" alt="GFF" className="h-7 w-auto" />
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold tracking-tight text-kiku">GFF CRM</h1>
             <p className="text-xs text-sidebar-foreground/60">Gourmet Food France</p>
           </div>
+          {showCollapse && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={() => setSidebarCollapsed(true)}
+              title="Masquer le menu"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
       <div className="h-px bg-sidebar-border" />
@@ -163,10 +177,16 @@ export default function DashboardLayout({
   return (
     <AuthProvider>
       <CallCompanionProvider>
-        <div className="min-h-screen flex bg-background">
+        <div className="h-screen flex overflow-hidden bg-background">
           {/* Desktop sidebar */}
-          <aside className="hidden md:flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
-            <SidebarContent />
+          <aside
+            className={`hidden md:flex flex-col border-r border-sidebar-border bg-sidebar h-screen sticky top-0 overflow-y-auto overflow-x-hidden scrollbar-thin transition-all duration-300 ease-in-out ${
+              sidebarCollapsed ? "w-0 border-r-0" : "w-56"
+            }`}
+          >
+            <div className={`w-56 min-w-[14rem] ${sidebarCollapsed ? "opacity-0" : "opacity-100"} transition-opacity duration-200`}>
+              <SidebarContent showCollapse />
+            </div>
           </aside>
 
           {/* Mobile sidebar */}
@@ -179,7 +199,8 @@ export default function DashboardLayout({
 
           {/* Main content */}
           <div className="flex-1 flex flex-col min-w-0">
-            <header className="md:hidden flex items-center gap-3 border-b px-4 h-14">
+            {/* Mobile header (always) */}
+            <header className="md:hidden flex items-center gap-3 border-b px-4 h-14 shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -189,7 +210,21 @@ export default function DashboardLayout({
               </Button>
               <h1 className="text-sm font-semibold">GFF CRM</h1>
             </header>
-            <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+            {/* Desktop: expand button when sidebar is collapsed */}
+            {sidebarCollapsed && (
+              <div className="hidden md:flex items-center h-10 px-3 border-b shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSidebarCollapsed(false)}
+                  title="Afficher le menu"
+                >
+                  <PanelLeftOpen className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+            <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
           </div>
         </div>
         <CallCompanionWidget />
