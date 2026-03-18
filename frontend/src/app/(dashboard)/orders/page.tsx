@@ -785,6 +785,7 @@ function OrdersPageInner() {
               detail={detail}
               loading={loadingDetail}
               onClose={closeDetail}
+              thresholds={marginThresholds}
             />
           </div>
         </div>
@@ -806,6 +807,7 @@ function OrdersPageInner() {
               detail={detail}
               loading={loadingDetail}
               onClose={closeDetail}
+              thresholds={marginThresholds}
             />
           </div>
         </div>
@@ -818,10 +820,12 @@ function OrderDetailPanel({
   detail,
   loading,
   onClose,
+  thresholds,
 }: {
   detail: OrderDetailResponse | null;
   loading: boolean;
   onClose: () => void;
+  thresholds?: MarginColorThreshold[];
 }) {
   if (loading && !detail) {
     return (
@@ -908,7 +912,7 @@ function OrderDetailPanel({
           </div>
           {avgMargin != null && (
             <div className="flex items-center justify-center mt-2 text-xs text-muted-foreground">
-              Marge moy. : <MarginBadge value={avgMargin} thresholds={marginThresholds} />
+              Marge moy. : <MarginBadge value={avgMargin} thresholds={thresholds} />
             </div>
           )}
           {detail.payment_status && (
@@ -984,7 +988,7 @@ function OrderDetailPanel({
                   <div className="text-right shrink-0 space-y-0.5">
                     <p className="text-xs font-bold tabular-nums">{formatCurrency(l.amount_ht)}</p>
                     {l.margin_percent != null && (
-                      <p className="text-[11px]"><MarginBadge value={l.margin_percent} thresholds={marginThresholds} /></p>
+                      <p className="text-[11px]"><MarginBadge value={l.margin_percent} thresholds={thresholds} /></p>
                     )}
                   </div>
                   {l.article_ref && (
