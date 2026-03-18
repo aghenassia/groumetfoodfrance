@@ -174,8 +174,15 @@ class ApiClient {
   getObjectiveMetrics() {
     return this.get<{ key: string; label: string }[]>("/api/objectives/metrics");
   }
-  createObjective(data: { user_id: string; metric: string; period_type: string; target_value: number }) {
+  createObjective(data: {
+    user_id: string; metric: string; period_type: string; target_value: number;
+    start_date?: string; end_date?: string;
+    filter_client_category?: string; filter_region?: string; filter_product_family?: string;
+  }) {
     return this.post<UserObjective>("/api/objectives", data);
+  }
+  getObjectiveFilters() {
+    return this.get<{ client_categories: string[]; regions: string[]; product_families: string[] }>("/api/objectives/filters");
   }
   updateObjective(id: string, data: Partial<UserObjective>) {
     return this.put<UserObjective>(`/api/objectives/${id}`, data);
@@ -1774,6 +1781,9 @@ export interface UserObjective {
   start_date?: string | null;
   end_date?: string | null;
   is_active: boolean;
+  filter_client_category?: string | null;
+  filter_region?: string | null;
+  filter_product_family?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -1788,6 +1798,7 @@ export interface ObjectiveProgress {
   target_value: number;
   current_value: number;
   progress_pct: number;
+  filter_tags?: string[];
 }
 
 export interface ChallengeEntry {

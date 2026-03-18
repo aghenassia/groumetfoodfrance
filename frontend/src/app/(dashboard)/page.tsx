@@ -939,14 +939,30 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {objProgress.map((obj) => {
                   const pct = obj.progress_pct;
-                  const barColor = pct >= 80 ? "bg-sora" : pct >= 50 ? "bg-kiku" : "bg-ume";
-                  const unit = ["ca","margin_gross","margin_net","avg_basket","avg_ca_per_order"].includes(obj.metric) ? "€" : "";
+                  const barColor = pct >= 100 ? "bg-green-500" : pct >= 80 ? "bg-sora" : pct >= 50 ? "bg-kiku" : "bg-ume";
+                  const unit = ["ca","margin_gross","margin_net","avg_basket","avg_ca_per_order"].includes(obj.metric) ? "€"
+                    : obj.metric === "quantity_kg" ? "kg" : "";
+                  const periodInfo = obj.period_type === "custom"
+                    ? new Date(obj.period_start).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })
+                    : null;
                   return (
                     <div key={obj.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{obj.metric_label}</span>
-                        <Badge variant={pct >= 100 ? "default" : "outline"} className="text-[10px]">{pct.toFixed(0)}%</Badge>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-sm font-medium truncate">{obj.metric_label}</span>
+                          {periodInfo && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">{periodInfo}</Badge>
+                          )}
+                        </div>
+                        <Badge variant={pct >= 100 ? "default" : "outline"} className={`text-[10px] shrink-0 ${pct >= 100 ? "bg-green-600" : ""}`}>{pct.toFixed(0)}%</Badge>
                       </div>
+                      {obj.filter_tags && obj.filter_tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {obj.filter_tags.map((tag) => (
+                            <span key={tag} className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>

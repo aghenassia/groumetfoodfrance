@@ -100,9 +100,15 @@ export default function AdminUsersPage() {
   const [objectives, setObjectives] = useState<UserObjective[]>([]);
   const [metrics, setMetrics] = useState<{ key: string; label: string }[]>([]);
   const [objDialogOpen, setObjDialogOpen] = useState(false);
-  const [objForm, setObjForm] = useState({ metric: "ca", period_type: "monthly", target_value: "" });
+  const [objForm, setObjForm] = useState({
+    metric: "ca", period_type: "monthly", target_value: "",
+    custom_month: "", filter_client_category: "", filter_region: "", filter_product_family: "",
+  });
   const [objUserId, setObjUserId] = useState<string | null>(null);
   const [savingObj, setSavingObj] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<{ client_categories: string[]; regions: string[]; product_families: string[] }>({
+    client_categories: [], regions: [], product_families: [],
+  });
 
   const fetchUsers = () => {
     setLoading(true);
@@ -382,6 +388,8 @@ export default function AdminUsersPage() {
                               setObjUserId(u.id);
                               api.getObjectives(u.id).then(setObjectives).catch(() => {});
                               api.getObjectiveMetrics().then(setMetrics).catch(() => {});
+                              api.getObjectiveFilters().then(setFilterOptions).catch(() => {});
+                              setObjForm({ metric: "ca", period_type: "monthly", target_value: "", custom_month: "", filter_client_category: "", filter_region: "", filter_product_family: "" });
                               setObjDialogOpen(true);
                             }}
                           >
@@ -655,7 +663,7 @@ export default function AdminUsersPage() {
 
       {/* Objectives multi-KPI Dialog */}
       <Dialog open={objDialogOpen} onOpenChange={setObjDialogOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Target className="w-5 h-5" />
@@ -664,7 +672,7 @@ export default function AdminUsersPage() {
           </DialogHeader>
           <div className="space-y-5">
             <p className="text-sm text-muted-foreground">
-              Définissez des objectifs sur n'importe quel KPI. Chaque objectif sera suivi automatiquement sur le dashboard du commercial.
+              Définissez des objectifs sur n&apos;importe quel KPI. Chaque objectif sera suivi automatiquement sur le dashboard du commercial.
             </p>
 
             {/* Objectifs existants */}
@@ -673,15 +681,28 @@ export default function AdminUsersPage() {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Objectifs actifs ({objectives.length})</p>
                 {objectives.map((obj) => {
                   const unit = ["ca","margin_gross","margin_net","avg_basket","avg_ca_per_order"].includes(obj.metric) ? " €" : obj.metric === "quantity_kg" ? " kg" : "";
-                  const periodLabel = obj.period_type === "monthly" ? "/ mois" : obj.period_type === "quarterly" ? "/ trimestre" : "/ an";
+                  const periodLabel = obj.period_type === "custom"
+                    ? (obj.start_date ? new Date(obj.start_date).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "Personnalisé")
+                    : obj.period_type === "monthly" ? "/ mois" : obj.period_type === "quarterly" ? "/ trimestre" : "/ an";
+                  const filterParts: string[] = [];
+                  if (obj.filter_client_category) filterParts.push(obj.filter_client_category);
+                  if (obj.filter_region) filterParts.push(obj.filter_region);
+                  if (obj.filter_product_family) filterParts.push(obj.filter_product_family);
                   return (
                     <div key={obj.id} className="flex items-center gap-3 p-3 border rounded-lg">
                       <Target className="w-4 h-4 text-sora shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium">{obj.metric_label || obj.metric}</p>
                         <p className="text-[11px] text-muted-foreground">{periodLabel}</p>
+                        {filterParts.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {filterParts.map((f) => (
+                              <Badge key={f} variant="outline" className="text-[10px] px-1.5 py-0">{f}</Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <span className="font-mono text-sm font-bold">
+                      <span className="font-mono text-sm font-bold shrink-0">
                         {obj.target_value.toLocaleString("fr-FR")}{unit}
                       </span>
                       <Button
@@ -724,47 +745,109 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs text-muted-foreground">Période</label>
-                  <Select value={objForm.period_type} onValueChange={(v) => setObjForm({ ...objForm, period_type: v })}>
+                  <Select value={objForm.period_type} onValueChange={(v) => setObjForm({ ...objForm, period_type: v, custom_month: "" })}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="monthly">Mensuel</SelectItem>
+                      <SelectItem value="monthly">Mensuel (récurrent)</SelectItem>
+                      <SelectItem value="custom">Mois précis</SelectItem>
                       <SelectItem value="quarterly">Trimestriel</SelectItem>
                       <SelectItem value="yearly">Annuel</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+
+              {/* Mois précis */}
+              {objForm.period_type === "custom" && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Mois ciblé</label>
+                  <Input
+                    type="month"
+                    className="h-9 text-sm"
+                    value={objForm.custom_month}
+                    onChange={(e) => setObjForm({ ...objForm, custom_month: e.target.value })}
+                  />
+                </div>
+              )}
+
+              {/* Filtres optionnels */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Filtres (optionnel)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Select value={objForm.filter_client_category} onValueChange={(v) => setObjForm({ ...objForm, filter_client_category: v === "__none__" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Catégorie client" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-xs">Toutes catégories</SelectItem>
+                      {filterOptions.client_categories.map((c) => (
+                        <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={objForm.filter_region} onValueChange={(v) => setObjForm({ ...objForm, filter_region: v === "__none__" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Région" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-xs">Toutes régions</SelectItem>
+                      {filterOptions.regions.map((r) => (
+                        <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={objForm.filter_product_family} onValueChange={(v) => setObjForm({ ...objForm, filter_product_family: v === "__none__" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Famille article" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-xs">Toutes familles</SelectItem>
+                      {filterOptions.product_families.map((f) => (
+                        <SelectItem key={f} value={f} className="text-xs">{f}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">
                   Cible
                   {" "}
                   <span className="text-muted-foreground/60">
-                    ({["ca","margin_gross","margin_net","avg_basket","avg_ca_per_order"].includes(objForm.metric) ? "en €" : objForm.metric === "quantity_kg" ? "en kg" : "en unités"})
+                    ({["ca","margin_gross","margin_net","avg_basket","avg_ca_per_order"].includes(objForm.metric) ? "en €" : objForm.metric === "quantity_kg" ? "en kg" : objForm.metric === "client_count" ? "clients" : "en unités"})
                   </span>
                 </label>
                 <div className="flex gap-2">
                   <Input
                     type="number"
-                    placeholder={["ca","margin_gross","margin_net"].includes(objForm.metric) ? "Ex: 50000" : objForm.metric === "quantity_kg" ? "Ex: 10000" : "Ex: 100"}
+                    placeholder={["ca","margin_gross","margin_net"].includes(objForm.metric) ? "Ex: 50000" : objForm.metric === "quantity_kg" ? "Ex: 10000" : objForm.metric === "client_count" ? "Ex: 20" : "Ex: 100"}
                     value={objForm.target_value}
                     onChange={(e) => setObjForm({ ...objForm, target_value: e.target.value })}
                     className="flex-1 h-9"
                   />
                   <Button
                     className="h-9 px-4"
-                    disabled={savingObj || !objForm.target_value}
+                    disabled={savingObj || !objForm.target_value || (objForm.period_type === "custom" && !objForm.custom_month)}
                     onClick={async () => {
                       if (!objUserId || !objForm.target_value) return;
                       setSavingObj(true);
                       try {
+                        let startDate: string | undefined;
+                        let endDate: string | undefined;
+                        if (objForm.period_type === "custom" && objForm.custom_month) {
+                          const [y, m] = objForm.custom_month.split("-").map(Number);
+                          startDate = `${y}-${String(m).padStart(2, "0")}-01`;
+                          const lastDay = new Date(y, m, 0).getDate();
+                          endDate = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+                        }
                         const created = await api.createObjective({
                           user_id: objUserId,
                           metric: objForm.metric,
                           period_type: objForm.period_type,
                           target_value: parseFloat(objForm.target_value),
+                          start_date: startDate,
+                          end_date: endDate,
+                          filter_client_category: objForm.filter_client_category || undefined,
+                          filter_region: objForm.filter_region || undefined,
+                          filter_product_family: objForm.filter_product_family || undefined,
                         });
                         setObjectives((prev) => [...prev, created]);
-                        setObjForm({ ...objForm, target_value: "" });
+                        setObjForm({ ...objForm, target_value: "", custom_month: "" });
                       } catch {
                         // silently handled
                       } finally {
@@ -783,7 +866,7 @@ export default function AdminUsersPage() {
             <div className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg p-3 space-y-1">
               <p className="font-medium">KPIs disponibles :</p>
               <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                <li><span className="font-semibold">CA</span> — chiffre d'affaires HT</li>
+                <li><span className="font-semibold">CA</span> — chiffre d&apos;affaires HT</li>
                 <li><span className="font-semibold">Marge brute</span> — prix vente - coût revient</li>
                 <li><span className="font-semibold">Marge nette</span> — après déduction forfaits</li>
                 <li><span className="font-semibold">Quantité (kg)</span> — poids net vendu</li>
@@ -791,6 +874,7 @@ export default function AdminUsersPage() {
                 <li><span className="font-semibold">Panier moyen</span> — CA / nb commandes</li>
                 <li><span className="font-semibold">CA moy / commande</span> — montant moyen</li>
                 <li><span className="font-semibold">Nb commandes</span> — volume de commandes</li>
+                <li><span className="font-semibold">Nb clients</span> — clients actifs sur la période</li>
               </ul>
             </div>
           </div>

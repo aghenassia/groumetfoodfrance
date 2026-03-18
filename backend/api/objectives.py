@@ -4,7 +4,7 @@ from calendar import monthrange
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, distinct, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -13,6 +13,7 @@ from models.user import User
 from models.user_objective import UserObjective
 from models.sales_line import SalesLine
 from models.client import Client
+from models.product import Product
 from models.margin_rule import MarginRule
 from api.margin_rules import rule_applies_to_client
 
@@ -27,6 +28,7 @@ METRIC_LABELS = {
     "avg_basket": "Panier moyen",
     "avg_ca_per_order": "CA moyen / commande",
     "order_count": "Nombre de commandes",
+    "client_count": "Nombre de clients",
 }
 
 
@@ -37,12 +39,18 @@ class ObjectiveCreate(BaseModel):
     target_value: float
     start_date: date | None = None
     end_date: date | None = None
+    filter_client_category: str | None = None
+    filter_region: str | None = None
+    filter_product_family: str | None = None
 
 
 class ObjectiveUpdate(BaseModel):
     target_value: float | None = None
     is_active: bool | None = None
     end_date: date | None = None
+    filter_client_category: str | None = None
+    filter_region: str | None = None
+    filter_product_family: str | None = None
 
 
 class ObjectiveResponse(BaseModel):
@@ -55,6 +63,9 @@ class ObjectiveResponse(BaseModel):
     start_date: date | None
     end_date: date | None
     is_active: bool
+    filter_client_category: str | None = None
+    filter_region: str | None = None
+    filter_product_family: str | None = None
     created_at: datetime | None
     updated_at: datetime | None
 
@@ -70,6 +81,9 @@ def _to_response(obj: UserObjective) -> ObjectiveResponse:
         start_date=obj.start_date,
         end_date=obj.end_date,
         is_active=obj.is_active,
+        filter_client_category=obj.filter_client_category,
+        filter_region=obj.filter_region,
+        filter_product_family=obj.filter_product_family,
         created_at=obj.created_at,
         updated_at=obj.updated_at,
     )
@@ -83,6 +97,34 @@ def _require_admin(user: User):
 @router.get("/metrics")
 async def list_metrics(user: User = Depends(get_current_user)):
     return [{"key": k, "label": v} for k, v in METRIC_LABELS.items()]
+
+
+@router.get("/filters")
+async def list_filter_options(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Returns distinct values for client categories, regions, product families."""
+    cat_q = await db.execute(
+        select(distinct(Client.tariff_category))
+        .where(Client.tariff_category.isnot(None), Client.tariff_category != "")
+        .order_by(Client.tariff_category)
+    )
+    region_q = await db.execute(
+        select(distinct(Client.region))
+        .where(Client.region.isnot(None), Client.region != "")
+        .order_by(Client.region)
+    )
+    family_q = await db.execute(
+        select(distinct(Product.family_label))
+        .where(Product.family_label.isnot(None), Product.family_label != "")
+        .order_by(Product.family_label)
+    )
+    return {
+        "client_categories": [r[0] for r in cat_q.all()],
+        "regions": [r[0] for r in region_q.all()],
+        "product_families": [r[0] for r in family_q.all()],
+    }
 
 
 @router.get("", response_model=list[ObjectiveResponse])
@@ -111,8 +153,11 @@ async def create_objective(
     _require_admin(user)
     if body.metric not in METRIC_LABELS:
         raise HTTPException(400, f"Métrique invalide. Valeurs: {list(METRIC_LABELS.keys())}")
-    if body.period_type not in ("monthly", "quarterly", "yearly"):
-        raise HTTPException(400, "period_type: monthly, quarterly, yearly")
+    if body.period_type not in ("monthly", "quarterly", "yearly", "custom"):
+        raise HTTPException(400, "period_type: monthly, quarterly, yearly, custom")
+    if body.period_type == "custom" and not body.start_date:
+        raise HTTPException(400, "start_date requis pour period_type=custom")
+
     obj = UserObjective(
         id=str(uuid.uuid4()),
         user_id=body.user_id,
@@ -121,6 +166,9 @@ async def create_objective(
         target_value=body.target_value,
         start_date=body.start_date,
         end_date=body.end_date,
+        filter_client_category=body.filter_client_category or None,
+        filter_region=body.filter_region or None,
+        filter_product_family=body.filter_product_family or None,
     )
     db.add(obj)
     await db.commit()
@@ -145,6 +193,12 @@ async def update_objective(
         obj.is_active = body.is_active
     if body.end_date is not None:
         obj.end_date = body.end_date
+    if body.filter_client_category is not None:
+        obj.filter_client_category = body.filter_client_category or None
+    if body.filter_region is not None:
+        obj.filter_region = body.filter_region or None
+    if body.filter_product_family is not None:
+        obj.filter_product_family = body.filter_product_family or None
     obj.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(obj)
@@ -166,22 +220,79 @@ async def delete_objective(
     return {"ok": True}
 
 
-def _period_range(period_type: str, ref_date: date | None = None) -> tuple[date, date]:
+def _period_range(period_type: str, ref_date: date | None = None,
+                  start: date | None = None, end: date | None = None) -> tuple[date, date]:
+    if period_type == "custom" and start:
+        if end:
+            return start, end
+        _, last_day = monthrange(start.year, start.month)
+        return start, date(start.year, start.month, last_day)
+
     d = ref_date or date.today()
     if period_type == "monthly":
-        start = d.replace(day=1)
+        s = d.replace(day=1)
         _, last_day = monthrange(d.year, d.month)
-        end = d.replace(day=last_day)
+        return s, d.replace(day=last_day)
     elif period_type == "quarterly":
         q_month = ((d.month - 1) // 3) * 3 + 1
-        start = date(d.year, q_month, 1)
+        s = date(d.year, q_month, 1)
         end_month = q_month + 2
         _, last_day = monthrange(d.year, end_month)
-        end = date(d.year, end_month, last_day)
+        return s, date(d.year, end_month, last_day)
     else:  # yearly
-        start = date(d.year, 1, 1)
-        end = date(d.year, 12, 31)
-    return start, end
+        return date(d.year, 1, 1), date(d.year, 12, 31)
+
+
+def _apply_filters(stmt, obj: UserObjective):
+    """Add WHERE clauses for objective filters (client category, region, product family)."""
+    if obj.filter_client_category:
+        stmt = stmt.where(Client.tariff_category == obj.filter_client_category)
+    if obj.filter_region:
+        stmt = stmt.where(or_(
+            Client.region == obj.filter_region,
+            Client.city.ilike(f"%{obj.filter_region}%"),
+        ))
+    if obj.filter_product_family:
+        stmt = stmt.join(Product, Product.sage_ref == SalesLine.article_ref).where(
+            or_(
+                Product.family_label == obj.filter_product_family,
+                Product.family == obj.filter_product_family,
+            )
+        )
+    return stmt
+
+
+def _has_filters(obj: UserObjective) -> bool:
+    return bool(obj.filter_client_category or obj.filter_region or obj.filter_product_family)
+
+
+def _base_filtered(user_id: str, start: date, end: date, obj: UserObjective):
+    """Build base query with user/date/filter conditions, joining Client when needed."""
+    needs_client = bool(obj.filter_client_category or obj.filter_region)
+    stmt = select(SalesLine)
+    if needs_client:
+        stmt = stmt.join(Client, Client.id == SalesLine.client_id)
+    stmt = stmt.where(
+        SalesLine.user_id == user_id,
+        SalesLine.date >= start,
+        SalesLine.date <= end,
+    )
+    if needs_client:
+        if obj.filter_client_category:
+            stmt = stmt.where(Client.tariff_category == obj.filter_client_category)
+        if obj.filter_region:
+            stmt = stmt.where(or_(
+                Client.region == obj.filter_region,
+                Client.city.ilike(f"%{obj.filter_region}%"),
+            ))
+    if obj.filter_product_family:
+        stmt = stmt.join(Product, Product.sage_ref == SalesLine.article_ref).where(
+            or_(
+                Product.family_label == obj.filter_product_family,
+                Product.family == obj.filter_product_family,
+            )
+        )
+    return stmt
 
 
 @router.get("/progress")
@@ -205,17 +316,23 @@ async def objectives_progress(
 
     results = []
     for obj in objectives:
-        start, end = _period_range(obj.period_type, ref_date)
+        start, end = _period_range(obj.period_type, ref_date, obj.start_date, obj.end_date)
 
-        if obj.metric in ("ca", "margin_gross", "quantity_kg", "quantity_units", "order_count", "avg_basket", "avg_ca_per_order"):
-            current = await _compute_simple_metric(db, user_id, obj.metric, start, end)
-        elif obj.metric == "margin_net":
-            current = await _compute_net_margin(db, user_id, start, end, all_rules)
+        if obj.metric == "margin_net":
+            current = await _compute_net_margin(db, user_id, start, end, all_rules, obj)
         else:
-            current = 0
+            current = await _compute_metric(db, user_id, obj.metric, start, end, obj)
 
         target = float(obj.target_value)
         pct = round((current / target * 100) if target > 0 else 0, 1)
+
+        filter_tags = []
+        if obj.filter_client_category:
+            filter_tags.append(f"Cat: {obj.filter_client_category}")
+        if obj.filter_region:
+            filter_tags.append(f"Rég: {obj.filter_region}")
+        if obj.filter_product_family:
+            filter_tags.append(f"Fam: {obj.filter_product_family}")
 
         results.append({
             "id": obj.id,
@@ -227,67 +344,89 @@ async def objectives_progress(
             "target_value": target,
             "current_value": round(current, 2),
             "progress_pct": min(pct, 999),
+            "filter_tags": filter_tags,
         })
 
     return results
 
 
-async def _compute_simple_metric(db: AsyncSession, user_id: str, metric: str, start: date, end: date) -> float:
-    base = select(SalesLine).where(
-        SalesLine.user_id == user_id,
-        SalesLine.date >= start,
-        SalesLine.date <= end,
-    )
+async def _compute_metric(db: AsyncSession, user_id: str, metric: str,
+                          start: date, end: date, obj: UserObjective) -> float:
+    has_f = _has_filters(obj)
+    needs_client = bool(obj.filter_client_category or obj.filter_region)
+
+    def _build_base():
+        q = select(SalesLine)
+        if needs_client:
+            q = q.join(Client, Client.id == SalesLine.client_id)
+        q = q.where(SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
+        if obj.filter_client_category:
+            q = q.where(Client.tariff_category == obj.filter_client_category)
+        if obj.filter_region:
+            q = q.where(or_(Client.region == obj.filter_region, Client.city.ilike(f"%{obj.filter_region}%")))
+        if obj.filter_product_family:
+            q = q.join(Product, Product.sage_ref == SalesLine.article_ref).where(
+                or_(Product.family_label == obj.filter_product_family, Product.family == obj.filter_product_family))
+        return q
 
     if metric == "ca":
-        stmt = select(func.coalesce(func.sum(SalesLine.amount_ht), 0)).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        return float((await db.execute(stmt)).scalar())
+        base = _build_base().with_only_columns(func.coalesce(func.sum(SalesLine.amount_ht), 0))
+        return float((await db.execute(base)).scalar())
 
     elif metric == "margin_gross":
-        stmt = select(func.coalesce(func.sum(SalesLine.margin_value), 0)).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        return float((await db.execute(stmt)).scalar())
+        base = _build_base().with_only_columns(func.coalesce(func.sum(SalesLine.margin_value), 0))
+        return float((await db.execute(base)).scalar())
 
     elif metric == "quantity_kg":
-        stmt = select(func.coalesce(func.sum(SalesLine.net_weight), 0)).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        return float((await db.execute(stmt)).scalar()) / 1000  # Sage stores grams
+        base = _build_base().with_only_columns(func.coalesce(func.sum(SalesLine.net_weight), 0))
+        return float((await db.execute(base)).scalar()) / 1000
 
     elif metric == "quantity_units":
-        stmt = select(func.coalesce(func.sum(SalesLine.quantity), 0)).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        return float((await db.execute(stmt)).scalar())
+        base = _build_base().with_only_columns(func.coalesce(func.sum(SalesLine.quantity), 0))
+        return float((await db.execute(base)).scalar())
 
     elif metric == "order_count":
-        stmt = select(func.count(func.distinct(SalesLine.sage_piece_id))).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        return float((await db.execute(stmt)).scalar())
+        base = _build_base().with_only_columns(func.count(distinct(SalesLine.sage_piece_id)))
+        return float((await db.execute(base)).scalar())
+
+    elif metric == "client_count":
+        base = _build_base().with_only_columns(func.count(distinct(SalesLine.client_sage_id)))
+        return float((await db.execute(base)).scalar())
 
     elif metric in ("avg_basket", "avg_ca_per_order"):
-        ca_stmt = select(func.coalesce(func.sum(SalesLine.amount_ht), 0)).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        total_ca = float((await db.execute(ca_stmt)).scalar())
-        count_stmt = select(func.count(func.distinct(SalesLine.sage_piece_id))).where(
-            SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
-        count = int((await db.execute(count_stmt)).scalar())
+        ca_base = _build_base().with_only_columns(func.coalesce(func.sum(SalesLine.amount_ht), 0))
+        total_ca = float((await db.execute(ca_base)).scalar())
+        cnt_base = _build_base().with_only_columns(func.count(distinct(SalesLine.sage_piece_id)))
+        count = int((await db.execute(cnt_base)).scalar())
         return total_ca / count if count > 0 else 0
 
     return 0
 
 
-async def _compute_net_margin(db: AsyncSession, user_id: str, start: date, end: date, all_rules: list) -> float:
-    stmt = (
-        select(SalesLine.amount_ht, SalesLine.margin_value, SalesLine.net_weight, SalesLine.date, Client.margin_group)
-        .outerjoin(Client, Client.id == SalesLine.client_id)
-        .where(SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end)
+async def _compute_net_margin(db: AsyncSession, user_id: str, start: date, end: date,
+                              all_rules: list, obj: UserObjective) -> float:
+    needs_client = bool(obj.filter_client_category or obj.filter_region)
+
+    base = select(
+        SalesLine.amount_ht, SalesLine.margin_value, SalesLine.net_weight,
+        SalesLine.date, SalesLine.article_ref, Client.margin_group
+    ).outerjoin(Client, Client.id == SalesLine.client_id).where(
+        SalesLine.user_id == user_id, SalesLine.date >= start, SalesLine.date <= end
     )
-    result = await db.execute(stmt)
+    if obj.filter_client_category:
+        base = base.where(Client.tariff_category == obj.filter_client_category)
+    if obj.filter_region:
+        base = base.where(or_(Client.region == obj.filter_region, Client.city.ilike(f"%{obj.filter_region}%")))
+    if obj.filter_product_family:
+        base = base.join(Product, Product.sage_ref == SalesLine.article_ref).where(
+            or_(Product.family_label == obj.filter_product_family, Product.family == obj.filter_product_family))
+
+    result = await db.execute(base)
     total_net = 0.0
     for row in result.all():
         ca = float(row.amount_ht or 0)
         mg = float(row.margin_value or 0)
-        weight_kg = float(row.net_weight or 0) / 1000  # Sage stores grams
+        weight_kg = float(row.net_weight or 0) / 1000
         net = mg
         for rule in all_rules:
             if not rule_applies_to_client(rule, row.margin_group, row.date):
