@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, PlaylistItem, PlaylistInsight, EnrichSuggestion, UpdateClientPayload } from "@/lib/api";
+import { useEffect, useState, useCallback } from "react";
+import { api, PlaylistItem, PlaylistInsight, EnrichSuggestion, UpdateClientPayload, MonthReminderItem } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
 import {
   ListMusic,
   CheckCircle2,
@@ -38,7 +39,7 @@ import {
   Package,
   MapPin,
   ShoppingCart,
-  Calendar,
+  Calendar as CalendarIcon,
   ArrowRight,
   Eye,
   X,
@@ -57,6 +58,10 @@ import {
   Clock,
   Bell,
   ListPlus,
+  Trash2,
+  Edit3,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -100,8 +105,341 @@ function reasonIcon(reason: string) {
   return map[reason] || "📋";
 }
 
+function formatDateFr(dateStr: string) {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function groupRemindersByDate(reminders: MonthReminderItem[]) {
+  const groups: Record<string, MonthReminderItem[]> = {};
+  for (const r of reminders) {
+    if (!groups[r.generated_date]) groups[r.generated_date] = [];
+    groups[r.generated_date].push(r);
+  }
+  return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+}
+
+/* ────────── Agenda view ────────── */
+
+function AgendaView({ isManager, allUsers, openAddDialog }: {
+  isManager: boolean;
+  allUsers: { id: string; name: string; role: string }[];
+  openAddDialog: (prefilledDate?: string) => void;
+}) {
+  const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [monthReminders, setMonthReminders] = useState<MonthReminderItem[]>([]);
+  const [datesWithReminders, setDatesWithReminders] = useState<Date[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingReminder, setEditingReminder] = useState<MonthReminderItem | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const fetchMonth = useCallback(async (d: Date) => {
+    setLoading(true);
+    try {
+      const res = await api.getRemindersByMonth(d.getFullYear(), d.getMonth() + 1);
+      setMonthReminders(res.reminders);
+      setDatesWithReminders(res.dates.map((s) => new Date(s + "T00:00:00")));
+    } catch {
+      toast.error("Erreur chargement agenda");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMonth(currentMonth);
+  }, [currentMonth, fetchMonth]);
+
+  const handleMonthChange = (d: Date) => {
+    setCurrentMonth(d);
+  };
+
+  const selectedDateStr = selectedDate
+    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`
+    : null;
+
+  const visibleReminders = selectedDateStr
+    ? monthReminders.filter((r) => r.generated_date === selectedDateStr)
+    : monthReminders.filter((r) => r.generated_date >= new Date().toISOString().slice(0, 10));
+
+  const grouped = groupRemindersByDate(visibleReminders);
+
+  const handleDeleteReminder = async (id: string) => {
+    try {
+      await api.deleteReminder(id);
+      toast.success("Rappel supprimé");
+      fetchMonth(currentMonth);
+    } catch {
+      toast.error("Erreur suppression");
+    }
+  };
+
+  const handleMarkDone = async (id: string) => {
+    try {
+      await api.updateReminder(id, { status: "done" });
+      toast.success("Rappel marqué fait");
+      fetchMonth(currentMonth);
+    } catch {
+      toast.error("Erreur mise à jour");
+    }
+  };
+
+  const openEdit = (r: MonthReminderItem) => {
+    setEditingReminder(r);
+    setEditDate(r.generated_date);
+    setEditTime(r.reminder_time || "");
+    setEditNote(r.reason_detail || "");
+  };
+
+  const handleEditSave = async () => {
+    if (!editingReminder) return;
+    setEditSaving(true);
+    try {
+      await api.updateReminder(editingReminder.id, {
+        target_date: editDate,
+        target_time: editTime || undefined,
+        reason_detail: editNote || undefined,
+      });
+      toast.success("Rappel modifié");
+      setEditingReminder(null);
+      fetchMonth(currentMonth);
+    } catch {
+      toast.error("Erreur modification");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const hasReminderModifier = {
+    hasReminder: datesWithReminders,
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-5">
+      {/* Left: Calendar */}
+      <div className="lg:w-[340px] shrink-0 space-y-3">
+        <Card>
+          <CardContent className="p-3 flex justify-center">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={setSelectedDate}
+              month={currentMonth}
+              onMonthChange={handleMonthChange}
+              modifiers={hasReminderModifier}
+              modifiersClassNames={{
+                hasReminder: "has-reminder-dot",
+              }}
+              locale={{
+                localize: {
+                  day: (d: number) => ["Di", "Lu", "Ma", "Me", "Je", "Ve", "Sa"][d],
+                  month: (m: number) => ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"][m],
+                  ordinalNumber: (n: number) => String(n),
+                  era: () => "",
+                  quarter: () => "",
+                  dayPeriod: () => "",
+                },
+                formatLong: {
+                  date: () => "dd/MM/yyyy",
+                  time: () => "HH:mm",
+                  dateTime: () => "dd/MM/yyyy HH:mm",
+                },
+                options: { weekStartsOn: 1 as const, firstWeekContainsDate: 4 as const },
+                match: {
+                  ordinalNumber: () => ({ value: 0, rest: "" }),
+                  era: () => ({ value: 0, rest: "" }),
+                  quarter: () => ({ value: 0, rest: "" }),
+                  month: () => ({ value: 0, rest: "" }),
+                  day: () => ({ value: 0, rest: "" }),
+                  dayPeriod: () => ({ value: 0, rest: "" }),
+                },
+                code: "fr",
+              } as never}
+              className="w-full"
+            />
+          </CardContent>
+        </Card>
+        {selectedDate && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={() => setSelectedDate(undefined)}
+          >
+            Voir tous les rappels à venir
+          </Button>
+        )}
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => openAddDialog(selectedDateStr || undefined)}
+        >
+          <Plus className="w-4 h-4 mr-1.5" />
+          Ajouter un rappel
+        </Button>
+      </div>
+
+      {/* Right: Reminders list */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-muted-foreground">
+            {selectedDateStr
+              ? `Rappels du ${formatDateFr(selectedDateStr)}`
+              : "Rappels à venir"}
+          </h3>
+          {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+        </div>
+
+        {!loading && grouped.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground text-sm">
+              <Bell className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              {selectedDateStr ? "Aucun rappel ce jour" : "Aucun rappel à venir"}
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="space-y-4">
+          {grouped.map(([dateStr, reminders]) => (
+            <div key={dateStr}>
+              <div className="flex items-center gap-2 mb-2">
+                <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground capitalize">
+                  {formatDateFr(dateStr)}
+                </span>
+                <button
+                  className="ml-auto text-xs text-sora hover:underline flex items-center gap-1"
+                  onClick={() => openAddDialog(dateStr)}
+                >
+                  <Plus className="w-3 h-3" />
+                  Ajouter
+                </button>
+              </div>
+              <div className="border rounded-lg divide-y bg-card">
+                {reminders.map((r) => {
+                  const isDone = r.status === "done";
+                  return (
+                    <div
+                      key={r.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors ${isDone ? "opacity-40" : ""}`}
+                    >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isDone ? "bg-green-100" : "bg-sora/10"}`}>
+                        {isDone ? (
+                          <Check className="w-3.5 h-3.5 text-green-600" />
+                        ) : (
+                          <Bell className="w-3.5 h-3.5 text-sora" />
+                        )}
+                      </div>
+
+                      {r.reminder_time && (
+                        <span className="text-xs font-mono text-muted-foreground shrink-0 w-11">
+                          {r.reminder_time}
+                        </span>
+                      )}
+
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          href={`/clients/${r.client_id}`}
+                          className="text-sm font-medium truncate hover:underline block"
+                        >
+                          {r.client_name}
+                        </Link>
+                        {r.reason_detail && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {r.reason_detail}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!isDone && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleMarkDone(r.id)}
+                            title="Marquer fait"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => openEdit(r)}
+                          title="Modifier"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleDeleteReminder(r.id)}
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Edit reminder dialog */}
+      <Dialog open={!!editingReminder} onOpenChange={(open) => { if (!open) setEditingReminder(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5" />
+              Modifier le rappel
+            </DialogTitle>
+          </DialogHeader>
+          {editingReminder && (
+            <div className="space-y-4">
+              <div className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-muted-foreground" />
+                {editingReminder.client_name}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                  <Input type="date" className="h-8 text-sm" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Heure</label>
+                  <Input type="time" className="h-8 text-sm" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Note</label>
+                <Input className="h-8 text-sm" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Note du rappel..." />
+              </div>
+              <Button className="w-full" onClick={handleEditSave} disabled={editSaving || !editDate}>
+                {editSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                Enregistrer
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ────────── Main page ────────── */
 
 export default function PlaylistPage() {
+  const [activeTab, setActiveTab] = useState<"today" | "agenda">("today");
   const [items, setItems] = useState<PlaylistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -145,14 +483,19 @@ export default function PlaylistPage() {
     return () => clearTimeout(timer);
   }, [addClientSearch]);
 
-  const openAddDialog = () => {
-    setAddTab("todo");
+  const openAddDialog = (prefilledDate?: string) => {
+    if (prefilledDate) {
+      setAddTab("reminder");
+      setAddReminderDate(prefilledDate);
+    } else {
+      setAddTab(activeTab === "agenda" ? "reminder" : "todo");
+      setAddReminderDate("");
+    }
     setAddClientSearch("");
     setAddClientResults([]);
     setAddSelectedClient(null);
     setAddNote("");
     setAddTargetUser("");
-    setAddReminderDate("");
     setAddReminderTime("");
     setShowAddDialog(true);
   };
@@ -180,7 +523,9 @@ export default function PlaylistPage() {
         toast.success(res.message);
       }
       setShowAddDialog(false);
-      api.getPlaylist().then(setItems).catch(() => {});
+      if (activeTab === "today") {
+        api.getPlaylist().then(setItems).catch(() => {});
+      }
     } catch {
       toast.error("Erreur lors de l'ajout");
     } finally {
@@ -325,496 +670,522 @@ export default function PlaylistPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header with tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-3">
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
             <ListMusic className="w-5 h-5 sm:w-6 sm:h-6" />
-            To do du jour
+            To do
           </h2>
-          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-            <span className="text-green-600 font-medium">{doneCount} fait{doneCount > 1 ? "s" : ""}</span>
-            <span>·</span>
-            <span>{skippedCount} passé{skippedCount > 1 ? "s" : ""}</span>
-            <span>·</span>
-            <span>{pendingCount} en attente</span>
+          <div className="flex bg-muted rounded-lg p-0.5">
+            <button
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeTab === "today"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setActiveTab("today")}
+            >
+              Aujourd&apos;hui
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                activeTab === "agenda"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setActiveTab("agenda")}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Agenda
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-muted-foreground">
-            {total} appels prévus
-          </span>
-          <Button size="sm" onClick={openAddDialog}>
+          {activeTab === "today" && (
+            <span className="text-sm font-semibold text-muted-foreground">
+              {total} appels prévus
+            </span>
+          )}
+          <Button size="sm" onClick={() => openAddDialog()}>
             <Plus className="w-4 h-4 mr-1.5" />
             Ajouter
           </Button>
         </div>
       </div>
 
-      {/* Progress bar */}
-      {total > 0 && (
-        <div className="w-full bg-accent rounded-full h-2.5 overflow-hidden">
-          <div className="h-full flex">
-            <div
-              className="bg-green-500 transition-all duration-500"
-              style={{ width: `${(doneCount / total) * 100}%` }}
-            />
-            <div
-              className="bg-gray-300 transition-all duration-500"
-              style={{ width: `${(skippedCount / total) * 100}%` }}
-            />
+      {/* ── Today tab ── */}
+      {activeTab === "today" && (
+        <>
+          {/* Stats */}
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="text-green-600 font-medium">{doneCount} fait{doneCount > 1 ? "s" : ""}</span>
+            <span>·</span>
+            <span>{skippedCount} passé{skippedCount > 1 ? "s" : ""}</span>
+            <span>·</span>
+            <span>{pendingCount} en attente</span>
           </div>
-        </div>
-      )}
 
-      {/* Layout: list + side panel */}
-      <div className="flex gap-0">
-        {/* List */}
-        <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedId ? "mr-0" : ""}`}>
-          {loading ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-              Chargement...
+          {/* Progress bar */}
+          {total > 0 && (
+            <div className="w-full bg-accent rounded-full h-2.5 overflow-hidden">
+              <div className="h-full flex">
+                <div
+                  className="bg-green-500 transition-all duration-500"
+                  style={{ width: `${(doneCount / total) * 100}%` }}
+                />
+                <div
+                  className="bg-gray-300 transition-all duration-500"
+                  style={{ width: `${(skippedCount / total) * 100}%` }}
+                />
+              </div>
             </div>
-          ) : items.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center text-muted-foreground">
-                Aucune To do pour aujourd&apos;hui. Lancez la génération depuis
-                l&apos;admin.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="border rounded-lg divide-y bg-card">
-              {items.map((item, idx) => {
-                const isDone = item.status === "done" || item.status === "called";
-                const isSkipped = item.status === "skipped";
-                const isProcessed = isDone || isSkipped;
-                const isSelected = item.playlist_id === selectedId;
+          )}
 
-                return (
-                  <div
-                    key={item.playlist_id}
-                    className={`flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors cursor-pointer ${
-                      isSelected ? "bg-sora/5 border-l-2 border-l-sora" : "hover:bg-accent/30"
-                    } ${isProcessed ? "opacity-40" : ""}`}
-                    onClick={() => openInsight(item)}
-                  >
-                    {/* Priority number */}
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      isDone ? "bg-green-100 text-green-600" : isSkipped ? "bg-gray-100 text-gray-400" : "bg-accent text-foreground"
-                    }`}>
-                      {isDone ? "✓" : idx + 1}
-                    </div>
+          {/* Layout: list + side panel */}
+          <div className="flex gap-0">
+            {/* List */}
+            <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedId ? "mr-0" : ""}`}>
+              {loading ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                  Chargement...
+                </div>
+              ) : items.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    Aucune To do pour aujourd&apos;hui. Lancez la génération depuis
+                    l&apos;admin.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="border rounded-lg divide-y bg-card">
+                  {items.map((item, idx) => {
+                    const isDone = item.status === "done" || item.status === "called";
+                    const isSkipped = item.status === "skipped";
+                    const isProcessed = isDone || isSkipped;
+                    const isSelected = item.playlist_id === selectedId;
 
-                    {/* Reason badge */}
-                    <Badge variant="outline" className={`text-xs px-1.5 py-0 shrink-0 ${reasonBadgeClass(item.reason)}`}>
-                      <span className="mr-0.5">{reasonIcon(item.reason)}</span>
-                      <span className="hidden sm:inline">{reasonLabel(item.reason)}</span>
-                    </Badge>
+                    return (
+                      <div
+                        key={item.playlist_id}
+                        className={`flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3 transition-colors cursor-pointer ${
+                          isSelected ? "bg-sora/5 border-l-2 border-l-sora" : "hover:bg-accent/30"
+                        } ${isProcessed ? "opacity-40" : ""}`}
+                        onClick={() => openInsight(item)}
+                      >
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          isDone ? "bg-green-100 text-green-600" : isSkipped ? "bg-gray-100 text-gray-400" : "bg-accent text-foreground"
+                        }`}>
+                          {isDone ? "✓" : idx + 1}
+                        </div>
 
-                    {/* Client status */}
-                    <StatusBadge status={item.client_status} size="xs" />
+                        <Badge variant="outline" className={`text-xs px-1.5 py-0 shrink-0 ${reasonBadgeClass(item.reason)}`}>
+                          <span className="mr-0.5">{reasonIcon(item.reason)}</span>
+                          <span className="hidden sm:inline">{reasonLabel(item.reason)}</span>
+                        </Badge>
 
-                    {/* Contact + Company info */}
-                    <div className="flex-1 min-w-0">
-                      {item.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(item.primary_contact.name) ? (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                        <StatusBadge status={item.client_status} size="xs" />
+
+                        <div className="flex-1 min-w-0">
+                          {item.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(item.primary_contact.name) ? (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <p className="text-sm font-medium truncate">
+                                  {item.primary_contact.name}
+                                </p>
+                                {item.primary_contact.role && (
+                                  <span className="text-[10px] text-muted-foreground shrink-0">
+                                    · {item.primary_contact.role}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {item.name}
+                                </p>
+                              </div>
+                            </>
+                          ) : (
                             <p className="text-sm font-medium truncate">
-                              {item.primary_contact.name}
+                              {item.contact_name && !/^\+?\d[\d\s-]{6,}$/.test(item.contact_name) ? item.contact_name : item.name}
                             </p>
-                            {item.primary_contact.role && (
-                              <span className="text-[10px] text-muted-foreground shrink-0">
-                                · {item.primary_contact.role}
-                              </span>
+                          )}
+                          {item.reason_detail && (
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
+                              {item.reason_detail}
+                            </p>
+                          )}
+                        </div>
+
+                        {item.city && (
+                          <span className="text-xs text-muted-foreground hidden lg:block shrink-0">
+                            {item.city}
+                          </span>
+                        )}
+
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {!isProcessed && (
+                            <>
+                              {item.phone_e164 && (
+                                <ClickToCall
+                                  phoneNumber={item.phone_e164}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                />
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleStatus(item.playlist_id, "done")}
+                                title="Marquer fait"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleStatus(item.playlist_id, "skipped")}
+                                title="Passer"
+                              >
+                                <SkipForward className="w-3.5 h-3.5 text-muted-foreground" />
+                              </Button>
+                            </>
+                          )}
+
+                          {isProcessed && (
+                            <div className="flex items-center gap-1">
+                              <Badge
+                                variant={isDone ? "default" : "secondary"}
+                                className="text-xs"
+                              >
+                                {isDone ? "Fait" : "Passé"}
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleStatus(item.playlist_id, "pending")}
+                                title="Remettre en attente"
+                              >
+                                <Undo2 className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Side panel (Sheet) */}
+          <Sheet open={!!selectedId} onOpenChange={(open) => { if (!open) closePanel(); }}>
+            <SheetContent side="right" className="w-full sm:w-[440px] sm:max-w-[440px] p-0 overflow-y-auto">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Détail opportunité</SheetTitle>
+              </SheetHeader>
+              {insightLoading ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <Loader2 className="w-6 h-6 animate-spin mb-3" />
+                  <p className="text-sm">Chargement...</p>
+                </div>
+              ) : insight && selectedItem ? (
+                <div className="flex flex-col h-full">
+                  <div className="sticky top-0 z-10 bg-card border-b px-5 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className={`text-xs shrink-0 ${reasonBadgeClass(insight.reason)}`}>
+                            {reasonIcon(insight.reason)} {reasonLabel(insight.reason)}
+                          </Badge>
+                        </div>
+                        {selectedItem.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(selectedItem.primary_contact.name) && (
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <User className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-sm font-medium truncate">{selectedItem.primary_contact.name}</span>
+                            {selectedItem.primary_contact.role && (
+                              <span className="text-xs text-muted-foreground shrink-0">· {selectedItem.primary_contact.role}</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                            <p className="text-xs text-muted-foreground truncate">
-                              {item.name}
-                            </p>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-sm font-medium truncate">
-                          {item.contact_name && !/^\+?\d[\d\s-]{6,}$/.test(item.contact_name) ? item.contact_name : item.name}
-                        </p>
-                      )}
-                      {item.reason_detail && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {item.reason_detail}
+                        )}
+                        <h3 className="text-lg font-bold leading-tight truncate flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                          {insight.client_name}
+                        </h3>
+                        {insight.client_city && (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3.5 h-3.5" />
+                            {insight.client_city}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      <div className="flex gap-2">
+                        <Link href={`/clients/${selectedItem.id}`} className="flex-1">
+                          <Button variant="outline" size="sm" className="w-full text-xs h-9">
+                            <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                            Fiche client
+                          </Button>
+                        </Link>
+                        {selectedItem.phone_e164 ? (
+                          <ClickToCall
+                            phoneNumber={selectedItem.phone_e164}
+                            variant="cta"
+                            contactName={selectedItem.primary_contact?.name || selectedItem.contact_name || undefined}
+                            clientId={selectedItem.id}
+                            clientName={selectedItem.name}
+                            className="flex-1"
+                          />
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-xs h-9 border-dashed"
+                            onClick={() => enrichClient(selectedItem.id)}
+                            disabled={enrichLoading}
+                          >
+                            {enrichLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            ) : (
+                              <Search className="w-3.5 h-3.5 mr-1.5" />
+                            )}
+                            {enrichLoading ? "Recherche…" : "Trouver un n°"}
+                          </Button>
+                        )}
+                      </div>
+                      {selectedItem.phone_e164 && (() => {
+                        const rawName = selectedItem.primary_contact?.name || selectedItem.contact_name;
+                        const isPhone = !rawName || /^\+?\d[\d\s-]{6,}$/.test(rawName);
+                        return (
+                          <p className="text-xs text-muted-foreground text-center">
+                            {!isPhone && <><span>{rawName}</span><span className="mx-1">·</span></>}
+                            <span className="font-mono">{selectedItem.phone_e164}</span>
+                          </p>
+                        );
+                      })()}
+                      {!selectedItem.phone_e164 && (
+                        <p className="text-xs text-muted-foreground text-center italic">
+                          Pas de numéro — cliquez sur &quot;Trouver un n°&quot; pour lancer l&apos;enrichissement IA
                         </p>
                       )}
                     </div>
+                  </div>
 
-                    {/* City */}
-                    {item.city && (
-                      <span className="text-xs text-muted-foreground hidden lg:block shrink-0">
-                        {item.city}
-                      </span>
-                    )}
+                  <div className="flex-1 px-5 py-4 space-y-5">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="bg-accent/40 rounded-lg p-3 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-sora/10 flex items-center justify-center shrink-0">
+                          <DollarSign className="w-4 h-4 text-sora" />
+                        </div>
+                        <div>
+                          <p className="text-base font-bold">{insight.ca_12m.toLocaleString("fr-FR")}€</p>
+                          <p className="text-xs text-muted-foreground">CA 12 mois</p>
+                        </div>
+                      </div>
+                      <div className="bg-accent/40 rounded-lg p-3 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center shrink-0">
+                          <ShoppingBag className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-base font-bold">{insight.avg_basket.toLocaleString("fr-FR")}€</p>
+                          <p className="text-xs text-muted-foreground">Panier moy.</p>
+                        </div>
+                      </div>
+                      <div className={`rounded-lg p-3 flex items-center gap-3 ${insight.score_churn > 50 ? "bg-red-50" : "bg-accent/40"}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${insight.score_churn > 50 ? "bg-red-100" : "bg-accent"}`}>
+                          <TrendingDown className={`w-4 h-4 ${insight.score_churn > 50 ? "text-red-600" : "text-muted-foreground"}`} />
+                        </div>
+                        <div>
+                          <p className={`text-base font-bold ${insight.score_churn > 50 ? "text-red-600" : ""}`}>{insight.score_churn}%</p>
+                          <p className="text-xs text-muted-foreground">Churn</p>
+                        </div>
+                      </div>
+                      <div className={`rounded-lg p-3 flex items-center gap-3 ${insight.score_upsell > 40 ? "bg-green-50" : "bg-accent/40"}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${insight.score_upsell > 40 ? "bg-green-100" : "bg-accent"}`}>
+                          <TrendingUp className={`w-4 h-4 ${insight.score_upsell > 40 ? "text-green-600" : "text-muted-foreground"}`} />
+                        </div>
+                        <div>
+                          <p className={`text-base font-bold ${insight.score_upsell > 40 ? "text-green-600" : ""}`}>{insight.score_upsell}%</p>
+                          <p className="text-xs text-muted-foreground">Upsell</p>
+                        </div>
+                      </div>
+                    </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {!isProcessed && (
-                        <>
-                          {item.phone_e164 && (
-                            <ClickToCall
-                              phoneNumber={item.phone_e164}
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                            />
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleStatus(item.playlist_id, "done")}
-                            title="Marquer fait"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleStatus(item.playlist_id, "skipped")}
-                            title="Passer"
-                          >
-                            <SkipForward className="w-3.5 h-3.5 text-muted-foreground" />
-                          </Button>
-                        </>
+                    <div className="space-y-2">
+                      {insight.days_since_last_order !== null && insight.days_since_last_order !== undefined && (
+                        <div className="flex items-center gap-2.5 text-sm">
+                          <CalendarIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span>Dernière commande il y a <strong>{insight.days_since_last_order} jours</strong></span>
+                        </div>
                       )}
-
-                      {isProcessed && (
-                        <div className="flex items-center gap-1">
-                          <Badge
-                            variant={isDone ? "default" : "secondary"}
-                            className="text-xs"
-                          >
-                            {isDone ? "Fait" : "Passé"}
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleStatus(item.playlist_id, "pending")}
-                            title="Remettre en attente"
-                          >
-                            <Undo2 className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-                          </Button>
+                      {insight.reason_detail && (
+                        <div className="flex items-center gap-2.5 text-sm">
+                          <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span>{insight.reason_detail}</span>
+                        </div>
+                      )}
+                      {insight.ca_total > 0 && (
+                        <div className="flex items-center gap-2.5 text-sm">
+                          <DollarSign className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span>CA total historique : <strong>{insight.ca_total.toLocaleString("fr-FR")}€</strong></span>
                         </div>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Side panel (Sheet) */}
-      <Sheet open={!!selectedId} onOpenChange={(open) => { if (!open) closePanel(); }}>
-        <SheetContent side="right" className="w-full sm:w-[440px] sm:max-w-[440px] p-0 overflow-y-auto">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Détail opportunité</SheetTitle>
-          </SheetHeader>
-          {insightLoading ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <Loader2 className="w-6 h-6 animate-spin mb-3" />
-              <p className="text-sm">Chargement...</p>
-            </div>
-          ) : insight && selectedItem ? (
-            <div className="flex flex-col h-full">
-              {/* Panel header */}
-              <div className="sticky top-0 z-10 bg-card border-b px-5 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className={`text-xs shrink-0 ${reasonBadgeClass(insight.reason)}`}>
-                        {reasonIcon(insight.reason)} {reasonLabel(insight.reason)}
-                      </Badge>
-                    </div>
-                    {selectedItem.primary_contact && !/^\+?\d[\d\s-]{6,}$/.test(selectedItem.primary_contact.name) && (
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <User className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium truncate">{selectedItem.primary_contact.name}</span>
-                        {selectedItem.primary_contact.role && (
-                          <span className="text-xs text-muted-foreground shrink-0">· {selectedItem.primary_contact.role}</span>
-                        )}
+                    {insight.upsell_recommendations && insight.upsell_recommendations.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2 text-sensai">
+                          <Zap className="w-4 h-4" />
+                          Opportunités upsell
+                        </h4>
+                        <div className="border border-sensai/20 bg-sensai/5 rounded-lg divide-y divide-sensai/10">
+                          {insight.upsell_recommendations.map((r) => (
+                            <Link
+                              key={r.article_ref}
+                              href={`/products?ref=${encodeURIComponent(r.article_ref)}`}
+                              className="flex items-center gap-2.5 px-3 py-2 hover:bg-sensai/10 transition-colors group"
+                            >
+                              <div className="w-6 h-6 rounded-full bg-sensai/15 flex items-center justify-center shrink-0">
+                                <Zap className="w-3 h-3 text-sensai" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate group-hover:underline">{r.designation}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {r.similar_clients_count} client{r.similar_clients_count > 1 ? "s" : ""} similaire{r.similar_clients_count > 1 ? "s" : ""}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-medium">{r.avg_revenue.toLocaleString("fr-FR")}€</p>
+                                <p className="text-[10px] text-muted-foreground">CA moy.</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <h3 className="text-lg font-bold leading-tight truncate flex items-center gap-1.5">
-                      <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                      {insight.client_name}
-                    </h3>
-                    {insight.client_city && (
-                      <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                        {insight.client_city}
-                      </p>
-                    )}
-                  </div>
-                </div>
 
-                {/* Quick actions */}
-                <div className="mt-3 space-y-2">
-                  <div className="flex gap-2">
-                    <Link href={`/clients/${selectedItem.id}`} className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full text-xs h-9">
-                        <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                        Fiche client
-                      </Button>
-                    </Link>
-                    {selectedItem.phone_e164 ? (
-                      <ClickToCall
-                        phoneNumber={selectedItem.phone_e164}
-                        variant="cta"
-                        contactName={selectedItem.primary_contact?.name || selectedItem.contact_name || undefined}
-                        clientId={selectedItem.id}
-                        clientName={selectedItem.name}
-                        className="flex-1"
-                      />
+                    {insight.top_products.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                          <ShoppingCart className="w-4 h-4" />
+                          Produits commandés
+                        </h4>
+                        <div className="border rounded-lg divide-y">
+                          {insight.top_products.map((p) => (
+                            <Link
+                              key={p.article_ref}
+                              href={`/products?ref=${encodeURIComponent(p.article_ref)}`}
+                              className="flex items-center gap-2.5 px-3 py-2 hover:bg-accent/30 transition-colors group"
+                            >
+                              <Package className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate group-hover:underline">{p.designation}</p>
+                                {p.last_order_date && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Dernière cde : {new Date(p.last_order_date).toLocaleDateString("fr-FR")}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-medium">{p.total_ht.toLocaleString("fr-FR")}€</p>
+                                <p className="text-xs text-muted-foreground">{p.order_count}x</p>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {insight.ai_suggestion ? (
+                      <div className="border border-sora/20 bg-sora/5 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2.5 text-sora">
+                          <Sparkles className="w-4 h-4" />
+                          Recommandation IA
+                        </h4>
+                        <div className="text-sm whitespace-pre-line leading-relaxed">
+                          {insight.ai_suggestion}
+                        </div>
+                      </div>
                     ) : (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="flex-1 text-xs h-9 border-dashed"
-                        onClick={() => enrichClient(selectedItem.id)}
-                        disabled={enrichLoading}
+                        className="w-full"
+                        onClick={requestAi}
+                        disabled={aiLoading}
                       >
-                        {enrichLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        {aiLoading ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         ) : (
-                          <Search className="w-3.5 h-3.5 mr-1.5" />
+                          <Sparkles className="w-4 h-4 mr-2 text-sora" />
                         )}
-                        {enrichLoading ? "Recherche…" : "Trouver un n°"}
+                        {aiLoading ? "Analyse en cours..." : "Demander une recommandation IA"}
                       </Button>
                     )}
                   </div>
-                  {selectedItem.phone_e164 && (() => {
-                    const rawName = selectedItem.primary_contact?.name || selectedItem.contact_name;
-                    const isPhone = !rawName || /^\+?\d[\d\s-]{6,}$/.test(rawName);
-                    return (
-                      <p className="text-xs text-muted-foreground text-center">
-                        {!isPhone && <><span>{rawName}</span><span className="mx-1">·</span></>}
-                        <span className="font-mono">{selectedItem.phone_e164}</span>
-                      </p>
-                    );
-                  })()}
-                  {!selectedItem.phone_e164 && (
-                    <p className="text-xs text-muted-foreground text-center italic">
-                      Pas de numéro — cliquez sur &quot;Trouver un n°&quot; pour lancer l&apos;enrichissement IA
-                    </p>
-                  )}
-                </div>
-              </div>
 
-              {/* Panel body */}
-              <div className="flex-1 px-5 py-4 space-y-5">
-                {/* KPIs */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="bg-accent/40 rounded-lg p-3 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-sora/10 flex items-center justify-center shrink-0">
-                      <DollarSign className="w-4 h-4 text-sora" />
-                    </div>
-                    <div>
-                      <p className="text-base font-bold">{insight.ca_12m.toLocaleString("fr-FR")}€</p>
-                      <p className="text-xs text-muted-foreground">CA 12 mois</p>
-                    </div>
-                  </div>
-                  <div className="bg-accent/40 rounded-lg p-3 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center shrink-0">
-                      <ShoppingBag className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-base font-bold">{insight.avg_basket.toLocaleString("fr-FR")}€</p>
-                      <p className="text-xs text-muted-foreground">Panier moy.</p>
-                    </div>
-                  </div>
-                  <div className={`rounded-lg p-3 flex items-center gap-3 ${insight.score_churn > 50 ? "bg-red-50" : "bg-accent/40"}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${insight.score_churn > 50 ? "bg-red-100" : "bg-accent"}`}>
-                      <TrendingDown className={`w-4 h-4 ${insight.score_churn > 50 ? "text-red-600" : "text-muted-foreground"}`} />
-                    </div>
-                    <div>
-                      <p className={`text-base font-bold ${insight.score_churn > 50 ? "text-red-600" : ""}`}>{insight.score_churn}%</p>
-                      <p className="text-xs text-muted-foreground">Churn</p>
-                    </div>
-                  </div>
-                  <div className={`rounded-lg p-3 flex items-center gap-3 ${insight.score_upsell > 40 ? "bg-green-50" : "bg-accent/40"}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${insight.score_upsell > 40 ? "bg-green-100" : "bg-accent"}`}>
-                      <TrendingUp className={`w-4 h-4 ${insight.score_upsell > 40 ? "text-green-600" : "text-muted-foreground"}`} />
-                    </div>
-                    <div>
-                      <p className={`text-base font-bold ${insight.score_upsell > 40 ? "text-green-600" : ""}`}>{insight.score_upsell}%</p>
-                      <p className="text-xs text-muted-foreground">Upsell</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Context info */}
-                <div className="space-y-2">
-                  {insight.days_since_last_order !== null && insight.days_since_last_order !== undefined && (
-                    <div className="flex items-center gap-2.5 text-sm">
-                      <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span>Dernière commande il y a <strong>{insight.days_since_last_order} jours</strong></span>
+                  {selectedItem.status === "pending" && (
+                    <div className="sticky bottom-0 bg-card border-t px-5 py-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleStatus(selectedItem.playlist_id, "done")}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                        Fait
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleStatus(selectedItem.playlist_id, "skipped")}
+                      >
+                        <SkipForward className="w-4 h-4 mr-1.5" />
+                        Passer
+                      </Button>
                     </div>
                   )}
-                  {insight.reason_detail && (
-                    <div className="flex items-center gap-2.5 text-sm">
-                      <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span>{insight.reason_detail}</span>
-                    </div>
-                  )}
-                  {insight.ca_total > 0 && (
-                    <div className="flex items-center gap-2.5 text-sm">
-                      <DollarSign className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span>CA total historique : <strong>{insight.ca_total.toLocaleString("fr-FR")}€</strong></span>
+                  {selectedItem.status !== "pending" && (
+                    <div className="sticky bottom-0 bg-card border-t px-5 py-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => handleStatus(selectedItem.playlist_id, "pending")}
+                      >
+                        <Undo2 className="w-4 h-4 mr-1.5" />
+                        Remettre en attente
+                      </Button>
                     </div>
                   )}
                 </div>
-
-                {/* Upsell recommendations */}
-                {insight.upsell_recommendations && insight.upsell_recommendations.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2 text-sensai">
-                      <Zap className="w-4 h-4" />
-                      Opportunités upsell
-                    </h4>
-                    <div className="border border-sensai/20 bg-sensai/5 rounded-lg divide-y divide-sensai/10">
-                      {insight.upsell_recommendations.map((r) => (
-                        <Link
-                          key={r.article_ref}
-                          href={`/products?ref=${encodeURIComponent(r.article_ref)}`}
-                          className="flex items-center gap-2.5 px-3 py-2 hover:bg-sensai/10 transition-colors group"
-                        >
-                          <div className="w-6 h-6 rounded-full bg-sensai/15 flex items-center justify-center shrink-0">
-                            <Zap className="w-3 h-3 text-sensai" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate group-hover:underline">{r.designation}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {r.similar_clients_count} client{r.similar_clients_count > 1 ? "s" : ""} similaire{r.similar_clients_count > 1 ? "s" : ""}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-medium">{r.avg_revenue.toLocaleString("fr-FR")}€</p>
-                            <p className="text-[10px] text-muted-foreground">CA moy.</p>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Products */}
-                {insight.top_products.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
-                      <ShoppingCart className="w-4 h-4" />
-                      Produits commandés
-                    </h4>
-                    <div className="border rounded-lg divide-y">
-                      {insight.top_products.map((p) => (
-                        <Link
-                          key={p.article_ref}
-                          href={`/products?ref=${encodeURIComponent(p.article_ref)}`}
-                          className="flex items-center gap-2.5 px-3 py-2 hover:bg-accent/30 transition-colors group"
-                        >
-                          <Package className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate group-hover:underline">{p.designation}</p>
-                            {p.last_order_date && (
-                              <p className="text-xs text-muted-foreground">
-                                Dernière cde : {new Date(p.last_order_date).toLocaleDateString("fr-FR")}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-medium">{p.total_ht.toLocaleString("fr-FR")}€</p>
-                            <p className="text-xs text-muted-foreground">{p.order_count}x</p>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* AI suggestion */}
-                {insight.ai_suggestion ? (
-                  <div className="border border-sora/20 bg-sora/5 rounded-lg p-4">
-                    <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2.5 text-sora">
-                      <Sparkles className="w-4 h-4" />
-                      Recommandation IA
-                    </h4>
-                    <div className="text-sm whitespace-pre-line leading-relaxed">
-                      {insight.ai_suggestion}
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={requestAi}
-                    disabled={aiLoading}
-                  >
-                    {aiLoading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-4 h-4 mr-2 text-sora" />
-                    )}
-                    {aiLoading ? "Analyse en cours..." : "Demander une recommandation IA"}
-                  </Button>
-                )}
-              </div>
-
-              {/* Panel footer - status actions */}
-              {selectedItem.status === "pending" && (
-                <div className="sticky bottom-0 bg-card border-t px-5 py-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleStatus(selectedItem.playlist_id, "done")}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                    Fait
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleStatus(selectedItem.playlist_id, "skipped")}
-                  >
-                    <SkipForward className="w-4 h-4 mr-1.5" />
-                    Passer
-                  </Button>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Sélectionnez un client
                 </div>
               )}
-              {selectedItem.status !== "pending" && (
-                <div className="sticky bottom-0 bg-card border-t px-5 py-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => handleStatus(selectedItem.playlist_id, "pending")}
-                  >
-                    <Undo2 className="w-4 h-4 mr-1.5" />
-                    Remettre en attente
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              Sélectionnez un client
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+            </SheetContent>
+          </Sheet>
+        </>
+      )}
+
+      {/* ── Agenda tab ── */}
+      {activeTab === "agenda" && (
+        <AgendaView
+          isManager={isManager}
+          allUsers={allUsers}
+          openAddDialog={openAddDialog}
+        />
+      )}
 
       {/* Add to-do / reminder dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -826,7 +1197,6 @@ export default function PlaylistPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Tabs */}
             <div className="flex border rounded-lg overflow-hidden">
               <button
                 type="button"
@@ -846,7 +1216,6 @@ export default function PlaylistPage() {
               </button>
             </div>
 
-            {/* Client search */}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Client *</label>
               {addSelectedClient ? (
@@ -889,7 +1258,6 @@ export default function PlaylistPage() {
               )}
             </div>
 
-            {/* User selection (admin/manager only) */}
             {isManager && allUsers.length > 0 && (
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
@@ -906,7 +1274,6 @@ export default function PlaylistPage() {
               </div>
             )}
 
-            {/* Reminder-specific: date & time */}
             {addTab === "reminder" && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -920,7 +1287,6 @@ export default function PlaylistPage() {
               </div>
             )}
 
-            {/* Note */}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">
                 {addTab === "todo" ? "Commentaire (optionnel)" : "Note du rappel (optionnel)"}
@@ -933,7 +1299,6 @@ export default function PlaylistPage() {
               />
             </div>
 
-            {/* Submit */}
             <Button
               className="w-full"
               onClick={handleAddSubmit}

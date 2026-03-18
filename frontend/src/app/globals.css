@@ -123,3 +123,19 @@
   opacity: 0;
   animation: fadeSlideIn 0.35s ease-out forwards;
 }
+
+/* Calendar reminder dot indicator */
+.has-reminder-dot {
+  position: relative;
+}
+.has-reminder-dot::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: hsl(var(--primary));
+}

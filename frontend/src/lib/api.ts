@@ -305,6 +305,10 @@ class ApiClient {
     return this.get<DueReminder[]>("/api/playlists/reminders/due");
   }
 
+  getRemindersByMonth(year: number, month: number) {
+    return this.get<MonthRemindersResponse>(`/api/playlists/reminders/month?year=${year}&month=${month}`);
+  }
+
   updateReminder(id: string, data: { target_date?: string; target_time?: string; reason_detail?: string; status?: string }) {
     return this.patch<{ ok: boolean }>(`/api/playlists/reminders/${id}`, data);
   }
@@ -1218,6 +1222,21 @@ export interface DueReminder {
   client_name: string;
   reminder_time?: string;
   reason_detail?: string;
+}
+
+export interface MonthReminderItem {
+  id: string;
+  client_id: string;
+  client_name: string;
+  generated_date: string;
+  reminder_time?: string;
+  reason_detail?: string;
+  status: string;
+}
+
+export interface MonthRemindersResponse {
+  dates: string[];
+  reminders: MonthReminderItem[];
 }
 
 export interface LeaderboardEntry {

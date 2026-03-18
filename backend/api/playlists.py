@@ -259,6 +259,62 @@ async def list_reminders(
     ]
 
 
+@router.get("/reminders/month")
+async def reminders_by_month(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    user_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rappels d'un mois entier pour affichage calendrier."""
+    import calendar
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
+
+    effective_user_id = user.id
+    if user_id and user.role in ("admin", "manager"):
+        effective_user_id = user_id
+
+    stmt = (
+        select(DailyPlaylist, Client)
+        .join(Client, DailyPlaylist.client_id == Client.id)
+        .where(
+            DailyPlaylist.reason == "callback",
+            DailyPlaylist.generated_date >= first_day,
+            DailyPlaylist.generated_date <= last_day,
+        )
+    )
+
+    if user.role not in ("admin", "manager") or not user_id:
+        stmt = stmt.where(DailyPlaylist.user_id == effective_user_id)
+
+    stmt = stmt.order_by(DailyPlaylist.generated_date, DailyPlaylist.reminder_time)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = []
+    dates_with_reminders: set[str] = set()
+    for p, c in rows:
+        d = p.generated_date.isoformat()
+        dates_with_reminders.add(d)
+        items.append({
+            "id": p.id,
+            "client_id": p.client_id,
+            "client_name": c.name,
+            "generated_date": d,
+            "reminder_time": p.reminder_time.strftime("%H:%M") if p.reminder_time else None,
+            "reason_detail": p.reason_detail,
+            "status": p.status,
+        })
+
+    return {
+        "dates": sorted(dates_with_reminders),
+        "reminders": items,
+    }
+
+
 @router.get("/reminders/due")
 async def get_due_reminders(
     db: AsyncSession = Depends(get_db),
