@@ -53,10 +53,12 @@ import {
   CalendarDays,
   AlertCircle,
   CheckCircle2,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [50, 100, 200, 500] as const;
+type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
 
 type DatePreset = "month" | "7d" | "30d" | "90d" | "ytd" | "12m" | "all" | "custom";
 const PRESETS: DatePreset[] = ["month", "7d", "30d", "90d", "ytd", "12m", "all"];
@@ -140,7 +142,7 @@ function formatCurrencyPrecise(v: number | null | undefined): string {
 
 function formatQty(v: number | null | undefined): string {
   if (v == null) return "—";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(v);
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v);
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -220,6 +222,7 @@ function OrdersPageInner() {
   const [data, setData] = useState<OrderListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(50);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("date");
@@ -278,8 +281,8 @@ function OrdersPageInner() {
   const fetchOrders = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
+      limit: String(pageSize),
+      offset: String(page * pageSize),
       sort_by: sortBy,
       sort_dir: sortDir,
     };
@@ -304,7 +307,7 @@ function OrdersPageInner() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, sortBy, sortDir, docFilter, page, dateRange, salesFilter, paymentFilter]);
+  }, [debouncedSearch, sortBy, sortDir, docFilter, page, pageSize, dateRange, salesFilter, paymentFilter]);
 
   useEffect(() => {
     fetchOrders();
@@ -359,6 +362,26 @@ function OrdersPageInner() {
     }
   };
 
+  const handleExportCsv = async () => {
+    const params: Record<string, string> = {
+      sort_by: sortBy,
+      sort_dir: sortDir,
+    };
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (docFilter.length > 0) params.doc_type = docFilter.join(",");
+    if (dateRange) {
+      params.date_from = toISO(dateRange.from);
+      params.date_to = toISO(dateRange.to);
+    }
+    if (salesFilter && salesFilter !== "all") params.user_id = salesFilter;
+    if (paymentFilter && paymentFilter !== "all") params.payment_status = paymentFilter;
+    try {
+      await api.exportOrdersCsv(params);
+    } catch {
+      // silently fail
+    }
+  };
+
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortBy !== col) return null;
     return sortDir === "asc" ? (
@@ -371,7 +394,7 @@ function OrdersPageInner() {
   const total = data?.total ?? 0;
   const orders = data?.orders ?? [];
   const summary = data?.summary;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const totalPages = Math.ceil(total / pageSize);
   const activeFilterCount = docFilter.length + (salesFilter !== "all" ? 1 : 0) + (paymentFilter !== "all" ? 1 : 0);
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "manager";
   const hasDetail = !!(detail || loadingDetail);
@@ -753,25 +776,48 @@ function OrdersPageInner() {
           )}
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4">
+        {/* Pagination + page size + export */}
+        <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
             <p className="text-xs sm:text-sm text-muted-foreground">
-              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)}/{total}
+              {total > 0 ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)}` : "0"}/{total}
             </p>
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
-                <ChevronLeft className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Précédent</span>
-              </Button>
-              <span className="text-xs text-muted-foreground tabular-nums">{page + 1}/{totalPages}</span>
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>
-                <span className="hidden sm:inline">Suivant</span>
-                <ChevronRight className="w-4 h-4 sm:ml-1" />
-              </Button>
-            </div>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v) as PageSizeOption); setPage(0); }}>
+              <SelectTrigger className="w-[80px] h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-xs">{s} / page</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={handleExportCsv}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </Button>
+            {totalPages > 1 && (
+              <>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+                  <ChevronLeft className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Précédent</span>
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">{page + 1}/{totalPages}</span>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>
+                  <span className="hidden sm:inline">Suivant</span>
+                  <ChevronRight className="w-4 h-4 sm:ml-1" />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Desktop detail panel (fixed right) */}

@@ -522,6 +522,22 @@ class ApiClient {
     return this.get<OrderDetailResponse>(`/api/products/orders/${encodeURIComponent(sagePieceId)}`);
   }
 
+  async exportOrdersCsv(params?: Record<string, string>): Promise<void> {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/api/orders/export${qs}`, { headers });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `commandes_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   getProductUpsell(clientId: string) {
     return this.get<UpsellResponse>(`/api/products/upsell/${clientId}`);
   }

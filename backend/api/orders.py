@@ -1,8 +1,11 @@
 """
 Historique global des commandes — toutes pièces commerciales.
 """
+import csv
+import io
 from datetime import date
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func, distinct, case, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +28,7 @@ DOC_TYPE_LABEL = case(
 
 @router.get("")
 async def list_orders(
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=5000),
     offset: int = 0,
     search: str | None = None,
     doc_type: str | None = Query(default=None, description="BC,BL,FA,AV ou combinaison"),
@@ -210,3 +213,145 @@ async def list_orders(
         },
         "orders": orders,
     }
+
+
+@router.get("/export")
+async def export_orders_csv(
+    search: str | None = None,
+    doc_type: str | None = Query(default=None),
+    date_from: str | None = None,
+    date_to: str | None = None,
+    user_id: str | None = Query(default=None),
+    payment_status: str | None = Query(default=None, pattern="^(unpaid|paid|partial)$"),
+    sort_by: str = Query(default="date", pattern="^(date|ca|client|type|margin|status)$"),
+    sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export CSV des commandes avec les mêmes filtres que la liste."""
+    type_map = {"BC": 1, "BL": 3, "FA": 6, "AV": 7}
+    filters = []
+
+    if doc_type:
+        selected_types = [type_map[t.strip().upper()] for t in doc_type.split(",") if t.strip().upper() in type_map]
+        if selected_types:
+            filters.append(SalesLine.sage_doc_type.in_(selected_types))
+    if date_from:
+        filters.append(SalesLine.date >= date.fromisoformat(date_from))
+    if date_to:
+        filters.append(SalesLine.date <= date.fromisoformat(date_to))
+    if user_id and user_id != "all":
+        target = await db.get(User, user_id)
+        if target:
+            filters.append(or_(SalesLine.user_id == target.id, SalesLine.sales_rep.ilike(f"%{target.name}%")))
+
+    base = (
+        select(
+            SalesLine.sage_piece_id,
+            SalesLine.date,
+            func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).label("client_name"),
+            func.max(SalesLine.client_sage_id).label("client_sage_id"),
+            func.sum(SalesLine.amount_ht).label("total_ht"),
+            func.count(distinct(SalesLine.article_ref)).label("nb_articles"),
+            func.sum(SalesLine.quantity).label("total_qty"),
+            func.avg(SalesLine.margin_percent).label("avg_margin"),
+            func.max(DOC_TYPE_LABEL).label("doc_type"),
+            func.max(SalesLine.sage_doc_type).label("doc_type_raw"),
+            func.max(SalesLine.sales_rep).label("sales_rep"),
+            func.max(SalesLine.doc_total_ttc).label("doc_total_ttc"),
+            func.max(SalesLine.doc_amount_paid).label("doc_amount_paid"),
+        )
+        .outerjoin(Client, Client.sage_id == SalesLine.client_sage_id)
+        .group_by(SalesLine.sage_piece_id, SalesLine.date)
+    )
+    if filters:
+        base = base.where(*filters)
+
+    if payment_status == "unpaid":
+        base = base.having(and_(
+            func.max(SalesLine.doc_total_ttc) != None,
+            (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) > 0.01,
+            func.max(SalesLine.sage_doc_type).in_([6, 7]),
+        ))
+    elif payment_status == "paid":
+        base = base.having(or_(
+            func.max(SalesLine.doc_total_ttc) == None,
+            (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) <= 0.01,
+        ))
+    elif payment_status == "partial":
+        base = base.having(and_(
+            func.max(SalesLine.doc_total_ttc) != None,
+            func.coalesce(func.max(SalesLine.doc_amount_paid), 0) > 0,
+            (func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0)) > 0.01,
+            func.max(SalesLine.sage_doc_type).in_([6, 7]),
+        ))
+
+    if search:
+        for word in search.strip().split():
+            p = f"%{word}%"
+            pieces_with_article = (
+                select(SalesLine.sage_piece_id)
+                .where(or_(SalesLine.article_ref.ilike(p), SalesLine.designation.ilike(p)))
+                .distinct()
+            )
+            base = base.having(or_(
+                SalesLine.sage_piece_id.ilike(p),
+                func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)).ilike(p),
+                func.max(SalesLine.sales_rep).ilike(p),
+                func.max(Client.city).ilike(p),
+                func.max(SalesLine.client_sage_id).ilike(p),
+                SalesLine.sage_piece_id.in_(pieces_with_article),
+            ))
+
+    sort_col = {
+        "date": SalesLine.date,
+        "ca": func.sum(SalesLine.amount_ht),
+        "client": func.coalesce(func.max(Client.name), func.max(SalesLine.client_name)),
+        "type": func.max(SalesLine.sage_doc_type),
+        "margin": func.coalesce(func.avg(SalesLine.margin_percent), 0),
+        "status": func.max(SalesLine.doc_total_ttc) - func.coalesce(func.max(SalesLine.doc_amount_paid), 0),
+    }.get(sort_by, SalesLine.date)
+    base = base.order_by(sort_col.asc() if sort_dir == "asc" else sort_col.desc())
+
+    result = await db.execute(base)
+    rows = result.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(["Type", "N° Pièce", "Date", "Client", "Code Sage", "Commercial",
+                      "Articles", "Quantité", "Montant HT", "Marge %", "Statut paiement",
+                      "Total TTC", "Payé", "Reste dû"])
+    for r in rows:
+        ttc = float(r.doc_total_ttc) if r.doc_total_ttc else None
+        paid = float(r.doc_amount_paid) if r.doc_amount_paid else None
+        remaining = round(ttc - (paid or 0), 2) if ttc is not None else None
+        p_status = ""
+        if ttc is not None and r.doc_type_raw in (6, 7):
+            if remaining and remaining > 0.01:
+                p_status = "Partiel" if paid and paid > 0 else "Impayé"
+            else:
+                p_status = "Payé"
+        writer.writerow([
+            r.doc_type,
+            r.sage_piece_id,
+            str(r.date) if r.date else "",
+            r.client_name or "",
+            r.client_sage_id or "",
+            r.sales_rep or "",
+            r.nb_articles,
+            round(float(r.total_qty or 0), 2),
+            round(float(r.total_ht or 0), 2),
+            round(float(r.avg_margin), 1) if r.avg_margin else "",
+            p_status,
+            round(ttc, 2) if ttc else "",
+            round(paid, 2) if paid else "",
+            remaining if remaining and remaining > 0.01 else "",
+        ])
+
+    output.seek(0)
+    filename = f"commandes_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
