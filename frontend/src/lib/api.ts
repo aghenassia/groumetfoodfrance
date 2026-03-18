@@ -1813,6 +1813,7 @@ export interface ChallengeEntry {
   metric: string;
   target_value?: number | null;
   reward?: string | null;
+  participant_ids?: string[] | null;
   start_date: string;
   end_date: string;
   status: string;

@@ -22,6 +22,7 @@ class Challenge(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     reward: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(15), nullable=False, default="draft")  # draft, active, completed
+    participant_ids: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

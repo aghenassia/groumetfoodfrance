@@ -39,6 +39,8 @@ import {
   Package,
   X,
   Tag,
+  Users,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -76,6 +78,7 @@ export default function AdminChallengesPage() {
     start_date: new Date().toISOString().slice(0, 10),
     end_date: "",
     status: "draft",
+    participant_ids: [] as string[],
   });
 
   const [rankingChallengeId, setRankingChallengeId] = useState<string | null>(null);
@@ -86,9 +89,11 @@ export default function AdminChallengesPage() {
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [showProductResults, setShowProductResults] = useState(false);
   const [families, setFamilies] = useState<{ family: string; label: string; count: number }[]>([]);
+  const [allUsers, setAllUsers] = useState<{ id: string; name: string; role: string }[]>([]);
 
   useEffect(() => {
     api.getProductFamilies().then(setFamilies).catch(() => {});
+    api.getUsersList().then(setAllUsers).catch(() => {});
   }, []);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -154,6 +159,7 @@ export default function AdminChallengesPage() {
       start_date: new Date().toISOString().slice(0, 10),
       end_date: "",
       status: "draft",
+      participant_ids: [],
     });
     setDialogOpen(true);
   };
@@ -177,6 +183,7 @@ export default function AdminChallengesPage() {
       start_date: ch.start_date,
       end_date: ch.end_date,
       status: ch.status,
+      participant_ids: ch.participant_ids || [],
     });
     setDialogOpen(true);
   };
@@ -191,6 +198,8 @@ export default function AdminChallengesPage() {
       const refs = filterMode === "products" ? form.article_refs.map((r) => r.ref) : undefined;
       const families = filterMode === "family" && form.article_families.length > 0 ? form.article_families : undefined;
 
+      const pids = form.participant_ids.length > 0 ? form.participant_ids : undefined;
+
       if (editingId) {
         await api.updateChallenge(editingId, {
           name: form.name,
@@ -201,6 +210,7 @@ export default function AdminChallengesPage() {
           end_date: form.end_date,
           article_refs: refs || [],
           article_families: families || [],
+          participant_ids: pids || [],
         });
         toast.success("Challenge mis à jour");
       } else {
@@ -215,6 +225,7 @@ export default function AdminChallengesPage() {
           start_date: form.start_date,
           end_date: form.end_date,
           status: form.status,
+          participant_ids: pids,
         });
         toast.success("Challenge créé");
       }
@@ -329,6 +340,16 @@ export default function AdminChallengesPage() {
                       </span>
                     )}
                   </div>
+                  {ch.participant_ids && ch.participant_ids.length > 0 && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3 shrink-0" />
+                      <span className="truncate">
+                        {ch.participant_ids.length <= 3
+                          ? ch.participant_ids.map(pid => allUsers.find(u => u.id === pid)?.name || "…").join(", ")
+                          : `${ch.participant_ids.slice(0, 2).map(pid => allUsers.find(u => u.id === pid)?.name || "…").join(", ")} +${ch.participant_ids.length - 2}`}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
                     <span>{ch.start_date} → {ch.end_date}</span>
@@ -359,7 +380,7 @@ export default function AdminChallengesPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Modifier le challenge" : "Nouveau challenge"}</DialogTitle>
           </DialogHeader>
@@ -517,6 +538,79 @@ export default function AdminChallengesPage() {
                   )}
                 </div>
               )}
+            </div>
+            <div className="space-y-2">
+              <Label>Participants</Label>
+              <Popover modal>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 w-full h-9 px-3 rounded-md border border-input bg-background text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground truncate">
+                      {form.participant_ids.length === 0
+                        ? "Tous les commerciaux"
+                        : `${form.participant_ids.length} commercial${form.participant_ids.length > 1 ? "ux" : ""} sélectionné${form.participant_ids.length > 1 ? "s" : ""}`}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1 max-h-60 overflow-y-auto" align="start">
+                  {allUsers.filter(u => u.role !== "admin").map((u) => {
+                    const selected = form.participant_ids.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className={`w-full text-left px-2 py-1.5 text-sm rounded hover:bg-accent transition-colors flex items-center gap-2 ${selected ? "bg-accent/50" : ""}`}
+                        onClick={() => {
+                          setForm({
+                            ...form,
+                            participant_ids: selected
+                              ? form.participant_ids.filter((id) => id !== u.id)
+                              : [...form.participant_ids, u.id],
+                          });
+                        }}
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30"}`}>
+                          {selected && <Check className="w-3 h-3" />}
+                        </span>
+                        <span className="truncate">{u.name}</span>
+                        <span className="text-muted-foreground text-xs ml-auto">{u.role}</span>
+                      </button>
+                    );
+                  })}
+                </PopoverContent>
+              </Popover>
+              {form.participant_ids.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.participant_ids.map((pid) => {
+                    const u = allUsers.find((u) => u.id === pid);
+                    return (
+                      <Badge key={pid} variant="secondary" className="text-xs gap-1 pr-1">
+                        {u?.name || pid}
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, participant_ids: form.participant_ids.filter((id) => id !== pid) })}
+                          className="ml-0.5 hover:text-red-500 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setForm({ ...form, participant_ids: [] })}
+                  >
+                    Réinitialiser
+                  </button>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Laissez vide pour inclure tous les commerciaux
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

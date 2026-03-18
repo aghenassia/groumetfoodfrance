@@ -30,6 +30,7 @@ class ChallengeCreate(BaseModel):
     start_date: date
     end_date: date
     status: str = "draft"
+    participant_ids: list[str] | None = None
 
 
 class ChallengeUpdate(BaseModel):
@@ -42,6 +43,7 @@ class ChallengeUpdate(BaseModel):
     reward: str | None = None
     status: str | None = None
     end_date: date | None = None
+    participant_ids: list[str] | None = None
 
 
 class ChallengeResponse(BaseModel):
@@ -56,6 +58,7 @@ class ChallengeResponse(BaseModel):
     metric: str
     target_value: float | None
     reward: str | None = None
+    participant_ids: list[str] | None = None
     start_date: date
     end_date: date
     status: str
@@ -97,6 +100,7 @@ def _get_families(ch: Challenge) -> list[str] | None:
 def _build_response(ch: Challenge, creator_name: str | None = None) -> ChallengeResponse:
     refs = ch.article_refs.split(",") if ch.article_refs else None
     families = _get_families(ch)
+    pids = [p.strip() for p in ch.participant_ids.split(",") if p.strip()] if ch.participant_ids else None
     return ChallengeResponse(
         id=ch.id, name=ch.name, description=ch.description,
         article_ref=ch.article_ref, article_name=ch.article_name,
@@ -105,6 +109,7 @@ def _build_response(ch: Challenge, creator_name: str | None = None) -> Challenge
         article_families=families,
         metric=ch.metric, target_value=float(ch.target_value) if ch.target_value else None,
         reward=ch.reward,
+        participant_ids=pids,
         start_date=ch.start_date, end_date=ch.end_date, status=ch.status,
         created_by=ch.created_by, creator_name=creator_name,
         created_at=ch.created_at, updated_at=ch.updated_at,
@@ -149,6 +154,8 @@ async def create_challenge(
     families_str = ",".join(body.article_families) if body.article_families else None
     single_family = body.article_family if not families_str else None
 
+    pids_str = ",".join(body.participant_ids) if body.participant_ids else None
+
     ch = Challenge(
         id=str(uuid.uuid4()),
         name=body.name,
@@ -161,6 +168,7 @@ async def create_challenge(
         metric=body.metric,
         target_value=body.target_value,
         reward=body.reward,
+        participant_ids=pids_str,
         start_date=body.start_date,
         end_date=body.end_date,
         status=body.status,
@@ -212,6 +220,8 @@ async def update_challenge(
         if ch.article_family:
             ch.article_refs = None
             ch.article_ref = None
+    if body.participant_ids is not None:
+        ch.participant_ids = ",".join(body.participant_ids) if body.participant_ids else None
     ch.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(ch)
@@ -265,6 +275,12 @@ async def challenge_ranking(
         stmt = stmt.where(SalesLine.article_ref == ch.article_ref)
 
     stmt = stmt.where(SalesLine.user_id.isnot(None))
+
+    if ch.participant_ids:
+        pid_list = [p.strip() for p in ch.participant_ids.split(",") if p.strip()]
+        if pid_list:
+            stmt = stmt.where(SalesLine.user_id.in_(pid_list))
+
     stmt = stmt.group_by(SalesLine.user_id, User.name).order_by(func.sum(agg_col).desc())
 
     result = await db.execute(stmt)

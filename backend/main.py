@@ -42,6 +42,8 @@ async def _run_migrations(conn):
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_family VARCHAR(50)",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_families TEXT",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS reward VARCHAR(200)",
+        # challenges
+        "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS participant_ids TEXT",
         # user_objectives
         "ALTER TABLE user_objectives ADD COLUMN IF NOT EXISTS filter_client_category VARCHAR(50)",
         "ALTER TABLE user_objectives ADD COLUMN IF NOT EXISTS filter_region VARCHAR(50)",
