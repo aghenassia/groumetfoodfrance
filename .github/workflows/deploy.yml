@@ -15,15 +15,14 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /root/ringover-crm
             # Ensure local dev SSH key is authorized
             LOCAL_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFydOvxTBurF4vw4B2eGKV844FVeJxMSYiY9JERJvv95 github-actions-deploy"
             mkdir -p /root/.ssh
             grep -qF "$LOCAL_KEY" /root/.ssh/authorized_keys 2>/dev/null || echo "$LOCAL_KEY" >> /root/.ssh/authorized_keys
             chmod 600 /root/.ssh/authorized_keys
-            # Update Ringover API key if secret is set
+            # Update Ringover API key in the actual app directory
             if [ -n "${{ secrets.RINGOVER_API_KEY }}" ]; then
-              sed -i '/^RINGOVER_API/d' .env
-              echo 'RINGOVER_API_KEY=${{ secrets.RINGOVER_API_KEY }}' >> .env
+              sed -i '/^RINGOVER_API_KEY/d' /opt/ringover-crm/.env
+              echo 'RINGOVER_API_KEY=${{ secrets.RINGOVER_API_KEY }}' >> /opt/ringover-crm/.env
             fi
             /opt/deploy-crm.sh
