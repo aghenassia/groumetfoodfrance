@@ -1596,6 +1596,10 @@ export interface MyStats {
     avg_margin: number;
     ca_evolution_pct: number;
     prev_ca: number;
+    invoices_count: number;
+    invoices_ca: number;
+    credit_notes_count: number;
+    credit_notes_ca: number;
   };
   ai_score: number | null;
   target: {

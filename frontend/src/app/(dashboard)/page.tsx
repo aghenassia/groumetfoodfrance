@@ -60,6 +60,7 @@ import {
   Trash2,
   Pencil,
   Clock,
+  Receipt,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -577,6 +578,63 @@ export default function DashboardPage() {
           </div>
         );
       })()}
+
+      {/* 1b-bis. Factures & Avoirs */}
+      {myStats && (myStats.sales.invoices_count > 0 || myStats.sales.credit_notes_count > 0) && (
+        <>
+          <div className="flex items-center gap-2 mt-2 mb-1">
+            <Receipt className="w-4 h-4 text-sora" />
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Facturation</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Factures</p>
+                <div className="mt-1">
+                  <p className="text-2xl font-extrabold">{loading ? "…" : myStats.sales.invoices_count}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">documents émis</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">CA Facturé</p>
+                <div className="mt-1">
+                  <p className="text-2xl font-extrabold">{loading ? "…" : formatCurrency(myStats.sales.invoices_ca)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {myStats.sales.invoices_count > 0 ? `Moy. ${formatCurrency(myStats.sales.invoices_ca / myStats.sales.invoices_count)}` : "—"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Avoirs</p>
+                <div className="mt-1">
+                  <p className={`text-2xl font-extrabold ${myStats.sales.credit_notes_count > 0 ? "text-ume" : ""}`}>
+                    {loading ? "…" : myStats.sales.credit_notes_count}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">documents émis</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">CA Avoirs</p>
+                <div className="mt-1">
+                  <p className={`text-2xl font-extrabold ${myStats.sales.credit_notes_ca < 0 ? "text-ume" : ""}`}>
+                    {loading ? "…" : formatCurrency(myStats.sales.credit_notes_ca)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {myStats.sales.credit_notes_count > 0 ? `Moy. ${formatCurrency(myStats.sales.credit_notes_ca / myStats.sales.credit_notes_count)}` : "—"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       {/* 1c. PIPELINE : Commandes en cours (BC + BL) */}
       {pipeline && pipeline.orders_count > 0 && (

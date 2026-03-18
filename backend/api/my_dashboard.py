@@ -126,6 +126,37 @@ async def my_stats(
     )
     sr = sales_q.one()
 
+    # --- Invoice vs credit note breakdown ---
+    user_filter = [_user_sales_filter(target_user)] if not is_global else []
+
+    invoice_q = await db.execute(
+        select(
+            func.count(distinct(SalesLine.sage_piece_id)),
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+        )
+        .where(
+            *user_filter,
+            SalesLine.sage_doc_type == 6,
+            SalesLine.date >= d_from,
+            SalesLine.date <= d_to,
+        )
+    )
+    inv_row = invoice_q.one()
+
+    credit_q = await db.execute(
+        select(
+            func.count(distinct(SalesLine.sage_piece_id)),
+            func.coalesce(func.sum(SalesLine.amount_ht), 0),
+        )
+        .where(
+            *user_filter,
+            SalesLine.sage_doc_type == 7,
+            SalesLine.date >= d_from,
+            SalesLine.date <= d_to,
+        )
+    )
+    cr_note_row = credit_q.one()
+
     # --- Sales stats previous period (invoices only) ---
     prev_sales_q = await db.execute(
         select(func.coalesce(func.sum(SalesLine.amount_ht), 0))
@@ -224,6 +255,10 @@ async def my_stats(
             "avg_margin": round(float(sr[3]), 1) if sr[3] else 0,
             "ca_evolution_pct": ca_evolution,
             "prev_ca": prev_ca,
+            "invoices_count": inv_row[0] or 0,
+            "invoices_ca": round(float(inv_row[1] or 0), 2),
+            "credit_notes_count": cr_note_row[0] or 0,
+            "credit_notes_ca": round(float(cr_note_row[1] or 0), 2),
         },
         "ai_score": round(float(avg_ai), 1) if avg_ai else None,
         "target": {
