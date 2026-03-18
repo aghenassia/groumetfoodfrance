@@ -121,10 +121,11 @@ function groupRemindersByDate(reminders: MonthReminderItem[]) {
 
 /* ────────── Agenda view ────────── */
 
-function AgendaView({ isManager, allUsers, openAddDialog }: {
+function AgendaView({ isManager, allUsers, openAddDialog, refreshKey }: {
   isManager: boolean;
   allUsers: { id: string; name: string; role: string }[];
   openAddDialog: (prefilledDate?: string) => void;
+  refreshKey: number;
 }) {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -152,7 +153,7 @@ function AgendaView({ isManager, allUsers, openAddDialog }: {
 
   useEffect(() => {
     fetchMonth(currentMonth);
-  }, [currentMonth, fetchMonth]);
+  }, [currentMonth, fetchMonth, refreshKey]);
 
   const handleMonthChange = (d: Date) => {
     setCurrentMonth(d);
@@ -440,6 +441,7 @@ function AgendaView({ isManager, allUsers, openAddDialog }: {
 
 export default function PlaylistPage() {
   const [activeTab, setActiveTab] = useState<"today" | "agenda">("today");
+  const [agendaRefreshKey, setAgendaRefreshKey] = useState(0);
   const [items, setItems] = useState<PlaylistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -526,6 +528,7 @@ export default function PlaylistPage() {
       if (activeTab === "today") {
         api.getPlaylist().then(setItems).catch(() => {});
       }
+      setAgendaRefreshKey((k) => k + 1);
     } catch {
       toast.error("Erreur lors de l'ajout");
     } finally {
@@ -1184,6 +1187,7 @@ export default function PlaylistPage() {
           isManager={isManager}
           allUsers={allUsers}
           openAddDialog={openAddDialog}
+          refreshKey={agendaRefreshKey}
         />
       )}
 
