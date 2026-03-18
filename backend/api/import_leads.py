@@ -45,23 +45,28 @@ def _cleanup_stores():
 # ── CSV column definitions ───────────────────────────────────────────
 
 COMPANY_COLUMNS = [
-    "nom_entreprise", "telephone", "email", "adresse", "code_postal",
+    "nom_entreprise", "type_entreprise", "sous_type_entreprise",
+    "telephone", "email", "adresse", "code_postal",
     "ville", "pays", "siret", "code_naf", "site_web", "commercial",
     "est_prospect",
 ]
 
 CONTACT_COLUMNS_INLINE = [
-    "contact_nom", "contact_prenom", "contact_role",
-    "contact_telephone", "contact_email",
+    "contact_nom", "contact_prenom", "contact_role", "contact_titre",
+    "contact_telephone", "contact_telephone_2", "contact_telephone_3",
+    "contact_email",
 ]
 
 CONTACT_COLUMNS_SEPARATE = [
-    "nom_entreprise", "nom", "prenom", "role",
-    "telephone", "email", "est_principal",
+    "nom_entreprise", "nom", "prenom", "role", "titre",
+    "telephone", "telephone_2", "telephone_3",
+    "email", "est_principal",
 ]
 
 COMPANY_EXAMPLE_1 = {
     "nom_entreprise": "RESTAURANT LE GOURMET",
+    "type_entreprise": "Restaurant",
+    "sous_type_entreprise": "Restaurant gastronomique",
     "telephone": "01 42 33 44 55",
     "email": "contact@legourmet.fr",
     "adresse": "12 Rue de la Paix",
@@ -77,6 +82,8 @@ COMPANY_EXAMPLE_1 = {
 
 COMPANY_EXAMPLE_2 = {
     "nom_entreprise": "BRASSERIE DU PORT",
+    "type_entreprise": "Restaurant",
+    "sous_type_entreprise": "Brasserie",
     "telephone": "04 91 22 33 44",
     "email": "info@brasserieduport.com",
     "adresse": "8 Quai du Port",
@@ -95,7 +102,10 @@ SINGLE_EXAMPLE_1 = {
     "contact_nom": "MARTIN Jean",
     "contact_prenom": "Jean",
     "contact_role": "Gérant",
+    "contact_titre": "Chef de cuisine",
     "contact_telephone": "06 12 34 56 78",
+    "contact_telephone_2": "",
+    "contact_telephone_3": "",
     "contact_email": "jean.martin@legourmet.fr",
 }
 
@@ -103,8 +113,11 @@ SINGLE_EXAMPLE_2 = {
     **COMPANY_EXAMPLE_2,
     "contact_nom": "DUPONT Marie",
     "contact_prenom": "Marie",
-    "contact_role": "Chef de cuisine",
+    "contact_role": "Acheteur",
+    "contact_titre": "Directrice des achats",
     "contact_telephone": "06 98 76 54 32",
+    "contact_telephone_2": "04 91 22 33 45",
+    "contact_telephone_3": "",
     "contact_email": "m.dupont@brasserieduport.com",
 }
 
@@ -136,7 +149,9 @@ async def download_template(
         writer.writerow({
             "nom_entreprise": "RESTAURANT LE GOURMET",
             "nom": "MARTIN Jean", "prenom": "Jean", "role": "Gérant",
-            "telephone": "06 12 34 56 78", "email": "jean.martin@legourmet.fr",
+            "titre": "Chef de cuisine",
+            "telephone": "06 12 34 56 78", "telephone_2": "", "telephone_3": "",
+            "email": "jean.martin@legourmet.fr",
             "est_principal": "oui",
         })
         filename = "template_import_contacts.csv"
@@ -204,13 +219,13 @@ async def parse_csv(
         row = {clean_fieldnames[i]: (v.strip() if v else "") for i, (_, v) in enumerate(raw_row.items()) if i < len(clean_fieldnames)}
 
         company_name = row.get("nom_entreprise", "").strip()
-        if not company_name:
-            if mode == "contacts":
-                if not row.get("nom", "").strip():
-                    errors.append({"line": line_idx, "field": "nom", "message": "Nom du contact requis"})
-                    continue
-            else:
-                errors.append({"line": line_idx, "field": "nom_entreprise", "message": "Nom d'entreprise requis"})
+        if not company_name and mode != "contacts":
+            errors.append({"line": line_idx, "field": "nom_entreprise", "message": "Nom d'entreprise requis"})
+            continue
+        if mode == "contacts":
+            contact_name = row.get("nom", "").strip() or row.get("contact_nom", "").strip()
+            if not contact_name:
+                errors.append({"line": line_idx, "field": "nom", "message": "Nom du contact requis"})
                 continue
 
         phone_raw = row.get("telephone", "")
@@ -223,10 +238,20 @@ async def parse_csv(
             errors.append({"line": line_idx, "field": "email", "message": f"Email invalide : {email}"})
             email = ""
 
-        contact_phone_raw = row.get("contact_telephone", "")
+        contact_phone_raw = (row.get("contact_telephone", "") or row.get("telephone", "")) if mode == "contacts" else row.get("contact_telephone", "")
         contact_phone_e164 = normalize_phone(contact_phone_raw) if contact_phone_raw else None
         if contact_phone_raw and not contact_phone_e164:
             errors.append({"line": line_idx, "field": "contact_telephone", "message": f"Numéro contact invalide : {contact_phone_raw}"})
+
+        phone2_raw = row.get("contact_telephone_2", "") or row.get("telephone_2", "")
+        phone2_e164 = normalize_phone(phone2_raw) if phone2_raw else None
+        if phone2_raw and not phone2_e164:
+            errors.append({"line": line_idx, "field": "telephone_2", "message": f"Numéro secondaire invalide : {phone2_raw}"})
+
+        phone3_raw = row.get("contact_telephone_3", "") or row.get("telephone_3", "")
+        phone3_e164 = normalize_phone(phone3_raw) if phone3_raw else None
+        if phone3_raw and not phone3_e164:
+            errors.append({"line": line_idx, "field": "telephone_3", "message": f"Numéro tertiaire invalide : {phone3_raw}"})
 
         commercial_name = row.get("commercial", "").strip()
         matched_user_id = None
@@ -240,6 +265,8 @@ async def parse_csv(
         parsed = {
             "line": line_idx,
             "nom_entreprise": company_name,
+            "type_entreprise": row.get("type_entreprise", ""),
+            "sous_type_entreprise": row.get("sous_type_entreprise", ""),
             "telephone": phone_raw,
             "phone_e164": phone_e164,
             "email": email,
@@ -256,8 +283,13 @@ async def parse_csv(
             "contact_nom": row.get("contact_nom", "") or row.get("nom", ""),
             "contact_prenom": row.get("contact_prenom", "") or row.get("prenom", ""),
             "contact_role": row.get("contact_role", "") or row.get("role", ""),
+            "contact_titre": row.get("contact_titre", "") or row.get("titre", ""),
             "contact_telephone": contact_phone_raw,
             "contact_phone_e164": contact_phone_e164,
+            "telephone_2": phone2_raw,
+            "phone2_e164": phone2_e164,
+            "telephone_3": phone3_raw,
+            "phone3_e164": phone3_e164,
             "contact_email": row.get("contact_email", "") or (row.get("email", "") if mode == "contacts" else ""),
             "contact_est_principal": row.get("est_principal", "oui").lower() in ("oui", "yes", "1", "true", "o", ""),
             "status": "new",
@@ -457,6 +489,8 @@ async def _create_new(db: AsyncSession, row: dict):
         siret=row["siret"] or None,
         naf_code=row["code_naf"] or None,
         website=row["site_web"] or None,
+        client_type=row.get("type_entreprise") or None,
+        client_subtype=row.get("sous_type_entreprise") or None,
         assigned_user_id=row["matched_user_id"],
         is_prospect=row["est_prospect"],
         status="lead",
@@ -483,6 +517,7 @@ async def _create_new(db: AsyncSession, row: dict):
             name=row["contact_nom"],
             first_name=row["contact_prenom"] or None,
             role=row["contact_role"] or None,
+            title=row.get("contact_titre") or None,
             phone=row["contact_telephone"],
             phone_e164=row["contact_phone_e164"],
             email=row["contact_email"] or None,
@@ -492,15 +527,23 @@ async def _create_new(db: AsyncSession, row: dict):
         db.add(contact)
         await db.flush()
 
+        phones_to_index = []
         if row["contact_phone_e164"]:
+            phones_to_index.append((row["contact_phone_e164"], row["contact_telephone"], "contact"))
+        if row.get("phone2_e164"):
+            phones_to_index.append((row["phone2_e164"], row.get("telephone_2", ""), "contact_2"))
+        if row.get("phone3_e164"):
+            phones_to_index.append((row["phone3_e164"], row.get("telephone_3", ""), "contact_3"))
+
+        for ph_e164, ph_raw, ph_label in phones_to_index:
             stmt = pg_insert(PhoneIndex).values(
                 id=str(uuid.uuid4()),
-                phone_e164=row["contact_phone_e164"],
+                phone_e164=ph_e164,
                 client_id=client_id,
                 contact_id=contact_id,
                 source="csv_import",
-                raw_phone=row["contact_telephone"],
-                label="contact",
+                raw_phone=ph_raw,
+                label=ph_label,
             ).on_conflict_do_nothing(constraint="uq_phone_client")
             await db.execute(stmt)
 
@@ -547,6 +590,10 @@ async def _update_existing(db: AsyncSession, row: dict):
         client.siret = row["siret"]
     if row["site_web"] and not client.website:
         client.website = row["site_web"]
+    if row.get("type_entreprise") and not client.client_type:
+        client.client_type = row["type_entreprise"]
+    if row.get("sous_type_entreprise") and not client.client_subtype:
+        client.client_subtype = row["sous_type_entreprise"]
     if row["matched_user_id"] and not client.assigned_user_id:
         client.assigned_user_id = row["matched_user_id"]
     if row["phone_e164"] and not client.phone_e164:
@@ -579,6 +626,7 @@ async def _update_existing(db: AsyncSession, row: dict):
                 name=row["contact_nom"],
                 first_name=row["contact_prenom"] or None,
                 role=row["contact_role"] or None,
+                title=row.get("contact_titre") or None,
                 phone=row["contact_telephone"],
                 phone_e164=row["contact_phone_e164"],
                 email=row["contact_email"] or None,
@@ -588,38 +636,47 @@ async def _update_existing(db: AsyncSession, row: dict):
             db.add(contact)
             await db.flush()
 
+            phones_to_index = []
             if row["contact_phone_e164"]:
+                phones_to_index.append((row["contact_phone_e164"], row["contact_telephone"], "contact"))
+            if row.get("phone2_e164"):
+                phones_to_index.append((row["phone2_e164"], row.get("telephone_2", ""), "contact_2"))
+            if row.get("phone3_e164"):
+                phones_to_index.append((row["phone3_e164"], row.get("telephone_3", ""), "contact_3"))
+
+            for ph_e164, ph_raw, ph_label in phones_to_index:
                 stmt = pg_insert(PhoneIndex).values(
                     id=str(uuid.uuid4()),
-                    phone_e164=row["contact_phone_e164"],
+                    phone_e164=ph_e164,
                     client_id=client.id,
                     contact_id=contact_id,
                     source="csv_import",
-                    raw_phone=row["contact_telephone"],
-                    label="contact",
+                    raw_phone=ph_raw,
+                    label=ph_label,
                 ).on_conflict_do_nothing(constraint="uq_phone_client")
                 await db.execute(stmt)
 
 
 async def _import_contact_only(db: AsyncSession, row: dict):
     company_name = row.get("nom_entreprise", "").strip()
-    if not company_name:
-        raise ValueError("nom_entreprise requis pour lier le contact")
+    client = None
+    if company_name:
+        res = await db.execute(
+            select(Client).where(func.upper(Client.name) == company_name.upper()).limit(1)
+        )
+        client = res.scalar_one_or_none()
+        if not client:
+            raise ValueError(f"Entreprise introuvable : {company_name}")
 
-    res = await db.execute(
-        select(Client).where(func.upper(Client.name) == company_name.upper()).limit(1)
-    )
-    client = res.scalar_one_or_none()
-    if not client:
-        raise ValueError(f"Entreprise introuvable : {company_name}")
-
+    contact_name = row.get("contact_nom") or row.get("nom", "") or ""
     contact_id = str(uuid.uuid4())
     contact = Contact(
         id=contact_id,
-        company_id=client.id,
-        name=row["contact_nom"],
-        first_name=row["contact_prenom"] or None,
-        role=row["contact_role"] or None,
+        company_id=client.id if client else None,
+        name=contact_name,
+        first_name=row.get("contact_prenom") or row.get("prenom") or None,
+        role=row.get("contact_role") or row.get("role") or None,
+        title=row.get("contact_titre") or row.get("titre") or None,
         phone=row.get("contact_telephone") or row.get("telephone", ""),
         phone_e164=row.get("contact_phone_e164") or row.get("phone_e164"),
         email=row.get("contact_email") or row.get("email", "") or None,
@@ -629,18 +686,31 @@ async def _import_contact_only(db: AsyncSession, row: dict):
     db.add(contact)
     await db.flush()
 
-    phone = row.get("contact_phone_e164") or row.get("phone_e164")
-    if phone:
-        stmt = pg_insert(PhoneIndex).values(
-            id=str(uuid.uuid4()),
-            phone_e164=phone,
-            client_id=client.id,
-            contact_id=contact_id,
-            source="csv_import",
-            raw_phone=row.get("contact_telephone") or row.get("telephone", ""),
-            label="contact",
-        ).on_conflict_do_nothing(constraint="uq_phone_client")
-        await db.execute(stmt)
+    phones_to_index = []
+    primary_phone = row.get("contact_phone_e164") or row.get("phone_e164")
+    if primary_phone:
+        phones_to_index.append((primary_phone, row.get("contact_telephone") or row.get("telephone", ""), "contact"))
+    phone2_raw = row.get("telephone_2", "")
+    phone2_e164 = row.get("phone2_e164")
+    if phone2_e164:
+        phones_to_index.append((phone2_e164, phone2_raw, "contact_2"))
+    phone3_raw = row.get("telephone_3", "")
+    phone3_e164 = row.get("phone3_e164")
+    if phone3_e164:
+        phones_to_index.append((phone3_e164, phone3_raw, "contact_3"))
+
+    for ph_e164, ph_raw, ph_label in phones_to_index:
+        if client:
+            stmt = pg_insert(PhoneIndex).values(
+                id=str(uuid.uuid4()),
+                phone_e164=ph_e164,
+                client_id=client.id,
+                contact_id=contact_id,
+                source="csv_import",
+                raw_phone=ph_raw,
+                label=ph_label,
+            ).on_conflict_do_nothing(constraint="uq_phone_client")
+            await db.execute(stmt)
 
 
 # ── Status endpoint ──────────────────────────────────────────────────

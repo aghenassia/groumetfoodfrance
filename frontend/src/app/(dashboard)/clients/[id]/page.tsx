@@ -387,6 +387,8 @@ export default function ClientDetailPage() {
       vat_number: client.vat_number || "",
       naf_code: client.naf_code || "",
       tariff_category: client.tariff_category || "",
+      client_type: client.client_type || "",
+      client_subtype: client.client_subtype || "",
     });
     setEditing(true);
   };
@@ -769,6 +771,21 @@ export default function ClientDetailPage() {
                 </Badge>
               </>
             )}
+            {client.client_type && (
+              <>
+                <span>·</span>
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                  {client.client_type}
+                </Badge>
+              </>
+            )}
+            {client.client_subtype && (
+              <>
+                <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                  {client.client_subtype}
+                </Badge>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1033,6 +1050,22 @@ export default function ClientDetailPage() {
                   value={editForm.tariff_category || ""}
                   onChange={(e) => setEditForm({ ...editForm, tariff_category: e.target.value })}
                   placeholder="Catégorie"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Type d&apos;entreprise</Label>
+                <Input
+                  value={editForm.client_type || ""}
+                  onChange={(e) => setEditForm({ ...editForm, client_type: e.target.value })}
+                  placeholder="Ex: Restaurant, Grossiste…"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Sous-type</Label>
+                <Input
+                  value={editForm.client_subtype || ""}
+                  onChange={(e) => setEditForm({ ...editForm, client_subtype: e.target.value })}
+                  placeholder="Ex: Restaurant étoilé, Grillades…"
                 />
               </div>
             </div>

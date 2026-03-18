@@ -35,6 +35,8 @@ class Client(Base):
     tariff_category: Mapped[str | None] = mapped_column(String(50))
     margin_group: Mapped[str | None] = mapped_column(String(50))
     accounting_category: Mapped[str | None] = mapped_column(String(20))
+    client_type: Mapped[str | None] = mapped_column(String(50))
+    client_subtype: Mapped[str | None] = mapped_column(String(100))
 
     # Legacy booleans kept for backward compat, but status is the source of truth
     is_prospect: Mapped[bool] = mapped_column(Boolean, default=False)

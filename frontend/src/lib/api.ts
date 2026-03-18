@@ -94,6 +94,10 @@ class ApiClient {
     return this.get<ClientListResponse>(`/api/clients${qs}`);
   }
 
+  getClientTypes() {
+    return this.get<{ types: string[]; subtypes: string[] }>("/api/clients/types/distinct");
+  }
+
   getCommercialStats() {
     return this.get<CommercialStats>("/api/clients/stats/commercial");
   }
@@ -748,6 +752,8 @@ export interface Client {
   sales_rep?: string;
   assigned_user_name?: string;
   tariff_category?: string;
+  client_type?: string | null;
+  client_subtype?: string | null;
   is_prospect: boolean;
   is_dormant: boolean;
   status?: string;
@@ -773,12 +779,15 @@ export interface ClientListResponse {
 export interface CreateProspectRequest {
   name: string;
   contact_name?: string;
+  contact_title?: string;
   phone?: string;
   email?: string;
   address?: string;
   postal_code?: string;
   city?: string;
   country?: string;
+  client_type?: string;
+  client_subtype?: string;
   notes?: string;
   sales_rep?: string;
 }

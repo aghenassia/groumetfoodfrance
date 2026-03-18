@@ -147,6 +147,8 @@ export default function ClientsPage() {
   const [allSuppliers, setAllSuppliers] = useState<NameItem[]>([]);
   const [allCompetitors, setAllCompetitors] = useState<NameItem[]>([]);
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
+  const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
+  const [allClientTypes, setAllClientTypes] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("ca_total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showAdd, setShowAdd] = useState(false);
@@ -169,6 +171,7 @@ export default function ClientsPage() {
     }).catch(() => {});
     api.searchSuppliers().then(setAllSuppliers).catch(() => {});
     api.searchCompetitors().then(setAllCompetitors).catch(() => {});
+    api.getClientTypes().then((r) => setAllClientTypes(r.types)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -202,6 +205,7 @@ export default function ClientsPage() {
     if (commercialFilter !== "all") params.assigned_user_id = commercialFilter;
     if (supplierFilter !== "all") params.supplier_id = supplierFilter;
     if (competitorFilter !== "all") params.competitor_id = competitorFilter;
+    if (clientTypeFilter !== "all") params.client_type = clientTypeFilter;
 
     api
       .getClients(params)
@@ -212,7 +216,7 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, sortBy, sortDir, page]);
+  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, clientTypeFilter, sortBy, sortDir, page]);
 
   useEffect(() => {
     fetchClients();
@@ -444,6 +448,27 @@ export default function ClientsPage() {
                 </SelectContent>
               </Select>
             </>
+          )}
+
+          {/* Client type filter */}
+          {allClientTypes.length > 0 && (
+            <Select
+              value={clientTypeFilter}
+              onValueChange={(v) => { setClientTypeFilter(v); setPage(0); }}
+            >
+              <SelectTrigger className="h-8 w-[170px] text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3 text-muted-foreground" />
+                  <SelectValue placeholder="Type" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous types</SelectItem>
+                {allClientTypes.map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
 
           <div className="w-px h-6 bg-border" />
@@ -736,15 +761,49 @@ export default function ClientsPage() {
                 placeholder="Ex: Restaurant Le Boucher"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Nom du contact</Label>
-              <Input
-                value={addForm.contact_name || ""}
-                onChange={(e) =>
-                  setAddForm((p) => ({ ...p, contact_name: e.target.value }))
-                }
-                placeholder="Ex: Jean Dupont"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Nom du contact</Label>
+                <Input
+                  value={addForm.contact_name || ""}
+                  onChange={(e) =>
+                    setAddForm((p) => ({ ...p, contact_name: e.target.value }))
+                  }
+                  placeholder="Ex: Jean Dupont"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fonction</Label>
+                <Input
+                  value={addForm.contact_title || ""}
+                  onChange={(e) =>
+                    setAddForm((p) => ({ ...p, contact_title: e.target.value }))
+                  }
+                  placeholder="Ex: Chef de cuisine, Acheteur…"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Type d&apos;entreprise</Label>
+                <Input
+                  value={addForm.client_type || ""}
+                  onChange={(e) =>
+                    setAddForm((p) => ({ ...p, client_type: e.target.value }))
+                  }
+                  placeholder="Ex: Restaurant, Grossiste…"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Précision</Label>
+                <Input
+                  value={addForm.client_subtype || ""}
+                  onChange={(e) =>
+                    setAddForm((p) => ({ ...p, client_subtype: e.target.value }))
+                  }
+                  placeholder="Ex: Grillades, Étoilé…"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

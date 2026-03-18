@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update, func, delete as sa_delete, or_, exists
+from sqlalchemy import select, update, func, delete as sa_delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,6 @@ from models.contact import Contact
 from models.contact_phone import ContactPhone
 from models.call import Call
 from models.phone_index import PhoneIndex
-from models.sales_line import SalesLine
 from models.client_audit import ClientAuditLog
 from schemas.client import ContactResponse, ContactBrief, ContactPhoneResponse
 from connectors.phone_normalizer import normalize_phone
@@ -109,15 +108,6 @@ async def list_contacts(
     if search:
         for word in search.strip().split():
             p = f"%{word}%"
-            product_match = exists(
-                select(SalesLine.id).where(
-                    SalesLine.client_sage_id == Client.sage_id,
-                    or_(
-                        SalesLine.article_ref.ilike(p),
-                        SalesLine.designation.ilike(p),
-                    ),
-                )
-            )
             base = base.where(
                 or_(
                     Contact.name.ilike(p),
@@ -130,7 +120,6 @@ async def list_contacts(
                     Contact.title.ilike(p),
                     Client.name.ilike(p),
                     Client.city.ilike(p),
-                    product_match,
                 )
             )
 

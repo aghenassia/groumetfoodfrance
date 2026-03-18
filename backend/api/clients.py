@@ -41,12 +41,15 @@ router = APIRouter(prefix="/api/clients", tags=["clients"])
 class CreateProspectRequest(BaseModel):
     name: str
     contact_name: str | None = None
+    contact_title: str | None = None
     phone: str | None = None
     email: str | None = None
     address: str | None = None
     postal_code: str | None = None
     city: str | None = None
     country: str = "France"
+    client_type: str | None = None
+    client_subtype: str | None = None
     notes: str | None = None
     sales_rep: str | None = None
 
@@ -70,6 +73,7 @@ async def list_clients(
     supplier_id: str | None = Query(default=None, description="Filtrer par fournisseur"),
     competitor_id: str | None = Query(default=None, description="Filtrer par concurrent"),
     product_ref: str | None = Query(default=None, description="Filtrer par produit d'intérêt"),
+    client_type: str | None = Query(default=None, description="Filtrer par type d'entreprise"),
     sort_by: str = Query(default="name", pattern="^(name|ca_total|ca_12m|last_order|order_count|order_count_12m|avg_basket|margin|churn|upsell|priority)$"),
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, le=500),
@@ -136,6 +140,8 @@ async def list_clients(
                     Client.phone.ilike(p),
                     Client.email.ilike(p),
                     Client.sales_rep.ilike(p),
+                    Client.client_type.ilike(p),
+                    Client.client_subtype.ilike(p),
                     contact_match,
                     product_match,
                     supplier_match,
@@ -175,6 +181,8 @@ async def list_clients(
     if product_ref:
         product_clients = select(ClientProductInterest.client_id).where(ClientProductInterest.article_ref == product_ref).distinct()
         base = base.where(Client.id.in_(product_clients))
+    if client_type:
+        base = base.where(Client.client_type == client_type)
 
     sort_map = {
         "name": Client.name,
@@ -306,6 +314,23 @@ async def commercial_stats(
         },
         "top_clients": top,
         "monthly": monthly_data,
+    }
+
+
+@router.get("/types/distinct")
+async def get_client_types(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    types_q = await db.execute(
+        select(Client.client_type).where(Client.client_type.isnot(None), Client.client_type != "").distinct().order_by(Client.client_type)
+    )
+    subtypes_q = await db.execute(
+        select(Client.client_subtype).where(Client.client_subtype.isnot(None), Client.client_subtype != "").distinct().order_by(Client.client_subtype)
+    )
+    return {
+        "types": [r[0] for r in types_q.all()],
+        "subtypes": [r[0] for r in subtypes_q.all()],
     }
 
 
@@ -757,6 +782,8 @@ async def create_prospect(
         postal_code=body.postal_code,
         city=body.city,
         country=body.country,
+        client_type=body.client_type or None,
+        client_subtype=body.client_subtype or None,
         sales_rep=body.sales_rep or user.sage_rep_name or user.name,
         assigned_user_id=user.id,
         is_prospect=True,
@@ -768,6 +795,7 @@ async def create_prospect(
     primary_contact = Contact(
         company_id=client.id,
         name=body.contact_name or body.name,
+        title=body.contact_title or None,
         phone=body.phone,
         phone_e164=phone_e164,
         email=body.email,
@@ -848,12 +876,15 @@ class UpdateClientRequest(BaseModel):
     vat_number: str | None = None
     naf_code: str | None = None
     tariff_category: str | None = None
+    client_type: str | None = None
+    client_subtype: str | None = None
 
 
 EDITABLE_FIELDS = {
     "name", "contact_name", "phone", "email", "address",
     "postal_code", "city", "country", "website", "siret",
     "vat_number", "naf_code", "tariff_category",
+    "client_type", "client_subtype",
 }
 
 

@@ -28,6 +28,8 @@ class ClientResponse(BaseModel):
     sales_rep: str | None = None
     assigned_user_name: str | None = None
     tariff_category: str | None = None
+    client_type: str | None = None
+    client_subtype: str | None = None
     is_prospect: bool = False
     is_dormant: bool = False
     status: str = "prospect"
