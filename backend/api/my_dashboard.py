@@ -371,7 +371,7 @@ async def my_top_products(
 
 @router.get("/top-clients")
 async def my_top_clients(
-    limit: int = Query(default=10, le=30),
+    limit: int = Query(default=20, le=50),
     date_from: date | None = None,
     date_to: date | None = None,
     user_id: str | None = None,

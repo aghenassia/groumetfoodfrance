@@ -63,6 +63,8 @@ import {
   Hash,
   CalendarDays,
   Weight,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -1139,45 +1141,12 @@ function OverviewTab({
 
       {/* Top clients */}
       {detail.top_clients.length > 0 && (
-        <Card>
-          <CardHeader className="pb-1.5 pt-3">
-            <CardTitle className="text-base flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-sora" />
-              Top clients
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="divide-y divide-border">
-              {detail.top_clients.map((c, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-1.5 text-xs"
-                >
-                  <div className="min-w-0 flex-1">
-                    {c.client_id ? (
-                      <Link
-                        href={`/clients/${c.client_id}`}
-                        className="hover:underline font-medium truncate block max-w-[220px]"
-                      >
-                        {c.client_name}
-                      </Link>
-                    ) : (
-                      <span className="truncate block max-w-[220px]">
-                        {c.client_name}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {c.orders} cmd · qté {formatQty(c.qty)}
-                    </span>
-                  </div>
-                  <span className="font-semibold shrink-0 ml-2 tabular-nums">
-                    {formatCurrency(c.ca)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <ExpandableClientList
+          title="Top clients"
+          clients={detail.top_clients}
+          renderValue={(c) => formatCurrency(c.ca)}
+          renderSub={(c) => `${c.orders} cmd · qté ${formatQty(c.qty)}`}
+        />
       )}
 
       {/* Co-purchased */}
@@ -1308,45 +1277,12 @@ function KgTab({
 
       {/* Top clients par poids */}
       {sortedClients.length > 0 && (
-        <Card>
-          <CardHeader className="pb-1.5 pt-3">
-            <CardTitle className="text-base flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-sora" />
-              Top clients (poids)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="divide-y divide-border">
-              {sortedClients.map((c, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-1.5 text-xs"
-                >
-                  <div className="min-w-0 flex-1">
-                    {c.client_id ? (
-                      <Link
-                        href={`/clients/${c.client_id}`}
-                        className="hover:underline font-medium truncate block max-w-[220px]"
-                      >
-                        {c.client_name}
-                      </Link>
-                    ) : (
-                      <span className="truncate block max-w-[220px]">
-                        {c.client_name}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {c.orders} cmd · CA {formatCurrency(c.ca)}
-                    </span>
-                  </div>
-                  <span className="font-semibold shrink-0 ml-2 tabular-nums">
-                    {formatWeight(c.qty)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <ExpandableClientList
+          title="Top clients (poids)"
+          clients={sortedClients}
+          renderValue={(c) => formatWeight(c.qty)}
+          renderSub={(c) => `${c.orders} cmd · CA ${formatCurrency(c.ca)}`}
+        />
       )}
 
       {/* Co-purchased */}
@@ -1550,6 +1486,83 @@ function OrdersTab({
     </>
   );
 }
+
+const PRODUCT_TOP_PAGE_SIZE = 5;
+
+function ExpandableClientList({
+  title,
+  clients,
+  renderValue,
+  renderSub,
+}: {
+  title: string;
+  clients: { client_id?: string; client_name: string; ca: number; qty: number; orders: number }[];
+  renderValue: (c: { ca: number; qty: number; orders: number }) => string;
+  renderSub: (c: { ca: number; qty: number; orders: number }) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? clients : clients.slice(0, PRODUCT_TOP_PAGE_SIZE);
+  const hasMore = clients.length > PRODUCT_TOP_PAGE_SIZE;
+
+  return (
+    <Card>
+      <CardHeader className="pb-1.5 pt-3">
+        <CardTitle className="text-base flex items-center gap-1.5">
+          <Users className="w-4 h-4 text-sora" />
+          {title}
+          {clients.length > 0 && (
+            <span className="text-[10px] font-normal text-muted-foreground ml-auto">{clients.length}</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className={expanded ? "max-h-[360px] overflow-y-auto scrollbar-thin" : ""}>
+          <div className="divide-y divide-border">
+            {visible.map((c, i) => (
+              <div key={i} className="flex items-center justify-between py-1.5 text-xs">
+                <div className="min-w-0 flex-1">
+                  {c.client_id ? (
+                    <Link
+                      href={`/clients/${c.client_id}`}
+                      className="hover:underline font-medium truncate block max-w-[220px]"
+                    >
+                      {c.client_name}
+                    </Link>
+                  ) : (
+                    <span className="truncate block max-w-[220px]">{c.client_name}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">{renderSub(c)}</span>
+                </div>
+                <span className="font-semibold shrink-0 ml-2 tabular-nums">{renderValue(c)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {hasMore && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-7 text-xs text-muted-foreground hover:text-foreground mt-1"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-3 h-3 mr-1" />
+                Voir moins
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3 mr-1" />
+                Voir les {clients.length} ({clients.length - PRODUCT_TOP_PAGE_SIZE} de plus)
+              </>
+            )}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
 function KpiTile({
   value,

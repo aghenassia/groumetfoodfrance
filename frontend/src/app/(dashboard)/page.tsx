@@ -219,7 +219,7 @@ export default function DashboardPage() {
     };
 
     if (viewAs === "all") {
-      const rankParams: Record<string, string> = { ...params, limit: "5", user_id: "all" };
+      const rankParams: Record<string, string> = { ...params, limit: "20", user_id: "all" };
       api.getSalesDashboard("custom", toISO(dateRange.from), toISO(dateRange.to))
         .then(setSalesDashboard)
         .catch(() => {})
@@ -240,7 +240,7 @@ export default function DashboardPage() {
       marginParams.user_id = viewAs;
     }
 
-    const rankParams: Record<string, string> = { ...params, limit: "5" };
+    const rankParams: Record<string, string> = { ...params, limit: "20" };
     if (viewAs !== "me") {
       rankParams.user_id = viewAs;
     }
@@ -1048,74 +1048,50 @@ export default function DashboardPage() {
 
       {/* 5. TOP CLIENTS | TOP PRODUITS (côte à côte) */}
       <div className="grid lg:grid-cols-2 gap-4" key={`tops-${toISO(dateRange.from)}-${toISO(dateRange.to)}-${viewAs}`}>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-4 h-4 text-sora" />
-              Top clients
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topClients.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
-            ) : (
-              <div className="divide-y">
-                {topClients.map((c, i) => (
-                  <Link
-                    key={c.client_id}
-                    href={`/clients/${c.client_id}`}
-                    className="stagger-row flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
-                    style={{ animationDelay: `${i * 120}ms` }}
-                  >
-                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.client_name}</p>
-                      <p className="text-[11px] text-muted-foreground">{c.nb_orders} cmd · {c.nb_products} réf.</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold">{formatCurrency(c.total_ca)}</p>
-                      <p className="text-[11px] text-muted-foreground">Marge {formatCurrency(c.total_margin)}</p>
-                    </div>
-                  </Link>
-                ))}
+        <TopListCard
+          title="Top clients"
+          icon={<Users className="w-4 h-4 text-sora" />}
+          items={topClients}
+          renderItem={(c, i) => (
+            <Link
+              key={c.client_id}
+              href={`/clients/${c.client_id}`}
+              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
+            >
+              <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{c.client_name}</p>
+                <p className="text-[11px] text-muted-foreground">{c.nb_orders} cmd · {c.nb_products} réf.</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold">{formatCurrency(c.total_ca)}</p>
+                <p className="text-[11px] text-muted-foreground">Marge {formatCurrency(c.total_margin)}</p>
+              </div>
+            </Link>
+          )}
+        />
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-sora" />
-              Top produits
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topProducts.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
-            ) : (
-              <div className="divide-y">
-                {topProducts.map((p, i) => (
-                  <div
-                    key={p.article_ref}
-                    className="stagger-row flex items-center gap-3 px-4 py-2.5"
-                    style={{ animationDelay: `${i * 120}ms` }}
-                  >
-                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono">{p.article_ref}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold">{formatCurrency(p.total_ca)}</p>
-                      <p className="text-[11px] text-muted-foreground">{p.total_qty.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} u. · {p.nb_clients} clients</p>
-                    </div>
-                  </div>
-                ))}
+        <TopListCard
+          title="Top produits"
+          icon={<ShoppingCart className="w-4 h-4 text-sora" />}
+          items={topProducts}
+          renderItem={(p, i) => (
+            <div
+              key={p.article_ref}
+              className="flex items-center gap-3 px-4 py-2.5"
+            >
+              <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>
+                <p className="text-[11px] text-muted-foreground font-mono">{p.article_ref}</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold">{formatCurrency(p.total_ca)}</p>
+                <p className="text-[11px] text-muted-foreground">{p.total_qty.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} u. · {p.nb_clients} clients</p>
+              </div>
+            </div>
+          )}
+        />
       </div>
 
       {/* 6. GRAPHIQUE CA */}
@@ -1299,6 +1275,69 @@ function DashboardCAChart({
         </ResponsiveContainer>
       </div>
     </div>
+  );
+}
+
+
+const TOP_LIST_PAGE_SIZE = 5;
+
+function TopListCard<T>({ title, icon, items, renderItem }: {
+  title: string;
+  icon: React.ReactNode;
+  items: T[];
+  renderItem: (item: T, index: number) => React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? items : items.slice(0, TOP_LIST_PAGE_SIZE);
+  const hasMore = items.length > TOP_LIST_PAGE_SIZE;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          {icon}
+          {title}
+          {items.length > 0 && (
+            <span className="text-[10px] font-normal text-muted-foreground ml-auto">{items.length} résultats</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
+        ) : (
+          <>
+            <div className={expanded ? "max-h-[480px] overflow-y-auto scrollbar-thin" : ""}>
+              <div className="divide-y">
+                {visible.map((item, i) => renderItem(item, i))}
+              </div>
+            </div>
+            {hasMore && (
+              <div className="border-t px-4 py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full h-7 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setExpanded(!expanded)}
+                >
+                  {expanded ? (
+                    <>
+                      <ChevronUp className="w-3 h-3 mr-1" />
+                      Voir moins
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 mr-1" />
+                      Voir les {items.length} ({items.length - TOP_LIST_PAGE_SIZE} de plus)
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1612,72 +1651,50 @@ function AdminPilotingView({
 
       {/* Section C: Top clients / Top products */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-4 h-4 text-sora" />
-              Top clients
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topClients.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
-            ) : (
-              <div className="divide-y">
-                {topClients.map((c, i) => (
-                  <Link
-                    key={c.client_id}
-                    href={`/clients/${c.client_id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
-                  >
-                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.client_name}</p>
-                      <p className="text-[11px] text-muted-foreground">{c.nb_orders} cmd · {c.nb_products} réf.</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold">{formatCurrency(c.total_ca)}</p>
-                      <p className="text-[11px] text-muted-foreground">Marge {formatCurrency(c.total_margin)}</p>
-                    </div>
-                  </Link>
-                ))}
+        <TopListCard
+          title="Top clients"
+          icon={<Users className="w-4 h-4 text-sora" />}
+          items={topClients}
+          renderItem={(c, i) => (
+            <Link
+              key={c.client_id}
+              href={`/clients/${c.client_id}`}
+              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/40 transition-colors"
+            >
+              <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{c.client_name}</p>
+                <p className="text-[11px] text-muted-foreground">{c.nb_orders} cmd · {c.nb_products} réf.</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold">{formatCurrency(c.total_ca)}</p>
+                <p className="text-[11px] text-muted-foreground">Marge {formatCurrency(c.total_margin)}</p>
+              </div>
+            </Link>
+          )}
+        />
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-sora" />
-              Top produits
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topProducts.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">Aucune donnée</p>
-            ) : (
-              <div className="divide-y">
-                {topProducts.map((p, i) => (
-                  <div
-                    key={p.article_ref}
-                    className="flex items-center gap-3 px-4 py-2.5"
-                  >
-                    <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono">{p.article_ref}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold">{formatCurrency(p.total_ca)}</p>
-                      <p className="text-[11px] text-muted-foreground">{p.total_qty.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} u. · {p.nb_clients} clients</p>
-                    </div>
-                  </div>
-                ))}
+        <TopListCard
+          title="Top produits"
+          icon={<ShoppingCart className="w-4 h-4 text-sora" />}
+          items={topProducts}
+          renderItem={(p, i) => (
+            <div
+              key={p.article_ref}
+              className="flex items-center gap-3 px-4 py-2.5"
+            >
+              <span className="w-5 text-center text-xs font-bold text-muted-foreground">{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{p.designation || p.article_ref}</p>
+                <p className="text-[11px] text-muted-foreground font-mono">{p.article_ref}</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold">{formatCurrency(p.total_ca)}</p>
+                <p className="text-[11px] text-muted-foreground">{p.total_qty.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} u. · {p.nb_clients} clients</p>
+              </div>
+            </div>
+          )}
+        />
       </div>
 
     </div>
