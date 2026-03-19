@@ -71,7 +71,7 @@ import { useAuth } from "@/lib/auth-context";
 
 function reasonLabel(reason: string) {
   const map: Record<string, string> = {
-    churn_risk: "Risque churn",
+    churn_risk: "Risque de perte",
     callback: "Rappel",
     upsell: "Upsell",
     new_prospect: "Prospect",
@@ -1010,7 +1010,7 @@ export default function PlaylistPage() {
                         </div>
                         <div>
                           <p className={`text-base font-bold ${insight.score_churn > 50 ? "text-red-600" : ""}`}>{insight.score_churn}%</p>
-                          <p className="text-xs text-muted-foreground">Churn</p>
+                          <p className="text-xs text-muted-foreground">Risque</p>
                         </div>
                       </div>
                       <div className={`rounded-lg p-3 flex items-center gap-3 ${insight.score_upsell > 40 ? "bg-green-50" : "bg-accent/40"}`}>

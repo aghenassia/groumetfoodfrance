@@ -1235,7 +1235,7 @@ export default function CallsPage() {
                             <p className={`text-sm font-bold ${selectedClient.score.churn_risk_score >= 7 ? "text-red-600" : selectedClient.score.churn_risk_score >= 4 ? "text-amber-600" : "text-green-600"}`}>
                               {selectedClient.score.churn_risk_score}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">Churn</p>
+                            <p className="text-[10px] text-muted-foreground">Risque</p>
                           </div>
                           <div className="text-center p-2 rounded-lg bg-accent">
                             <p className="text-sm font-bold text-sora">{selectedClient.score.upsell_score}</p>

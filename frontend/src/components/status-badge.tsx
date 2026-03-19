@@ -27,13 +27,13 @@ const STATUS_CONFIG: Record<
     label: "Client actif",
     class: "bg-sensai/5 text-sensai border-sensai/20",
     explanation:
-      "Au moins une commande enregistrée. Peut passer en « À risque » si le score de churn dépasse 60% (scoring RFM quotidien).",
+      "Au moins une commande enregistrée. Peut passer en « À risque » si le score de risque dépasse 60% (scoring RFM quotidien).",
   },
   at_risk: {
     label: "À risque",
     class: "bg-ume/10 text-ume border-ume/30",
     explanation:
-      "Score de churn ≥ 60% — le client commande moins fréquemment que d'habitude. Passe en Dormant après 180 jours sans commande.",
+      "Score de risque ≥ 60% — le client commande moins fréquemment que d'habitude. Passe en Dormant après 180 jours sans commande.",
   },
   dormant: {
     label: "Dormant",

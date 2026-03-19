@@ -56,7 +56,7 @@ const REASON_LABELS: Record<string, { label: string; color: string }> = {
   callback: { label: "Rappels", color: "bg-sora/10 text-sora" },
   manual: { label: "Manuel", color: "bg-indigo-50 text-indigo-600" },
   dormant: { label: "Dormants", color: "bg-ume/10 text-ume" },
-  churn_risk: { label: "Risque churn", color: "bg-red-50 text-red-600" },
+  churn_risk: { label: "Risque de perte", color: "bg-red-50 text-red-600" },
   upsell: { label: "Upsell", color: "bg-green-50 text-green-600" },
   new_prospect: { label: "Prospects", color: "bg-amber-50 text-amber-600" },
   intel_target: { label: "Opé éclair", color: "bg-purple-50 text-purple-600" },
@@ -472,7 +472,7 @@ export default function AdminPlaylistsPage() {
                   <div className="flex rounded-full overflow-hidden h-3">
                     <div className="bg-sora transition-all" style={{ width: `${cfg.pct_callback}%` }} title={`Rappels ${cfg.pct_callback}%`} />
                     <div className="bg-ume transition-all" style={{ width: `${cfg.pct_dormant}%` }} title={`Dormants ${cfg.pct_dormant}%`} />
-                    <div className="bg-red-400 transition-all" style={{ width: `${cfg.pct_churn_risk}%` }} title={`Churn ${cfg.pct_churn_risk}%`} />
+                    <div className="bg-red-400 transition-all" style={{ width: `${cfg.pct_churn_risk}%` }} title={`Risque ${cfg.pct_churn_risk}%`} />
                     <div className="bg-green-400 transition-all" style={{ width: `${cfg.pct_upsell}%` }} title={`Upsell ${cfg.pct_upsell}%`} />
                     <div className="bg-amber-400 transition-all" style={{ width: `${cfg.pct_prospect}%` }} title={`Prospects ${cfg.pct_prospect}%`} />
                   </div>
@@ -495,7 +495,7 @@ export default function AdminPlaylistsPage() {
                   </div>
 
                   <div className="text-xs text-muted-foreground">
-                    {cfg.total_size} clients/jour · Dormant {">"}{cfg.dormant_min_days}j · Churn {">"}{cfg.churn_min_score}% · Upsell {">"}{cfg.upsell_min_score}%
+                    {cfg.total_size} clients/jour · Dormant {">"}{cfg.dormant_min_days}j · Risque {">"}{cfg.churn_min_score}% · Upsell {">"}{cfg.upsell_min_score}%
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1">
                     <Briefcase className="w-3 h-3" />
@@ -604,7 +604,7 @@ export default function AdminPlaylistsPage() {
               {/* Editable categories */}
               {[
                 { key: "pct_dormant", label: "Clients dormants", color: "bg-ume", desc: "Sans commande depuis longtemps" },
-                { key: "pct_churn_risk", label: "Risque churn", color: "bg-red-400", desc: "Score de churn élevé" },
+                { key: "pct_churn_risk", label: "Risque de perte", color: "bg-red-400", desc: "Score de risque élevé" },
                 { key: "pct_upsell", label: "Upsell", color: "bg-green-400", desc: "Potentiel de vente additionnelle" },
                 { key: "pct_prospect", label: "Prospects", color: "bg-amber-400", desc: "Nouveaux clients / cibles intel" },
               ].map(({ key, label, color, desc }) => {
@@ -650,7 +650,7 @@ export default function AdminPlaylistsPage() {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Churn min %</Label>
+                  <Label className="text-xs text-muted-foreground">Risque min %</Label>
                   <Input
                     type="number"
                     value={form.churn_min_score}

@@ -563,7 +563,7 @@ function FunnelView({ data }: { data: FunnelAnalyticsData }) {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Cohortes de rétention (90j)</CardTitle></CardHeader>
           <CardContent><ResponsiveContainer width="100%" height={250}><BarChart data={data.cohorts}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="acquired" name="Acquis" fill="#93c5fd" /><Bar dataKey="still_active" name="Encore actifs" fill="#3b82f6" /><Legend wrapperStyle={{ fontSize: 11 }} /></BarChart></ResponsiveContainer></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Nouveaux clients vs churn</CardTitle></CardHeader>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Nouveaux clients vs perdus</CardTitle></CardHeader>
           <CardContent>{(() => {
             const merged: Record<string, { month: string; new: number; lost: number }> = {};
             data.new_clients_trend.forEach((n) => { merged[n.month] = { month: n.month, new: n.new, lost: 0 }; });

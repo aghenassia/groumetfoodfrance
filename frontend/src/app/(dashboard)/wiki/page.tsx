@@ -115,8 +115,8 @@ const ARTICLES: ArticleMeta[] = [
     title: "Liste des clients",
     icon: Users,
     category: "sales",
-    summary: "Recherche, tri et filtrage de toute votre base client avec scores et indicateurs. Colonnes Statut et Churn séparées avec filtres indépendants.",
-    tags: ["recherche", "filtre", "tri", "base", "statut", "churn"],
+    summary: "Recherche, tri et filtrage de toute votre base client avec scores et indicateurs. Colonnes Statut et Risque séparées avec filtres indépendants.",
+    tags: ["recherche", "filtre", "tri", "base", "statut", "risque"],
   },
   {
     id: "contacts",
@@ -208,11 +208,11 @@ const ARTICLES: ArticleMeta[] = [
   },
   {
     id: "scoring",
-    title: "Scores : Churn, Upsell, Priorité",
+    title: "Scores : Risque, Upsell, Priorité",
     icon: AlertTriangle,
     category: "concept",
     summary: "Comment le système calcule le risque de perte, le potentiel d'upsell et la priorité globale.",
-    tags: ["churn", "upsell", "rfm", "priorité", "risque"],
+    tags: ["risque", "upsell", "rfm", "priorité", "perte"],
   },
   {
     id: "products",
@@ -408,7 +408,7 @@ export default function WikiPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          placeholder="Rechercher un sujet (ex: churn, to do, qualification...)"
+          placeholder="Rechercher un sujet (ex: risque, to do, qualification...)"
           className="pl-10"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -570,7 +570,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <ul className="space-y-2 text-sm">
               <li className="flex gap-2"><Clock className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Rappels planifiés (callback) :</strong> clients pour qui vous avez prévu un rappel aujourd&apos;hui lors d&apos;une précédente <L to="qualify">qualification</L>. Toujours en priorité.</span></li>
               <li className="flex gap-2"><AlertTriangle className="w-4 h-4 mt-0.5 text-ume shrink-0" /><span><strong>Clients dormants :</strong> 180+ jours sans commande. Le système respecte un <strong>cooldown de 14 jours</strong> entre les tentatives pour ne pas saturer le client.</span></li>
-              <li className="flex gap-2"><TrendingUp className="w-4 h-4 mt-0.5 text-red-500 shrink-0" /><span><strong>Risque churn :</strong> clients actifs dont le <L to="scoring">score de churn</L> est élevé — ils commandent moins que d&apos;habitude, il faut les relancer.</span></li>
+              <li className="flex gap-2"><TrendingUp className="w-4 h-4 mt-0.5 text-red-500 shrink-0" /><span><strong>Risque de perte :</strong> clients actifs dont le <L to="scoring">score de risque</L> est élevé — ils commandent moins que d&apos;habitude, il faut les relancer.</span></li>
               <li className="flex gap-2"><Zap className="w-4 h-4 mt-0.5 text-green-600 shrink-0" /><span><strong>Upsell :</strong> clients avec un potentiel de vente additionnelle élevé. En cliquant sur l&apos;insight, vous verrez <L to="ai-analysis">les recommandations IA</L> sur quoi pousser.</span></li>
               <li className="flex gap-2"><Star className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" /><span><strong>Prospects & Leads :</strong> nouveaux contacts à démarcher. Les <L to="statuts">leads qualifiés</L> (appel décroché &gt; 30s) sont priorisés sur les simples prospects.</span></li>
             </ul>
@@ -640,29 +640,29 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
       return (
         <div className="space-y-4">
           <Section title="La liste clients">
-            <p>Cette page affiche toute votre base client avec des indicateurs clés sur chaque ligne : CA total, CA 12 mois, dernière commande, nombre de commandes, scores de churn et d&apos;upsell.</p>
+            <p>Cette page affiche toute votre base client avec des indicateurs clés sur chaque ligne : CA total, CA 12 mois, dernière commande, nombre de commandes, scores de risque et d&apos;upsell.</p>
           </Section>
 
           <Section title="Recherche & Filtres">
             <p>La barre de recherche filtre par nom, code Sage, ville, contact, téléphone ou email. Vous pouvez aussi filtrer par :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Commercial</strong> : voir uniquement les clients d&apos;un sales rep spécifique.</li>
-              <li>• <strong>Statut</strong> : filtrer par statut du lifecycle (Prospect, Lead qualifié, Client actif, À risque, Dormant, Perdu). Filtre indépendant du churn.</li>
-              <li>• <strong>Churn</strong> : filtrer par niveau de risque churn (filtre indépendant du statut). Les colonnes <strong>Statut</strong> et <strong>Churn</strong> sont désormais séparées avec des filtres distincts.</li>
+              <li>• <strong>Statut</strong> : filtrer par statut du lifecycle (Prospect, Lead qualifié, Client actif, À risque, Dormant, Perdu). Filtre indépendant du risque.</li>
+              <li>• <strong>Risque</strong> : filtrer par niveau de risque de perte (filtre indépendant du statut). Les colonnes <strong>Statut</strong> et <strong>Risque</strong> sont désormais séparées avec des filtres distincts.</li>
               <li>• <strong>Avec/sans commandes</strong> : séparer les clients actifs des prospects purs (rappel : un contact avec commandes n&apos;est jamais un prospect).</li>
             </ul>
           </Section>
 
-          <Section title="Colonnes Statut et Churn">
+          <Section title="Colonnes Statut et Risque">
             <p>La liste affiche désormais deux colonnes distinctes :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Statut</strong> : le <L to="statuts">statut lifecycle</L> du client (Prospect, Lead qualifié, Client actif, À risque, Dormant, Perdu).</li>
-              <li>• <strong>Churn</strong> : le <L to="scoring">score de risque churn</L> avec jauge visuelle. Chaque colonne dispose de son propre filtre indépendant.</li>
+              <li>• <strong>Risque</strong> : le <L to="scoring">score de risque</L> avec jauge visuelle. Chaque colonne dispose de son propre filtre indépendant.</li>
             </ul>
           </Section>
 
           <Section title="Trier les colonnes">
-            <p>Cliquez sur n&apos;importe quel en-tête de colonne pour trier : par nom, CA total, CA 12m, dernière commande, nombre de commandes, panier moyen, marge, statut, churn, upsell, priorité.</p>
+            <p>Cliquez sur n&apos;importe quel en-tête de colonne pour trier : par nom, CA total, CA 12m, dernière commande, nombre de commandes, panier moyen, marge, statut, risque, upsell, priorité.</p>
           </Section>
 
           <Section title="Badges de statut">
@@ -703,7 +703,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Scoring">
-            <p>Les jauges affichent le <L to="scoring">score de churn</L> (risque de perte) et le score d&apos;upsell (potentiel de vente additionnelle), ainsi que le CA 12 mois, les commandes 12 mois, la fréquence moyenne et la priorité globale.</p>
+            <p>Les jauges affichent le <L to="scoring">score de risque</L> (risque de perte) et le score d&apos;upsell (potentiel de vente additionnelle), ainsi que le CA 12 mois, les commandes 12 mois, la fréquence moyenne et la priorité globale.</p>
           </Section>
 
           <Section title="Feedback commercial">
@@ -1209,8 +1209,8 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <div className="space-y-3">
               <StatusExplain name="Prospect" badge="bg-kiku/10 text-sensai border-kiku/30" entry="Import Sage ou création manuelle — zéro commande en base, zéro appel CRM" exit="Appel décroché > 30s → Lead qualifié, ou commande détectée → Client actif" auto />
               <StatusExplain name="Lead qualifié" badge="bg-sora/10 text-sora border-sora/30" entry="Appel décroché > 30s enregistré, MAIS zéro commande en base" exit="Première commande détectée dans Sage → Client actif (automatique)" auto />
-              <StatusExplain name="Client actif" badge="bg-sensai/5 text-sensai border-sensai/20" entry="Commande détectée dans Sage, dernière commande < 180 jours (auto-transition depuis Prospect, Lead ou Dormant)" exit="Churn ≥ 60% → À risque, ou dernière commande ≥ 180j → Dormant" auto />
-              <StatusExplain name="À risque" badge="bg-ume/10 text-ume border-ume/30" entry="Commandes en base + churn ≥ 60% (scoring RFM quotidien)" exit="Dernière commande ≥ 180j → Dormant, ou churn repasse < 60% → Client actif" auto />
+              <StatusExplain name="Client actif" badge="bg-sensai/5 text-sensai border-sensai/20" entry="Commande détectée dans Sage, dernière commande < 180 jours (auto-transition depuis Prospect, Lead ou Dormant)" exit="Risque ≥ 60% → À risque, ou dernière commande ≥ 180j → Dormant" auto />
+              <StatusExplain name="À risque" badge="bg-ume/10 text-ume border-ume/30" entry="Commandes en base + risque ≥ 60% (scoring RFM quotidien)" exit="Dernière commande ≥ 180j → Dormant, ou risque repasse < 60% → Client actif" auto />
               <StatusExplain name="Dormant" badge="bg-ume/20 text-sensai border-ume/30" entry="Commandes en base, dernière commande ≥ 180 jours" exit="Nouvelle commande → Client actif (réactivation), ou qualification « pas intéressé » → Perdu" auto />
               <StatusExplain name="Perdu (Dead)" badge="bg-muted text-muted-foreground border-border" entry="Qualification manuelle : outcome = « pas intéressé » + confirmation" exit="Aucune sortie automatique — seule transition manuelle du système" auto={false} />
             </div>
@@ -1238,7 +1238,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>Le système calcule quotidiennement trois scores pour chaque client ayant au moins une commande :</p>
           </Section>
 
-          <Section title="Score de churn (risque de perte)">
+          <Section title="Score de risque (risque de perte)">
             <p>Note de 0 à 100 qui mesure le risque qu&apos;un client cesse de commander. Plus le score est élevé, plus le risque est fort.</p>
             <p><strong>3 composantes :</strong></p>
             <ul className="text-sm space-y-2">
@@ -1261,16 +1261,16 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Score de priorité globale">
-            <p>Combinaison pondérée du churn et de l&apos;upsell. Utilisé par la <L to="playlist">To do</L> pour ordonner les contacts : les clients à haute priorité apparaissent en premier.</p>
+            <p>Combinaison pondérée du risque et de l&apos;upsell. Utilisé par la <L to="playlist">To do</L> pour ordonner les contacts : les clients à haute priorité apparaissent en premier.</p>
           </Section>
 
           <Section title="Impact sur le système">
             <ul className="text-sm space-y-1">
-              <li>• Churn ≥ 60% → le client passe en <L to="statuts">statut « À risque »</L>.</li>
+              <li>• Risque ≥ 60% → le client passe en <L to="statuts">statut « À risque »</L>.</li>
               <li>• Dernière commande ≥ 180 jours → passe en <L to="statuts">« Dormant »</L>.</li>
               <li>• Le scoring alimente les catégories de la <L to="playlist">To do</L>.</li>
               <li>• Le scoring auto-corrige les <L to="statuts">statuts</L> incohérents (ex : un prospect avec des commandes est requalifié automatiquement).</li>
-              <li>• Visible sur la <L to="client360">fiche 360°</L> et la <L to="clients">liste clients</L> (colonnes Statut et Churn séparées).</li>
+              <li>• Visible sur la <L to="client360">fiche 360°</L> et la <L to="clients">liste clients</L> (colonnes Statut et Risque séparées).</li>
             </ul>
           </Section>
         </div>
@@ -1528,7 +1528,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Les 4 types de sync Sage">
             <ul className="text-sm space-y-1">
               <li>• <strong>Clients</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_COMPTET</code> → coordonnées, contacts, numéros de téléphone.</li>
-              <li>• <strong>Ventes</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_DOCLIGNE</code> → <strong>4 types de documents</strong> : Bons de Commande (BC), Bons de Livraison (BL), Factures et Avoirs. Les KPIs financiers (CA, marge) restent basés sur les factures, mais la recency du churn utilise tous les types. Déclenche les transitions automatiques de <L to="statuts">lifecycle</L> (prospect→client, lead→client, dormant→client). Auto-corrige les statuts incohérents.</li>
+              <li>• <strong>Ventes</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_DOCLIGNE</code> → <strong>4 types de documents</strong> : Bons de Commande (BC), Bons de Livraison (BL), Factures et Avoirs. Les KPIs financiers (CA, marge) restent basés sur les factures, mais la recency du risque utilise tous les types. Déclenche les transitions automatiques de <L to="statuts">lifecycle</L> (prospect→client, lead→client, dormant→client). Auto-corrige les statuts incohérents.</li>
               <li>• <strong>Articles de service</strong> : les articles de type service (TRANSPORT, ARTDIVERS, ZREMISE, etc.) sont automatiquement taggés <code className="text-xs bg-muted px-1 py-0.5 rounded">is_service=true</code> lors de la sync produits et exclus des listings.</li>
               <li>• <strong>Produits</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_ARTICLE</code> → catalogue avec prix et familles.</li>
               <li>• <strong>Stock</strong> : table <code className="text-xs bg-muted px-1 py-0.5 rounded">F_ARTSTOCK</code> → niveaux par dépôt.</li>
@@ -1540,7 +1540,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           </Section>
 
           <Section title="Scoring RFM">
-            <p>Après une sync de ventes, lancez le <strong>Scoring RFM</strong> pour recalculer les <L to="scoring">scores de churn, upsell et priorité</L> de tous les clients. Ce scoring déclenche aussi les transitions automatiques de <L to="statuts">statut</L> (client → à risque → dormant).</p>
+            <p>Après une sync de ventes, lancez le <strong>Scoring RFM</strong> pour recalculer les <L to="scoring">scores de risque, upsell et priorité</L> de tous les clients. Ce scoring déclenche aussi les transitions automatiques de <L to="statuts">statut</L> (client → à risque → dormant).</p>
           </Section>
 
           <Section title="Historique">
@@ -1561,7 +1561,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li><strong>Taille totale (total_size) :</strong> nombre de contacts dans la To do quotidienne. Défaut : 15.</li>
               <li><strong>% Rappels (pct_callback) :</strong> part dédiée aux rappels planifiés. Défaut : 10%.</li>
               <li><strong>% Dormants (pct_dormant) :</strong> part dédiée aux clients sans commande depuis 180+ jours. Défaut : 30%.</li>
-              <li><strong>% Churn (pct_churn_risk) :</strong> part dédiée aux clients à risque de perte. Défaut : 25%.</li>
+              <li><strong>% Risque (pct_churn_risk) :</strong> part dédiée aux clients à risque de perte. Défaut : 25%.</li>
               <li><strong>% Upsell (pct_upsell) :</strong> part dédiée aux opportunités de vente additionnelle. Défaut : 20%.</li>
               <li><strong>% Prospect (pct_prospect) :</strong> part dédiée aux nouveaux contacts à démarcher. Défaut : 15%.</li>
             </ul>
@@ -1571,7 +1571,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Seuils">
             <ul className="text-sm space-y-1">
               <li>• <strong>Dormant (jours min) :</strong> nombre minimum de jours d&apos;inactivité pour inclure un dormant. Défaut : 90.</li>
-              <li>• <strong>Churn min % :</strong> score minimum pour qu&apos;un client apparaisse dans la catégorie risque. Défaut : 40.</li>
+              <li>• <strong>Risque min % :</strong> score minimum pour qu&apos;un client apparaisse dans la catégorie risque. Défaut : 40.</li>
               <li>• <strong>Upsell min % :</strong> score minimum pour la catégorie upsell. Défaut : 30.</li>
             </ul>
           </Section>
@@ -1605,7 +1605,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Opération éclair — filtres intel">
             <p>L&apos;admin peut configurer des <strong>filtres d&apos;<L to="intel">intel commerciale</L></strong> pour cibler des entreprises spécifiques dans les To do :</p>
             <ul className="space-y-2 text-sm">
-              <li className="flex gap-2"><Target className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Mode &quot;Remplacer prospects&quot; :</strong> les slots prospects de la To do sont remplis par des cibles intel au lieu des prospects classiques. Les autres catégories (churn, dormants, upsell) restent inchangées.</span></li>
+              <li className="flex gap-2"><Target className="w-4 h-4 mt-0.5 text-sora shrink-0" /><span><strong>Mode &quot;Remplacer prospects&quot; :</strong> les slots prospects de la To do sont remplis par des cibles intel au lieu des prospects classiques. Les autres catégories (risque, dormants, upsell) restent inchangées.</span></li>
               <li className="flex gap-2"><Zap className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" /><span><strong>Mode &quot;100% cibles intel&quot; :</strong> toute la To do est alimentée exclusivement par les filtres intel. Aucune autre catégorie n&apos;est générée.</span></li>
             </ul>
             <p className="mt-2">Les filtres configurables sont :</p>
@@ -1758,7 +1758,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Ce qu'on y trouve">
             <ul className="text-sm space-y-1">
               <li>• Définition complète des 6 <L to="statuts">statuts du lifecycle</L> avec les conditions d&apos;entrée et de sortie.</li>
-              <li>• Détail du calcul du <L to="scoring">score de churn multi-facteurs</L> avec les tables de seuils exactes.</li>
+              <li>• Détail du calcul du <L to="scoring">score de risque multi-facteurs</L> avec les tables de seuils exactes.</li>
               <li>• Formules des scores d&apos;upsell et de priorité globale.</li>
               <li>• Variables de <L to="admin-playlist">configuration des To do</L> avec valeurs par défaut.</li>
               <li>• Système de cooldown dormant : durée, tentatives max, seuil de revue managériale.</li>

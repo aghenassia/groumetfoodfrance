@@ -61,7 +61,7 @@ const STATUSES = [
     description:
       "Au moins une commande enregistrée et dernière commande < 180 jours. La transition depuis Prospect ou Lead est automatique dès qu'une commande est détectée (pas besoin d'appel préalable). Le scoring et la sync Sage auto-corrigent les statuts incohérents.",
     entry: "Commande détectée dans Sage (auto-transition depuis Prospect, Lead ou Dormant)",
-    exit: "churn_risk_score ≥ 60 → À risque, ou dernière commande ≥ 180j → Dormant",
+    exit: "Score de risque ≥ 60 → À risque, ou dernière commande ≥ 180j → Dormant",
     auto: true,
   },
   {
@@ -69,9 +69,9 @@ const STATUSES = [
     label: "À risque",
     badgeClass: "bg-ume/10 text-ume border-ume/30",
     description:
-      "Le client a des commandes en base mais commande significativement moins que d'habitude. Son score de churn a dépassé le seuil de 60/100 (churn ≥ 60%).",
-    entry: "churn_risk_score ≥ 60 (scoring RFM quotidien), commandes existantes en base",
-    exit: "Dernière commande ≥ 180j → Dormant, ou churn redescend < 60 → Client actif",
+      "Le client a des commandes en base mais commande significativement moins que d'habitude. Son score de risque a dépassé le seuil de 60/100 (risque ≥ 60%).",
+    entry: "Score de risque ≥ 60 (scoring RFM quotidien), commandes existantes en base",
+    exit: "Dernière commande ≥ 180j → Dormant, ou risque redescend < 60 → Client actif",
     auto: true,
   },
   {
@@ -148,14 +148,14 @@ const SAGE_DOC_TYPES = [
     label: "BC — Bon de Commande",
     icon: ShoppingCart,
     color: "text-sora",
-    usage: "Pipeline. Inclus dans la recency du churn. Exclu des métriques financières (CA, marge).",
+    usage: "Pipeline. Inclus dans la recency du risque. Exclu des métriques financières (CA, marge).",
   },
   {
     code: "3",
     label: "BL — Bon de Livraison",
     icon: Truck,
     color: "text-kiku",
-    usage: "Pipeline. Inclus dans la recency du churn. Exclu des métriques financières (CA, marge).",
+    usage: "Pipeline. Inclus dans la recency du risque. Exclu des métriques financières (CA, marge).",
   },
   {
     code: "6",
@@ -185,7 +185,7 @@ const SERVICE_ARTICLE_REFS = [
 
 const SCORES = [
   {
-    name: "Churn Risk Score",
+    name: "Score de risque",
     range: "0 – 100",
     icon: Activity,
     color: "text-ume",
@@ -219,9 +219,9 @@ const SCORES = [
     icon: Target,
     color: "text-kiku",
     description:
-      "Score composite qui détermine l'ordre d'appel dans la To do. Formule : churn × 0.5 + upsell × 0.3 + min(100, CA_12m / 100) × 0.2",
+      "Score composite qui détermine l'ordre d'appel dans la To do. Formule : risque × 0.5 + upsell × 0.3 + min(100, CA_12m / 100) × 0.2",
     thresholds: [
-      { label: "Poids churn", meaning: "50% — rétention prioritaire" },
+      { label: "Poids risque", meaning: "50% — rétention prioritaire" },
       {
         label: "Poids upsell",
         meaning: "30% — croissance du panier",
@@ -256,7 +256,7 @@ const PLAYLIST_VARS = [
     variable: "pct_churn_risk",
     defaut: "25%",
     description:
-      "Clients actifs avec un churn_risk_score ≥ seuil configuré (défaut : 40)",
+      "Clients actifs avec un score de risque ≥ seuil configuré (défaut : 40)",
   },
   {
     variable: "pct_upsell",
@@ -280,7 +280,7 @@ const PLAYLIST_VARS = [
     variable: "churn_min_score",
     defaut: "40",
     description:
-      "Score churn minimum pour qu'un client apparaisse dans la catégorie risque",
+      "Score de risque minimum pour qu'un client apparaisse dans la catégorie risque",
   },
   {
     variable: "upsell_min_score",
@@ -547,7 +547,7 @@ export default function GlossairePage() {
             transition Prospect/Lead → Client est <strong>automatique</strong> dès
             qu&apos;une commande existe dans Sage (pas besoin d&apos;appel préalable).
             Les retours sont possibles : un Dormant qui recommande redevient Client,
-            un client À risque dont le churn redescend redevient Client actif.
+            un client À risque dont le risque redescend redevient Client actif.
             Le scoring et la sync Sage auto-corrigent les incohérences (ex : un prospect avec des commandes est requalifié).
           </p>
         </div>
@@ -559,7 +559,7 @@ export default function GlossairePage() {
       <section>
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Activity className="w-5 h-5 text-ume" />
-          Churn Risk Score — Détail du calcul
+          Score de risque — Détail du calcul
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
           Le score est la <strong>somme de 3 composantes indépendantes</strong>,
@@ -655,7 +655,7 @@ export default function GlossairePage() {
         <div className="mt-4 p-4 rounded-lg border bg-muted/30 space-y-2">
           <p className="text-xs text-muted-foreground leading-relaxed">
             <strong className="text-foreground">Règle de calcul :</strong>{" "}
-            La <strong>recency</strong> du score de churn utilise tous les types (BC, BL, FA, AV)
+            La <strong>recency</strong> du score de risque utilise tous les types (BC, BL, FA, AV)
             pour refléter l&apos;activité réelle du client. Les <strong>métriques financières</strong>{" "}
             (CA, marge, panier moyen, order_count) sont calculées uniquement sur les
             factures (6) et avoirs (7) pour éviter le double-comptage.

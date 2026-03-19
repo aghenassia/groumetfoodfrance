@@ -1168,7 +1168,7 @@ export default function ClientDetailPage() {
             <CardContent className="space-y-3">
               <div>
                 <div className="flex justify-between text-xs mb-1">
-                  <span>Risque churn</span>
+                  <span>Risque de perte</span>
                   <span className={`font-bold ${churn?.color}`}>
                     {score.churn_risk_score}% — {churn?.label}
                   </span>

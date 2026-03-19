@@ -209,7 +209,7 @@ export default function AdminPage() {
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground">Risque churn</p>
+                <p className="text-xs text-muted-foreground">Risque de perte</p>
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               </div>
               <p className="text-2xl font-bold">
@@ -363,7 +363,7 @@ export default function AdminPage() {
                 <p className="text-sm font-medium">Scoring RFM</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Recalculer les scores churn, upsell et priorité
+                Recalculer les scores risque, upsell et priorité
               </p>
               <Button
                 className="w-full"

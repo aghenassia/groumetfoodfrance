@@ -80,7 +80,7 @@ const SORT_OPTIONS: { value: SortKey; label: string; icon: React.ReactNode }[] =
   { value: "last_order", label: "Dernière commande", icon: <Calendar className="w-3.5 h-3.5" /> },
   { value: "order_count", label: "Nb commandes", icon: <ShoppingCart className="w-3.5 h-3.5" /> },
   { value: "avg_basket", label: "Panier moyen", icon: <ShoppingCart className="w-3.5 h-3.5" /> },
-  { value: "churn", label: "Risque churn", icon: <AlertTriangle className="w-3.5 h-3.5" /> },
+  { value: "churn", label: "Risque de perte", icon: <AlertTriangle className="w-3.5 h-3.5" /> },
   { value: "upsell", label: "Potentiel upsell", icon: <Target className="w-3.5 h-3.5" /> },
   { value: "priority", label: "Priorité globale", icon: <Target className="w-3.5 h-3.5" /> },
 ];
@@ -276,7 +276,7 @@ export default function ClientsPage() {
   ];
 
   const churnOptions = [
-    { key: "all", label: "Tout churn" },
+    { key: "all", label: "Tout risque" },
     { key: "high", label: "Élevé (≥70)" },
     { key: "medium", label: "Moyen (40-69)" },
     { key: "low", label: "Faible (<40)" },
@@ -584,7 +584,7 @@ export default function ClientsPage() {
                       onClick={() => toggleSort("churn")}
                     >
                       <span className="flex items-center justify-center">
-                        Churn
+                        Risque
                         <SortIcon col="churn" />
                       </span>
                     </TableHead>
