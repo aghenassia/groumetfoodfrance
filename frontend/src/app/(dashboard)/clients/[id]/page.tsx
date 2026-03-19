@@ -1284,6 +1284,49 @@ export default function ClientDetailPage() {
         </Card>
       )}
 
+      {/* Mobile: Classification */}
+      {((client.client_type && client.client_type.length > 0) || (client.client_subtype && client.client_subtype.length > 0) || client.tariff_category) && (
+        <div className="lg:hidden">
+          <Card className="border-blue-100">
+            <CardContent className="pt-4 pb-3 space-y-3">
+              {client.client_type && client.client_type.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {client.client_type.map((t) => (
+                      <Badge key={t} variant="outline" className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                        <Building2 className="w-3 h-3" />
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {client.client_subtype && client.client_subtype.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Sous-type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {client.client_subtype.map((t) => (
+                      <Badge key={t} variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {client.tariff_category && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Catégorie tarifaire</p>
+                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    {client.tariff_category}
+                  </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Mobile-only contacts card */}
       <div className="lg:hidden">
         <Card>
@@ -2341,6 +2384,46 @@ export default function ClientDetailPage() {
 
       {/* Sidebar right — sticky */}
       <div className="hidden lg:block sticky top-0 space-y-4 max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-thin">
+        {/* Classification */}
+        {((client.client_type && client.client_type.length > 0) || (client.client_subtype && client.client_subtype.length > 0) || client.tariff_category) && (
+          <Card className="border-blue-100">
+            <CardContent className="pt-4 pb-3 space-y-3">
+              {client.client_type && client.client_type.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {client.client_type.map((t) => (
+                      <Badge key={t} variant="outline" className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                        <Building2 className="w-3 h-3" />
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {client.client_subtype && client.client_subtype.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Sous-type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {client.client_subtype.map((t) => (
+                      <Badge key={t} variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {client.tariff_category && (
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Catégorie tarifaire</p>
+                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    {client.tariff_category}
+                  </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-base flex items-center gap-1.5">
