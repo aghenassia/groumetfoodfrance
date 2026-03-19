@@ -96,7 +96,7 @@ async def list_products(
     has_sales: bool | None = None,
     stock_filter: str | None = Query(default=None, pattern="^(in_stock|low|out|no_data)$"),
     depot_id: int | None = Query(default=None, description="Filtrer par dépôt (stock > 0 dans ce dépôt)"),
-    limit: int = Query(default=50, le=500),
+    limit: int = Query(default=50, le=5000),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

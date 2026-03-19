@@ -90,7 +90,7 @@ async def list_contacts(
     assigned_user_id: str | None = None,
     sort_by: str = Query(default="name", pattern="^(name|created_at|company_name)$"),
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, le=5000),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

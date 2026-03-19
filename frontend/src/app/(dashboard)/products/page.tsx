@@ -69,7 +69,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 500, label: "500" },
+  { value: 0, label: "Tous" },
+] as const;
 
 type SortKey =
   | "ca"
@@ -159,8 +164,9 @@ function ProductsPageInner() {
     family: "all",
     stockFilter: "" as StockFilter,
     depotFilter: "all",
+    pageSize: 50,
   });
-  const { sortBy, sortDir, hasSales, family, stockFilter, depotFilter } = savedFilters;
+  const { sortBy, sortDir, hasSales, family, stockFilter, depotFilter, pageSize } = savedFilters;
 
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -196,11 +202,13 @@ function ProductsPageInner() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const effectivePageSize = pageSize === 0 ? 5000 : pageSize;
+
   const fetchProducts = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
+      limit: String(effectivePageSize),
+      offset: String(page * effectivePageSize),
       sort_by: sortBy,
       sort_dir: sortDir,
     };
@@ -220,7 +228,7 @@ function ProductsPageInner() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, sortBy, sortDir, hasSales, family, stockFilter, depotFilter, page]);
+  }, [debouncedSearch, sortBy, sortDir, hasSales, family, stockFilter, depotFilter, page, effectivePageSize]);
 
   useEffect(() => {
     fetchProducts();
@@ -273,7 +281,7 @@ function ProductsPageInner() {
     );
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const totalPages = pageSize === 0 ? 1 : Math.ceil(total / pageSize);
   const activeFilterCount =
     (hasSales !== "all" ? 1 : 0) + (family !== "all" ? 1 : 0) + (stockFilter ? 1 : 0) + (depotFilter !== "all" ? 1 : 0);
 
@@ -718,39 +726,85 @@ function ProductsPageInner() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4">
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              {page * PAGE_SIZE + 1}–
-              {Math.min((page + 1) * PAGE_SIZE, total)}/{total}
-            </p>
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-              >
-                <ChevronLeft className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Précédent</span>
-              </Button>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {page + 1}/{totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() =>
-                  setPage((p) => Math.min(totalPages - 1, p + 1))
-                }
-                disabled={page >= totalPages - 1}
-              >
-                <span className="hidden sm:inline">Suivant</span>
-                <ChevronRight className="w-4 h-4 sm:ml-1" />
-              </Button>
+        {total > 0 && (
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {pageSize === 0
+                  ? `${total} résultat${total > 1 ? "s" : ""}`
+                  : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} sur ${total}`}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Afficher :</span>
+                <div className="flex gap-1">
+                  {PAGE_SIZE_OPTIONS.map((opt) => (
+                    <Button
+                      key={opt.value}
+                      variant={pageSize === opt.value ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => {
+                        setFilters({ pageSize: opt.value });
+                        setPage(0);
+                      }}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                {(() => {
+                  const pages: (number | "ellipsis")[] = [];
+                  if (totalPages <= 7) {
+                    for (let i = 0; i < totalPages; i++) pages.push(i);
+                  } else {
+                    pages.push(0);
+                    if (page > 2) pages.push("ellipsis");
+                    const start = Math.max(1, page - 1);
+                    const end = Math.min(totalPages - 2, page + 1);
+                    for (let i = start; i <= end; i++) pages.push(i);
+                    if (page < totalPages - 3) pages.push("ellipsis");
+                    pages.push(totalPages - 1);
+                  }
+                  return pages.map((p, idx) =>
+                    p === "ellipsis" ? (
+                      <span key={`e${idx}`} className="px-1 text-sm text-muted-foreground">…</span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={page === p ? "default" : "outline"}
+                        size="sm"
+                        className="h-8 w-8 p-0 text-xs"
+                        onClick={() => setPage(p)}
+                      >
+                        {p + 1}
+                      </Button>
+                    )
+                  );
+                })()}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
