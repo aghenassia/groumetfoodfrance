@@ -619,18 +619,18 @@ export default function ClientsPage() {
                               </span>
                             )}
                           </div>
-                          {(client.client_type || client.client_subtype) && (
+                          {((client.client_type && client.client_type.length > 0) || (client.client_subtype && client.client_subtype.length > 0)) && (
                             <div className="flex flex-wrap items-center gap-1 mt-1">
-                              {client.client_type && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">
-                                  {client.client_type}
+                              {client.client_type?.map((t) => (
+                                <Badge key={t} variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                  {t}
                                 </Badge>
-                              )}
-                              {client.client_subtype && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-50 text-violet-700 border-violet-200">
-                                  {client.client_subtype}
+                              ))}
+                              {client.client_subtype?.map((t) => (
+                                <Badge key={t} variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-50 text-violet-700 border-violet-200">
+                                  {t}
                                 </Badge>
-                              )}
+                              ))}
                             </div>
                           )}
                         </div>
@@ -803,7 +803,7 @@ export default function ClientsPage() {
               <div className="space-y-2">
                 <Label>Type d&apos;entreprise</Label>
                 <TypePicker
-                  value={addForm.client_type || ""}
+                  values={addForm.client_type || []}
                   options={allClientTypes}
                   onChange={(v) => setAddForm((p) => ({ ...p, client_type: v }))}
                   placeholder="Rechercher ou créer un type…"
@@ -812,7 +812,7 @@ export default function ClientsPage() {
               <div className="space-y-2">
                 <Label>Précision</Label>
                 <TypePicker
-                  value={addForm.client_subtype || ""}
+                  values={addForm.client_subtype || []}
                   options={allClientSubtypes}
                   onChange={(v) => setAddForm((p) => ({ ...p, client_subtype: v }))}
                   placeholder="Rechercher ou créer…"

@@ -752,8 +752,8 @@ export interface Client {
   sales_rep?: string;
   assigned_user_name?: string;
   tariff_category?: string;
-  client_type?: string | null;
-  client_subtype?: string | null;
+  client_type?: string[] | null;
+  client_subtype?: string[] | null;
   is_prospect: boolean;
   is_dormant: boolean;
   status?: string;
@@ -786,8 +786,8 @@ export interface CreateProspectRequest {
   postal_code?: string;
   city?: string;
   country?: string;
-  client_type?: string;
-  client_subtype?: string;
+  client_type?: string[];
+  client_subtype?: string[];
   notes?: string;
   sales_rep?: string;
 }
@@ -1713,8 +1713,8 @@ export interface UpdateClientPayload {
   vat_number?: string;
   naf_code?: string;
   tariff_category?: string;
-  client_type?: string;
-  client_subtype?: string;
+  client_type?: string[];
+  client_subtype?: string[];
 }
 
 export interface EnrichSuggestion {

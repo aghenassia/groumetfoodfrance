@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class PhoneNumberResponse(BaseModel):
@@ -28,11 +28,20 @@ class ClientResponse(BaseModel):
     sales_rep: str | None = None
     assigned_user_name: str | None = None
     tariff_category: str | None = None
-    client_type: str | None = None
-    client_subtype: str | None = None
+    client_type: list[str] | None = None
+    client_subtype: list[str] | None = None
     is_prospect: bool = False
     is_dormant: bool = False
     status: str = "prospect"
+
+    @field_validator("client_type", "client_subtype", mode="before")
+    @classmethod
+    def _split_csv(cls, v):
+        if v is None or v == "":
+            return None
+        if isinstance(v, list):
+            return v
+        return [t.strip() for t in v.split(",") if t.strip()]
 
     model_config = {"from_attributes": True}
 

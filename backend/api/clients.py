@@ -48,8 +48,8 @@ class CreateProspectRequest(BaseModel):
     postal_code: str | None = None
     city: str | None = None
     country: str = "France"
-    client_type: str | None = None
-    client_subtype: str | None = None
+    client_type: list[str] | str | None = None
+    client_subtype: list[str] | str | None = None
     notes: str | None = None
     sales_rep: str | None = None
 
@@ -182,7 +182,7 @@ async def list_clients(
         product_clients = select(ClientProductInterest.client_id).where(ClientProductInterest.article_ref == product_ref).distinct()
         base = base.where(Client.id.in_(product_clients))
     if client_type:
-        base = base.where(Client.client_type == client_type)
+        base = base.where(Client.client_type.ilike(f"%{client_type}%"))
 
     sort_map = {
         "name": Client.name,
@@ -323,14 +323,26 @@ async def get_client_types(
     user: User = Depends(get_current_user),
 ):
     types_q = await db.execute(
-        select(Client.client_type).where(Client.client_type.isnot(None), Client.client_type != "").distinct().order_by(Client.client_type)
+        select(Client.client_type).where(Client.client_type.isnot(None), Client.client_type != "")
     )
     subtypes_q = await db.execute(
-        select(Client.client_subtype).where(Client.client_subtype.isnot(None), Client.client_subtype != "").distinct().order_by(Client.client_subtype)
+        select(Client.client_subtype).where(Client.client_subtype.isnot(None), Client.client_subtype != "")
     )
+    all_types: set[str] = set()
+    for (raw,) in types_q.all():
+        for t in raw.split(","):
+            t = t.strip()
+            if t:
+                all_types.add(t)
+    all_subtypes: set[str] = set()
+    for (raw,) in subtypes_q.all():
+        for t in raw.split(","):
+            t = t.strip()
+            if t:
+                all_subtypes.add(t)
     return {
-        "types": [r[0] for r in types_q.all()],
-        "subtypes": [r[0] for r in subtypes_q.all()],
+        "types": sorted(all_types),
+        "subtypes": sorted(all_subtypes),
     }
 
 
@@ -782,8 +794,8 @@ async def create_prospect(
         postal_code=body.postal_code,
         city=body.city,
         country=body.country,
-        client_type=body.client_type or None,
-        client_subtype=body.client_subtype or None,
+        client_type=",".join(body.client_type) if isinstance(body.client_type, list) else (body.client_type or None),
+        client_subtype=",".join(body.client_subtype) if isinstance(body.client_subtype, list) else (body.client_subtype or None),
         sales_rep=body.sales_rep or user.sage_rep_name or user.name,
         assigned_user_id=user.id,
         is_prospect=True,
@@ -876,8 +888,8 @@ class UpdateClientRequest(BaseModel):
     vat_number: str | None = None
     naf_code: str | None = None
     tariff_category: str | None = None
-    client_type: str | None = None
-    client_subtype: str | None = None
+    client_type: list[str] | str | None = None
+    client_subtype: list[str] | str | None = None
 
 
 EDITABLE_FIELDS = {
@@ -886,6 +898,8 @@ EDITABLE_FIELDS = {
     "vat_number", "naf_code", "tariff_category",
     "client_type", "client_subtype",
 }
+
+CSV_LIST_FIELDS = {"client_type", "client_subtype"}
 
 
 @router.put("/{client_id}", response_model=ClientResponse)
@@ -909,6 +923,8 @@ async def update_client(
     for field, new_val in changes.items():
         if field not in EDITABLE_FIELDS:
             continue
+        if field in CSV_LIST_FIELDS and isinstance(new_val, list):
+            new_val = ",".join(new_val) if new_val else None
         old_val = getattr(client, field, None)
         old_str = str(old_val) if old_val is not None else None
         new_str = str(new_val) if new_val is not None else None

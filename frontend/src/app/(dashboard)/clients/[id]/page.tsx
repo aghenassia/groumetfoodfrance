@@ -392,8 +392,8 @@ export default function ClientDetailPage() {
       vat_number: client.vat_number || "",
       naf_code: client.naf_code || "",
       tariff_category: client.tariff_category || "",
-      client_type: client.client_type || "",
-      client_subtype: client.client_subtype || "",
+      client_type: client.client_type || [],
+      client_subtype: client.client_subtype || [],
     });
     setEditing(true);
   };
@@ -769,19 +769,19 @@ export default function ClientDetailPage() {
               </>
             )}
           </div>
-          {(client.client_type || client.client_subtype || client.tariff_category) && (
+          {((client.client_type && client.client_type.length > 0) || (client.client_subtype && client.client_subtype.length > 0) || client.tariff_category) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
-              {client.client_type && (
-                <Badge variant="outline" className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200">
+              {client.client_type?.map((t) => (
+                <Badge key={t} variant="outline" className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200">
                   <Building2 className="w-3 h-3" />
-                  {client.client_type}
+                  {t}
                 </Badge>
-              )}
-              {client.client_subtype && (
-                <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
-                  {client.client_subtype}
+              ))}
+              {client.client_subtype?.map((t) => (
+                <Badge key={t} variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
+                  {t}
                 </Badge>
-              )}
+              ))}
               {client.tariff_category && (
                 <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
                   Tarif : {client.tariff_category}
@@ -1057,7 +1057,7 @@ export default function ClientDetailPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">Type d&apos;entreprise</Label>
                 <TypePicker
-                  value={editForm.client_type || ""}
+                  values={editForm.client_type || []}
                   options={existingTypes}
                   onChange={(v) => setEditForm({ ...editForm, client_type: v })}
                   placeholder="Rechercher ou créer un type…"
@@ -1066,7 +1066,7 @@ export default function ClientDetailPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">Sous-type / Précision</Label>
                 <TypePicker
-                  value={editForm.client_subtype || ""}
+                  values={editForm.client_subtype || []}
                   options={existingSubtypes}
                   onChange={(v) => setEditForm({ ...editForm, client_subtype: v })}
                   placeholder="Rechercher ou créer…"
