@@ -70,10 +70,12 @@ import {
   CalendarDays,
   ListPlus,
   Bell,
+  Building2,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { SupplierPicker } from "@/components/intel/supplier-picker";
 import { CompetitorPicker } from "@/components/intel/competitor-picker";
+import { TypePicker } from "@/components/type-picker";
 import { ProductInterestPicker } from "@/components/intel/product-interest-picker";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
@@ -766,30 +768,27 @@ export default function ClientDetailPage() {
                 </Badge>
               </>
             )}
-            {client.tariff_category && (
-              <>
-                <span>·</span>
-                <Badge variant="outline" className="text-xs">
-                  {client.tariff_category}
-                </Badge>
-              </>
-            )}
-            {client.client_type && (
-              <>
-                <span>·</span>
-                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+          </div>
+          {(client.client_type || client.client_subtype || client.tariff_category) && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {client.client_type && (
+                <Badge variant="outline" className="text-xs gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                  <Building2 className="w-3 h-3" />
                   {client.client_type}
                 </Badge>
-              </>
-            )}
-            {client.client_subtype && (
-              <>
-                <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+              )}
+              {client.client_subtype && (
+                <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
                   {client.client_subtype}
                 </Badge>
-              </>
-            )}
-          </div>
+              )}
+              {client.tariff_category && (
+                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                  Tarif : {client.tariff_category}
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={client.status} size="sm" />
@@ -1057,27 +1056,21 @@ export default function ClientDetailPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Type d&apos;entreprise</Label>
-                <Input
-                  list="client-types-list"
+                <TypePicker
                   value={editForm.client_type || ""}
-                  onChange={(e) => setEditForm({ ...editForm, client_type: e.target.value })}
-                  placeholder="Sélectionner ou saisir…"
+                  options={existingTypes}
+                  onChange={(v) => setEditForm({ ...editForm, client_type: v })}
+                  placeholder="Rechercher ou créer un type…"
                 />
-                <datalist id="client-types-list">
-                  {existingTypes.map((t) => <option key={t} value={t} />)}
-                </datalist>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Sous-type</Label>
-                <Input
-                  list="client-subtypes-list"
+                <Label className="text-xs">Sous-type / Précision</Label>
+                <TypePicker
                   value={editForm.client_subtype || ""}
-                  onChange={(e) => setEditForm({ ...editForm, client_subtype: e.target.value })}
-                  placeholder="Sélectionner ou saisir…"
+                  options={existingSubtypes}
+                  onChange={(v) => setEditForm({ ...editForm, client_subtype: v })}
+                  placeholder="Rechercher ou créer…"
                 />
-                <datalist id="client-subtypes-list">
-                  {existingSubtypes.map((t) => <option key={t} value={t} />)}
-                </datalist>
               </div>
             </div>
           </CardContent>

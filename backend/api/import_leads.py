@@ -99,7 +99,7 @@ COMPANY_EXAMPLE_2 = {
 
 SINGLE_EXAMPLE_1 = {
     **COMPANY_EXAMPLE_1,
-    "contact_nom": "MARTIN Jean",
+    "contact_nom": "MARTIN",
     "contact_prenom": "Jean",
     "contact_role": "Gérant",
     "contact_titre": "Chef de cuisine",
@@ -111,7 +111,7 @@ SINGLE_EXAMPLE_1 = {
 
 SINGLE_EXAMPLE_2 = {
     **COMPANY_EXAMPLE_2,
-    "contact_nom": "DUPONT Marie",
+    "contact_nom": "DUPONT",
     "contact_prenom": "Marie",
     "contact_role": "Acheteur",
     "contact_titre": "Directrice des achats",
@@ -148,7 +148,7 @@ async def download_template(
         writer.writeheader()
         writer.writerow({
             "nom_entreprise": "RESTAURANT LE GOURMET",
-            "nom": "MARTIN Jean", "prenom": "Jean", "role": "Gérant",
+            "nom": "MARTIN", "prenom": "Jean", "role": "Gérant",
             "titre": "Chef de cuisine",
             "telephone": "06 12 34 56 78", "telephone_2": "", "telephone_3": "",
             "email": "jean.martin@legourmet.fr",
@@ -262,6 +262,12 @@ async def parse_csv(
             else:
                 errors.append({"line": line_idx, "field": "commercial", "message": f"Commercial inconnu : {commercial_name}"})
 
+        raw_nom = row.get("contact_nom", "") or row.get("nom", "")
+        raw_prenom = row.get("contact_prenom", "") or row.get("prenom", "")
+        c_last = raw_nom.strip()
+        c_first = raw_prenom.strip()
+        c_full = f"{c_first} {c_last}".strip() if c_first and c_last else (c_last or c_first)
+
         parsed = {
             "line": line_idx,
             "nom_entreprise": company_name,
@@ -280,8 +286,9 @@ async def parse_csv(
             "commercial": commercial_name,
             "matched_user_id": matched_user_id,
             "est_prospect": row.get("est_prospect", "oui").lower() in ("oui", "yes", "1", "true", "o", ""),
-            "contact_nom": row.get("contact_nom", "") or row.get("nom", ""),
-            "contact_prenom": row.get("contact_prenom", "") or row.get("prenom", ""),
+            "contact_nom": c_full,
+            "contact_prenom": c_first,
+            "contact_nom_famille": c_last,
             "contact_role": row.get("contact_role", "") or row.get("role", ""),
             "contact_titre": row.get("contact_titre", "") or row.get("titre", ""),
             "contact_telephone": contact_phone_raw,
@@ -516,6 +523,7 @@ async def _create_new(db: AsyncSession, row: dict):
             company_id=client_id,
             name=row["contact_nom"],
             first_name=row["contact_prenom"] or None,
+            last_name=row.get("contact_nom_famille") or None,
             role=row["contact_role"] or None,
             title=row.get("contact_titre") or None,
             phone=row["contact_telephone"],
@@ -625,6 +633,7 @@ async def _update_existing(db: AsyncSession, row: dict):
                 company_id=client.id,
                 name=row["contact_nom"],
                 first_name=row["contact_prenom"] or None,
+                last_name=row.get("contact_nom_famille") or None,
                 role=row["contact_role"] or None,
                 title=row.get("contact_titre") or None,
                 phone=row["contact_telephone"],
@@ -668,15 +677,16 @@ async def _import_contact_only(db: AsyncSession, row: dict):
         if not client:
             raise ValueError(f"Entreprise introuvable : {company_name}")
 
-    contact_name = row.get("contact_nom") or row.get("nom", "") or ""
+    contact_name = row.get("contact_nom", "")
     contact_id = str(uuid.uuid4())
     contact = Contact(
         id=contact_id,
         company_id=client.id if client else None,
         name=contact_name,
-        first_name=row.get("contact_prenom") or row.get("prenom") or None,
-        role=row.get("contact_role") or row.get("role") or None,
-        title=row.get("contact_titre") or row.get("titre") or None,
+        first_name=row.get("contact_prenom") or None,
+        last_name=row.get("contact_nom_famille") or None,
+        role=row.get("contact_role") or None,
+        title=row.get("contact_titre") or None,
         phone=row.get("contact_telephone") or row.get("telephone", ""),
         phone_e164=row.get("contact_phone_e164") or row.get("phone_e164"),
         email=row.get("contact_email") or row.get("email", "") or None,

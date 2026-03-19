@@ -56,6 +56,7 @@ import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
 import { toast } from "sonner";
 import { NameItem } from "@/lib/api";
+import { TypePicker } from "@/components/type-picker";
 
 const PAGE_SIZE = 50;
 
@@ -618,6 +619,20 @@ export default function ClientsPage() {
                               </span>
                             )}
                           </div>
+                          {(client.client_type || client.client_subtype) && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              {client.client_type && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                  {client.client_type}
+                                </Badge>
+                              )}
+                              {client.client_subtype && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-violet-50 text-violet-700 border-violet-200">
+                                  {client.client_subtype}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
 
@@ -787,31 +802,21 @@ export default function ClientsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Type d&apos;entreprise</Label>
-                <Input
-                  list="prospect-types-list"
+                <TypePicker
                   value={addForm.client_type || ""}
-                  onChange={(e) =>
-                    setAddForm((p) => ({ ...p, client_type: e.target.value }))
-                  }
-                  placeholder="Sélectionner ou saisir…"
+                  options={allClientTypes}
+                  onChange={(v) => setAddForm((p) => ({ ...p, client_type: v }))}
+                  placeholder="Rechercher ou créer un type…"
                 />
-                <datalist id="prospect-types-list">
-                  {allClientTypes.map((t) => <option key={t} value={t} />)}
-                </datalist>
               </div>
               <div className="space-y-2">
                 <Label>Précision</Label>
-                <Input
-                  list="prospect-subtypes-list"
+                <TypePicker
                   value={addForm.client_subtype || ""}
-                  onChange={(e) =>
-                    setAddForm((p) => ({ ...p, client_subtype: e.target.value }))
-                  }
-                  placeholder="Sélectionner ou saisir…"
+                  options={allClientSubtypes}
+                  onChange={(v) => setAddForm((p) => ({ ...p, client_subtype: v }))}
+                  placeholder="Rechercher ou créer…"
                 />
-                <datalist id="prospect-subtypes-list">
-                  {allClientSubtypes.map((t) => <option key={t} value={t} />)}
-                </datalist>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
