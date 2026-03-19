@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/status-badge";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -72,6 +73,7 @@ import {
   Bell,
   Building2,
   Target,
+  Heart,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { SupplierPicker } from "@/components/intel/supplier-picker";
@@ -208,7 +210,7 @@ export default function ClientDetailPage() {
 
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactType | null>(null);
-  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; title: string; phones: {id?: string; phone: string; label: string; is_primary: boolean}[]; emails: string[]; is_primary: boolean}>({name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false});
+  const [contactForm, setContactForm] = useState<{name: string; first_name: string; last_name: string; role: string; title: string; phones: {id?: string; phone: string; label: string; is_primary: boolean}[]; emails: string[]; is_primary: boolean; birthday: string; personal_notes: string}>({name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false, birthday: '', personal_notes: ''});
   const [savingContact, setSavingContact] = useState(false);
   const [showMoveContactDialog, setShowMoveContactDialog] = useState(false);
   const [movingContactId, setMovingContactId] = useState<string | null>(null);
@@ -556,7 +558,7 @@ export default function ClientDetailPage() {
 
   const openNewContact = () => {
     setEditingContact(null);
-    setContactForm({ name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false });
+    setContactForm({ name: '', first_name: '', last_name: '', role: '', title: '', phones: [{phone: '', label: '', is_primary: true}], emails: [''], is_primary: false, birthday: '', personal_notes: '' });
     setShowContactDialog(true);
   };
 
@@ -588,6 +590,8 @@ export default function ClientDetailPage() {
       phones: existingPhones,
       emails: emails.length > 0 ? emails : [''],
       is_primary: contact.is_primary,
+      birthday: contact.birthday || '',
+      personal_notes: contact.personal_notes || '',
     });
     setShowContactDialog(true);
   };
@@ -618,6 +622,8 @@ export default function ClientDetailPage() {
         phone: primaryPhone?.phone || contactForm.phones.find(p => p.phone.trim())?.phone || undefined,
         email,
         is_primary: contactForm.is_primary,
+        birthday: contactForm.birthday || undefined,
+        personal_notes: contactForm.personal_notes || undefined,
       };
       let contactId: string;
       if (editingContact) {
@@ -3076,6 +3082,22 @@ export default function ClientDetailPage() {
                 ))}
               </div>
             </div>
+            <div className="pt-1 border-t">
+              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                <Heart className="w-3 h-3" />
+                Infos personnelles
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-xs">Date d&apos;anniversaire</Label>
+                  <Input className="h-8 text-sm" type="date" value={contactForm.birthday} onChange={(e) => setContactForm({...contactForm, birthday: e.target.value})} />
+                </div>
+                <div>
+                  <Label className="text-xs">Notes personnelles</Label>
+                  <Textarea className="text-sm min-h-[60px] resize-y" value={contactForm.personal_notes} onChange={(e) => setContactForm({...contactForm, personal_notes: e.target.value})} placeholder="Prénom des enfants, lieu de vacances, centres d'intérêt…" />
+                </div>
+              </div>
+            </div>
             <Button className="w-full" onClick={handleSaveContact} disabled={savingContact || (!contactForm.first_name.trim() && !contactForm.last_name.trim())}>
               {savingContact ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               {editingContact ? 'Enregistrer' : 'Créer le contact'}
@@ -3484,9 +3506,9 @@ function ClientObjectivesSection({
                         />
                         <RechartsTooltip
                           contentStyle={{ backgroundColor: "#fff", border: "1px solid #E5E2DC", borderRadius: "8px", fontSize: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
-                          formatter={(value: number, name: string) => {
+                          formatter={(value, name) => {
                             const label = name === "actual" ? "Réalisé" : "Objectif";
-                            return [fmtObjVal(value, obj.metric), label];
+                            return [fmtObjVal(Number(value ?? 0), obj.metric), label];
                           }}
                         />
                         <Bar dataKey="actual" radius={[3, 3, 0, 0]} maxBarSize={28}>

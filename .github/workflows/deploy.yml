@@ -25,4 +25,24 @@ jobs:
               sed -i '/^RINGOVER_API_KEY/d' /opt/ringover-crm/.env
               echo 'RINGOVER_API_KEY=${{ secrets.RINGOVER_API_KEY }}' >> /opt/ringover-crm/.env
             fi
+            # Run pending migrations
+            cd /opt/ringover-crm
+            docker exec -i $(docker ps -qf "name=postgres") psql -U crm_user -d crm_db -c "
+              CREATE TABLE IF NOT EXISTS client_objectives (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                metric VARCHAR(30) NOT NULL,
+                year INTEGER NOT NULL,
+                annual_target NUMERIC(15,2) NOT NULL,
+                monthly_targets JSONB NOT NULL,
+                filter_product_family VARCHAR(100),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_by VARCHAR(36) REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT uq_client_objective UNIQUE (client_id, metric, year, filter_product_family)
+              );
+              CREATE INDEX IF NOT EXISTS idx_client_objectives_client ON client_objectives(client_id);
+              CREATE INDEX IF NOT EXISTS idx_client_objectives_year ON client_objectives(year);
+            " || echo "Migration already applied or skipped"
             /opt/deploy-crm.sh
