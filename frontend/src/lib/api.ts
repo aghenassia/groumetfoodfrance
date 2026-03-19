@@ -716,6 +716,34 @@ class ApiClient {
   getImportTemplateUrl(mode: string) {
     return `${API_BASE}/api/admin/import/template?mode=${mode}`;
   }
+
+  // Analytics
+  getReceivables(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<ReceivablesData>(`/api/analytics/receivables${qs}`);
+  }
+  getProductsAnalytics(months = 12) {
+    return this.get<ProductsAnalyticsData>(`/api/analytics/products?months=${months}`);
+  }
+  getGeoAnalytics(months = 12) {
+    return this.get<GeoAnalyticsData>(`/api/analytics/geo?months=${months}`);
+  }
+  getFunnelAnalytics() {
+    return this.get<FunnelAnalyticsData>("/api/analytics/funnel");
+  }
+  getAiInsights(months = 6) {
+    return this.get<AiInsightsData>(`/api/analytics/ai-insights?months=${months}`);
+  }
+  getAnalyticsSummary(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<AnalyticsSummaryData>(`/api/analytics/summary${qs}`);
+  }
+  getExportClientsUrl() {
+    return `${API_BASE}/api/analytics/export/clients`;
+  }
+  getExportProductsUrl() {
+    return `${API_BASE}/api/analytics/export/products`;
+  }
 }
 
 export const api = new ApiClient();
@@ -1929,4 +1957,53 @@ export interface ImportJobStatus {
   updated: number;
   skipped: number;
   errors: { line: number | string; message: string }[];
+}
+
+// Analytics interfaces
+export interface ReceivablesData {
+  total_outstanding: number;
+  invoice_count: number;
+  avg_days_overdue: number;
+  buckets: Record<string, { count: number; total: number }>;
+  top_debtors: { client_name: string; client_id: string | null; total_remaining: number; invoice_count: number; oldest_date: string }[];
+  invoices: { piece_id: string; client_name: string; client_id: string | null; date: string; days_overdue: number; total_ttc: number; amount_paid: number; remaining: number; sales_rep: string | null; bucket: string }[];
+  monthly_trend: { month: string; outstanding: number }[];
+}
+
+export interface ProductsAnalyticsData {
+  top_products: { article_ref: string; designation: string | null; total_ca: number; total_qty: number; avg_margin: number; total_margin: number; client_count: number; order_count: number }[];
+  families: { family: string | null; family_label: string; total_ca: number; total_qty: number; avg_margin: number; total_margin: number; product_count: number }[];
+  monthly_by_family: Record<string, { month: string; ca: number }[]>;
+  stock_alerts: { article_ref: string; designation: string | null; stock_available: number; stock_min: number; deficit: number }[];
+  low_margin_products: { article_ref: string; designation: string | null; total_ca: number; avg_margin: number }[];
+}
+
+export interface GeoAnalyticsData {
+  departments: { dept: string; client_count: number; total_ca: number; avg_margin: number; order_count: number }[];
+  regions: { region: string; client_count: number; total_ca: number; avg_margin: number; order_count: number }[];
+  top_cities: { city: string; postal_code: string; client_count: number; total_ca: number }[];
+  dormant_zones: { dept: string; count: number }[];
+}
+
+export interface FunnelAnalyticsData {
+  funnel: { prospects: number; clients: number; at_risk: number; dormant: number; dead: number };
+  cohorts: { month: string; acquired: number; still_active: number; retention_pct: number }[];
+  ltv: { avg: number; median: number; avg_basket: number; avg_frequency_days: number };
+  churn_trend: { month: string; lost: number }[];
+  new_clients_trend: { month: string; new: number }[];
+}
+
+export interface AiInsightsData {
+  sentiment_trend: { month: string; positive: number; neutral: number; negative: number; total: number }[];
+  quality_trend: { month: string; avg_score: number; politeness: number; objection: number; closing: number; product: number; listening: number; total_calls: number }[];
+  quality_by_rep: { user_name: string; user_id: string; avg_score: number; call_count: number }[];
+  opportunities: { id: string; opportunity: string; sentiment: string | null; client_name: string | null; client_id: string | null; contact_name: string | null; user_name: string | null; date: string | null }[];
+  top_topics: { topic: string; count: number }[];
+}
+
+export interface AnalyticsSummaryData {
+  period: { from: string; to: string };
+  current: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
+  previous: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
+  evolution: { ca: number | null; orders: number | null; clients: number | null; margin: number | null; calls: number | null };
 }

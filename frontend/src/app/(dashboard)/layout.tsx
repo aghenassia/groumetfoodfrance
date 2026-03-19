@@ -23,6 +23,7 @@ import {
   Upload,
   PanelLeftClose,
   PanelLeftOpen,
+  PieChart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
   { href: "/products", label: "Produits", icon: Package },
   { href: "/orders", label: "Commandes", icon: ShoppingCart },
   { href: "/leaderboard", label: "Classement", icon: Trophy },
+  { href: "/analytics", label: "Analytics", icon: PieChart },
   { href: "/wiki", label: "Wiki", icon: BookOpen },
 ];
 
