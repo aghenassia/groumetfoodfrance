@@ -628,6 +628,7 @@ async def get_client(
         phone_e164=client.phone_e164,
         email=client.email,
         sales_rep=client.sales_rep,
+        assigned_user_id=client.assigned_user_id,
         assigned_user_name=assigned_user_name,
         tariff_category=client.tariff_category,
         client_type=client.client_type,
@@ -955,6 +956,69 @@ async def update_client(
     await db.commit()
     await db.refresh(client)
     return ClientResponse.model_validate(client)
+
+
+class AssignClientRequest(BaseModel):
+    user_id: str | None = None
+
+
+@router.post("/{client_id}/assign")
+async def assign_client(
+    client_id: str,
+    body: AssignClientRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Attribue un client à un commercial. user_id=null pour désattribuer."""
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+
+    old_id = client.assigned_user_id
+    target_user = None
+
+    if body.user_id:
+        target_q = await db.execute(select(User).where(User.id == body.user_id))
+        target_user = target_q.scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+
+        if user.role not in ("admin", "manager") and body.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Seuls les managers peuvent attribuer à un autre")
+
+        client.assigned_user_id = target_user.id
+        client.sales_rep = target_user.sage_rep_name or target_user.name
+    else:
+        if user.role not in ("admin", "manager"):
+            raise HTTPException(status_code=403, detail="Seuls les managers peuvent désattribuer")
+        client.assigned_user_id = None
+
+    if old_id != client.assigned_user_id:
+        old_name = None
+        if old_id:
+            oq = await db.execute(select(User.name).where(User.id == old_id))
+            old_name = oq.scalar()
+        new_name = target_user.name if target_user else None
+        db.add(ClientAuditLog(
+            client_id=client_id,
+            user_id=user.id,
+            user_name=user.name,
+            action="updated",
+            field_name="assigned_user",
+            old_value=old_name,
+            new_value=new_name,
+        ))
+
+    client.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(client)
+
+    assigned_user_name = target_user.name if target_user else None
+    resp = ClientResponse.model_validate(client)
+    resp.assigned_user_name = assigned_user_name
+    resp.assigned_user_id = client.assigned_user_id
+    return resp
 
 
 @router.post("/{client_id}/merge-into/{target_id}")

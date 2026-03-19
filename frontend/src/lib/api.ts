@@ -399,6 +399,12 @@ class ApiClient {
     });
   }
 
+  assignClient(clientId: string, userId: string | null) {
+    return this.post<Client>(`/api/clients/${clientId}/assign`, {
+      user_id: userId,
+    });
+  }
+
   getClientsByUser(userId: string, search?: string) {
     const qs = search ? `?search=${encodeURIComponent(search)}` : "";
     return this.get<ClientListItem[]>(`/api/admin/clients/by-user/${userId}${qs}`);
@@ -801,6 +807,7 @@ export interface Client {
   phone_e164?: string;
   email?: string;
   sales_rep?: string;
+  assigned_user_id?: string | null;
   assigned_user_name?: string;
   tariff_category?: string;
   client_type?: string[] | null;

@@ -248,6 +248,9 @@ export default function ClientDetailPage() {
   const [reminderTime, setReminderTime] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [creatingReminder, setCreatingReminder] = useState(false);
+  const [showAssignPopover, setShowAssignPopover] = useState(false);
+  const [assignTargetUser, setAssignTargetUser] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
 
   const fetchClient = () => {
     api
@@ -335,6 +338,36 @@ export default function ClientDetailPage() {
       setReminderTargetUser("");
     } catch { toast.error("Erreur lors de la création du rappel"); }
     setCreatingReminder(false);
+  };
+
+  const handleAssignClient = async () => {
+    const targetId = assignTargetUser || (currentUser?.id ?? null);
+    if (!targetId) return;
+    setAssigning(true);
+    try {
+      await api.assignClient(id, targetId);
+      toast.success("Client attribué avec succès");
+      setShowAssignPopover(false);
+      setAssignTargetUser("");
+      fetchClient();
+    } catch {
+      toast.error("Erreur lors de l'attribution");
+    }
+    setAssigning(false);
+  };
+
+  const handleUnassignClient = async () => {
+    setAssigning(true);
+    try {
+      await api.assignClient(id, null);
+      toast.success("Attribution retirée");
+      setShowAssignPopover(false);
+      setAssignTargetUser("");
+      fetchClient();
+    } catch {
+      toast.error("Erreur lors de la désattribution");
+    }
+    setAssigning(false);
   };
 
   useEffect(() => {
@@ -965,6 +998,80 @@ export default function ClientDetailPage() {
                   {creatingReminder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                   Créer le rappel
                 </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Attribution commercial */}
+          <Popover open={showAssignPopover} onOpenChange={(open) => { setShowAssignPopover(open); if (!open) setAssignTargetUser(""); }}>
+            <PopoverTrigger asChild>
+              <Button
+                variant={client.assigned_user_id ? "outline" : "default"}
+                size="sm"
+                className={`gap-1.5 ${!client.assigned_user_id ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}`}
+              >
+                <UserCircle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{client.assigned_user_name || "Attribuer"}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72" align="end">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">Attribuer ce client</h4>
+                {client.assigned_user_name && (
+                  <div className="flex items-center gap-2 p-2 rounded-md bg-accent/50 border border-border/50">
+                    <UserCircle className="w-4 h-4 text-primary" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium">{client.assigned_user_name}</p>
+                      <p className="text-[10px] text-muted-foreground">Attribué actuellement</p>
+                    </div>
+                  </div>
+                )}
+                {isManager && allUsers.length > 0 ? (
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Commercial</label>
+                    <Select value={assignTargetUser} onValueChange={setAssignTargetUser}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Sélectionner un commercial" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allUsers
+                          .filter(u => ["sales", "manager", "admin"].includes(u.role))
+                          .map(u => (
+                            <SelectItem key={u.id} value={u.id} className="text-xs">
+                              {u.name}{u.id === currentUser?.id ? " (moi)" : ""}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Attribution à : <span className="font-medium text-foreground">{currentUser?.name}</span>
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    onClick={handleAssignClient}
+                    disabled={assigning || (isManager && !assignTargetUser)}
+                  >
+                    {assigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    Attribuer
+                  </Button>
+                  {isManager && client.assigned_user_id && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={handleUnassignClient}
+                      disabled={assigning}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Retirer
+                    </Button>
+                  )}
+                </div>
               </div>
             </PopoverContent>
           </Popover>

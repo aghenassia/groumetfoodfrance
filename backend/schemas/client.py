@@ -26,6 +26,7 @@ class ClientResponse(BaseModel):
     phone_e164: str | None = None
     email: str | None = None
     sales_rep: str | None = None
+    assigned_user_id: str | None = None
     assigned_user_name: str | None = None
     tariff_category: str | None = None
     client_type: list[str] | None = None
