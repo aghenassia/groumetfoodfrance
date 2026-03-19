@@ -32,66 +32,71 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 async def receivables_dashboard(
     date_from: str | None = None,
     date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     user_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     today = date.today()
-    base = select(SalesLine).where(
-        SalesLine.sage_doc_type == 6,
-        SalesLine.doc_total_ttc.isnot(None),
-    )
-    if date_from:
-        base = base.where(SalesLine.date >= date_from)
-    if date_to:
-        base = base.where(SalesLine.date <= date_to)
+
+    if date_from and date_to:
+        d_from = date.fromisoformat(date_from)
+        d_to = date.fromisoformat(date_to)
+    else:
+        d_from = date(today.year, today.month, 1)
+        d_to = today
+
+    date_filters = [SalesLine.date >= d_from, SalesLine.date <= d_to]
     if user_id:
-        base = base.where(SalesLine.user_id == user_id)
+        date_filters.append(SalesLine.user_id == user_id)
 
-    unpaid_q = base.where(
-        or_(
-            SalesLine.doc_amount_paid.is_(None),
-            SalesLine.doc_amount_paid < SalesLine.doc_total_ttc,
-        )
+    has_payment_data_q = await db.execute(
+        select(func.count(SalesLine.id))
+        .where(SalesLine.sage_doc_type == 6, SalesLine.doc_total_ttc.isnot(None), SalesLine.doc_total_ttc > 0)
+        .limit(1)
     )
+    has_payment_data = (has_payment_data_q.scalar() or 0) > 0
 
-    rows = await db.execute(
-        select(
-            SalesLine.sage_piece_id,
-            SalesLine.client_name,
-            SalesLine.client_id,
-            SalesLine.client_sage_id,
-            SalesLine.date,
-            SalesLine.sales_rep,
-            SalesLine.user_id,
-            func.max(SalesLine.doc_total_ttc).label("total_ttc"),
-            func.max(SalesLine.doc_amount_paid).label("amount_paid"),
-        )
-        .where(
-            SalesLine.sage_doc_type == 6,
+    if has_payment_data:
+        computed_total = func.max(SalesLine.doc_total_ttc)
+        computed_paid = func.max(SalesLine.doc_amount_paid)
+        unpaid_filter = [
             SalesLine.doc_total_ttc.isnot(None),
+            SalesLine.doc_total_ttc > 0,
             or_(
                 SalesLine.doc_amount_paid.is_(None),
                 SalesLine.doc_amount_paid < SalesLine.doc_total_ttc,
             ),
-            *([SalesLine.date >= date_from] if date_from else []),
-            *([SalesLine.date <= date_to] if date_to else []),
-            *([SalesLine.user_id == user_id] if user_id else []),
-        )
-        .group_by(
+        ]
+    else:
+        computed_total = func.sum(SalesLine.amount_ht)
+        computed_paid = func.coalesce(func.max(SalesLine.doc_amount_paid), 0)
+        unpaid_filter = []
+
+    rows = await db.execute(
+        select(
             SalesLine.sage_piece_id,
-            SalesLine.client_name,
-            SalesLine.client_id,
-            SalesLine.client_sage_id,
-            SalesLine.date,
-            SalesLine.sales_rep,
-            SalesLine.user_id,
+            func.max(SalesLine.client_name).label("client_name"),
+            func.max(SalesLine.client_id).label("client_id"),
+            func.max(SalesLine.client_sage_id).label("client_sage_id"),
+            func.max(SalesLine.date).label("date"),
+            func.max(SalesLine.sales_rep).label("sales_rep"),
+            func.max(SalesLine.user_id).label("user_id"),
+            computed_total.label("total_ttc"),
+            computed_paid.label("amount_paid"),
         )
-        .order_by(SalesLine.date.asc())
+        .where(
+            SalesLine.sage_doc_type == 6,
+            *unpaid_filter,
+            *date_filters,
+        )
+        .group_by(SalesLine.sage_piece_id)
+        .order_by(func.max(SalesLine.date).asc())
     )
     invoices = rows.all()
 
-    buckets = {"current": [], "30": [], "60": [], "90": []}
+    buckets: dict[str, list] = {"current": [], "30": [], "60": [], "90": []}
     total_outstanding = 0.0
     top_debtors: dict[str, dict] = {}
 
@@ -101,7 +106,8 @@ async def receivables_dashboard(
         remaining = ttc - paid
         if remaining <= 0.01:
             continue
-        days_overdue = (today - inv.date).days
+        inv_date = inv.date if isinstance(inv.date, date) else date.fromisoformat(str(inv.date))
+        days_overdue = (today - inv_date).days
         total_outstanding += remaining
 
         bucket = "current"
@@ -116,7 +122,7 @@ async def receivables_dashboard(
             "piece_id": inv.sage_piece_id,
             "client_name": inv.client_name,
             "client_id": inv.client_id,
-            "date": str(inv.date),
+            "date": str(inv_date),
             "days_overdue": days_overdue,
             "total_ttc": round(ttc, 2),
             "amount_paid": round(paid, 2),
@@ -133,7 +139,7 @@ async def receivables_dashboard(
                 "client_id": inv.client_id,
                 "total_remaining": 0,
                 "invoice_count": 0,
-                "oldest_date": str(inv.date),
+                "oldest_date": str(inv_date),
             }
         top_debtors[key]["total_remaining"] += remaining
         top_debtors[key]["invoice_count"] += 1
@@ -144,25 +150,42 @@ async def receivables_dashboard(
     monthly_q = await db.execute(
         select(
             func.to_char(SalesLine.date, "YYYY-MM").label("month"),
-            func.sum(SalesLine.doc_total_ttc - func.coalesce(SalesLine.doc_amount_paid, 0)).label("outstanding"),
+            func.sum(
+                func.coalesce(SalesLine.doc_total_ttc, SalesLine.amount_ht) - func.coalesce(SalesLine.doc_amount_paid, 0)
+            ).label("outstanding"),
         )
         .where(
             SalesLine.sage_doc_type == 6,
-            SalesLine.doc_total_ttc.isnot(None),
-            or_(
-                SalesLine.doc_amount_paid.is_(None),
-                SalesLine.doc_amount_paid < SalesLine.doc_total_ttc,
-            ),
+            SalesLine.date >= d_from,
+            SalesLine.date <= d_to,
         )
         .group_by(text("1"))
+        .having(
+            func.sum(func.coalesce(SalesLine.doc_total_ttc, SalesLine.amount_ht) - func.coalesce(SalesLine.doc_amount_paid, 0)) > 0
+        )
         .order_by(text("1"))
     )
     monthly_trend = [{"month": r.month, "outstanding": round(float(r.outstanding or 0), 2)} for r in monthly_q.all()]
 
+    # Summary KPIs
+    total_invoiced_q = await db.execute(
+        select(
+            func.count(distinct(SalesLine.sage_piece_id)).label("count"),
+            func.sum(SalesLine.amount_ht).label("total_ht"),
+        )
+        .where(SalesLine.sage_doc_type == 6, *date_filters)
+    )
+    tot_inv = total_invoiced_q.one()
+    total_invoiced = round(float(tot_inv.total_ht or 0), 2)
+    total_invoice_count = tot_inv.count or 0
+
     return {
         "total_outstanding": round(total_outstanding, 2),
         "invoice_count": len(all_invoices),
+        "total_invoiced": total_invoiced,
+        "total_invoice_count": total_invoice_count,
         "avg_days_overdue": round(sum(i["days_overdue"] for i in all_invoices) / max(len(all_invoices), 1), 1),
+        "has_payment_data": has_payment_data,
         "buckets": {
             "current": {"count": len(buckets["current"]), "total": round(sum(i["remaining"] for i in buckets["current"]), 2)},
             "over_30": {"count": len(buckets["30"]), "total": round(sum(i["remaining"] for i in buckets["30"]), 2)},
@@ -184,6 +207,8 @@ async def products_analytics(
     months: int = Query(default=12, ge=1, le=36),
     date_from: str | None = None,
     date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -193,7 +218,14 @@ async def products_analytics(
     else:
         cutoff = date.today() - timedelta(days=months * 30)
         end_date = date.today()
-    prev_cutoff = cutoff - timedelta(days=(end_date - cutoff).days)
+
+    if compare_from and compare_to:
+        prev_cutoff = date.fromisoformat(compare_from)
+        prev_end = date.fromisoformat(compare_to)
+    else:
+        period_days = (end_date - cutoff).days or 1
+        prev_cutoff = cutoff - timedelta(days=period_days)
+        prev_end = cutoff - timedelta(days=1)
 
     top_q = await db.execute(
         select(
@@ -206,7 +238,7 @@ async def products_analytics(
             func.count(distinct(SalesLine.client_sage_id)).label("client_count"),
             func.count(distinct(SalesLine.sage_piece_id)).label("order_count"),
         )
-        .where(SalesLine.date >= cutoff, SalesLine.sage_doc_type.in_([6, 3]))
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
         .group_by(SalesLine.article_ref)
         .order_by(desc(func.sum(SalesLine.amount_ht)))
         .limit(50)
@@ -235,7 +267,7 @@ async def products_analytics(
             func.count(distinct(SalesLine.article_ref)).label("product_count"),
         )
         .join(Product, Product.article_ref == SalesLine.article_ref, isouter=True)
-        .where(SalesLine.date >= cutoff, SalesLine.sage_doc_type.in_([6, 3]))
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
         .group_by(Product.family_label, Product.family)
         .order_by(desc(func.sum(SalesLine.amount_ht)))
     )
@@ -258,7 +290,7 @@ async def products_analytics(
             func.sum(SalesLine.amount_ht).label("ca"),
         )
         .join(Product, Product.article_ref == SalesLine.article_ref, isouter=True)
-        .where(SalesLine.date >= cutoff, SalesLine.sage_doc_type.in_([6, 3]))
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
         .group_by(text("1"), Product.family_label)
         .order_by(text("1"))
     )
@@ -297,7 +329,7 @@ async def products_analytics(
             func.sum(SalesLine.amount_ht).label("total_ca"),
             func.avg(SalesLine.margin_percent).label("avg_margin"),
         )
-        .where(SalesLine.date >= cutoff, SalesLine.sage_doc_type.in_([6, 3]))
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
         .group_by(SalesLine.article_ref)
         .having(func.avg(SalesLine.margin_percent) < 10)
         .order_by(asc(func.avg(SalesLine.margin_percent)))
@@ -312,12 +344,48 @@ async def products_analytics(
             "avg_margin": round(float(r.avg_margin or 0), 1),
         })
 
+    cur_totals_q = await db.execute(
+        select(
+            func.sum(SalesLine.amount_ht).label("ca"),
+            func.sum(SalesLine.quantity).label("qty"),
+            func.avg(SalesLine.margin_percent).label("margin"),
+            func.count(distinct(SalesLine.article_ref)).label("products"),
+        )
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
+    )
+    cur_t = cur_totals_q.one()
+    prev_totals_q = await db.execute(
+        select(
+            func.sum(SalesLine.amount_ht).label("ca"),
+            func.sum(SalesLine.quantity).label("qty"),
+            func.avg(SalesLine.margin_percent).label("margin"),
+            func.count(distinct(SalesLine.article_ref)).label("products"),
+        )
+        .where(SalesLine.date >= prev_cutoff, SalesLine.date <= prev_end, SalesLine.sage_doc_type.in_([6, 3]))
+    )
+    prev_t = prev_totals_q.one()
+
+    def _pct(c, p):
+        if not p: return None
+        return round((c - p) / abs(p) * 100, 1)
+
+    comparison = {
+        "current": {"ca": round(float(cur_t.ca or 0), 2), "qty": round(float(cur_t.qty or 0), 2), "margin": round(float(cur_t.margin or 0), 1), "products": cur_t.products or 0},
+        "previous": {"ca": round(float(prev_t.ca or 0), 2), "qty": round(float(prev_t.qty or 0), 2), "margin": round(float(prev_t.margin or 0), 1), "products": prev_t.products or 0},
+        "evolution": {
+            "ca": _pct(float(cur_t.ca or 0), float(prev_t.ca or 0)),
+            "qty": _pct(float(cur_t.qty or 0), float(prev_t.qty or 0)),
+            "margin": _pct(float(cur_t.margin or 0), float(prev_t.margin or 0)),
+        },
+    }
+
     return {
         "top_products": top_products,
         "families": families,
         "monthly_by_family": monthly_by_family,
         "stock_alerts": stock_alerts,
         "low_margin_products": low_margin,
+        "comparison": comparison,
     }
 
 
@@ -330,6 +398,8 @@ async def geo_analytics(
     months: int = Query(default=12, ge=1, le=36),
     date_from: str | None = None,
     date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -339,6 +409,14 @@ async def geo_analytics(
     else:
         cutoff = date.today() - timedelta(days=months * 30)
         end_date = date.today()
+
+    if compare_from and compare_to:
+        prev_cutoff = date.fromisoformat(compare_from)
+        prev_end = date.fromisoformat(compare_to)
+    else:
+        period_days = (end_date - cutoff).days or 1
+        prev_cutoff = cutoff - timedelta(days=period_days)
+        prev_end = cutoff - timedelta(days=1)
 
     dept_q = await db.execute(
         select(
@@ -353,6 +431,7 @@ async def geo_analytics(
             Client.postal_code.isnot(None),
             Client.postal_code != "",
             SalesLine.date >= cutoff,
+            SalesLine.date <= end_date,
             SalesLine.sage_doc_type.in_([6, 3]),
         )
         .group_by(text("1"))
@@ -381,6 +460,7 @@ async def geo_analytics(
             Client.region.isnot(None),
             Client.region != "",
             SalesLine.date >= cutoff,
+            SalesLine.date <= end_date,
             SalesLine.sage_doc_type.in_([6, 3]),
         )
         .group_by(Client.region)
@@ -408,6 +488,7 @@ async def geo_analytics(
             Client.city.isnot(None),
             Client.city != "",
             SalesLine.date >= cutoff,
+            SalesLine.date <= end_date,
             SalesLine.sage_doc_type.in_([6, 3]),
         )
         .group_by(Client.city, Client.postal_code)
@@ -430,7 +511,11 @@ async def geo_analytics(
         )
         .outerjoin(
             SalesLine,
-            and_(SalesLine.client_id == Client.id, SalesLine.date >= cutoff),
+            and_(
+                SalesLine.client_id == Client.id,
+                SalesLine.date >= cutoff,
+                SalesLine.date <= end_date,
+            ),
         )
         .where(
             Client.postal_code.isnot(None),
@@ -444,11 +529,46 @@ async def geo_analytics(
     )
     dormant_zones = [{"dept": r.dept, "count": r.count} for r in no_activity_q.all()]
 
+    cur_geo_q = await db.execute(
+        select(
+            func.sum(SalesLine.amount_ht).label("ca"),
+            func.count(distinct(Client.id)).label("clients"),
+            func.count(distinct(SalesLine.sage_piece_id)).label("orders"),
+        )
+        .join(Client, Client.id == SalesLine.client_id)
+        .where(SalesLine.date >= cutoff, SalesLine.date <= end_date, SalesLine.sage_doc_type.in_([6, 3]))
+    )
+    cur_g = cur_geo_q.one()
+    prev_geo_q = await db.execute(
+        select(
+            func.sum(SalesLine.amount_ht).label("ca"),
+            func.count(distinct(Client.id)).label("clients"),
+            func.count(distinct(SalesLine.sage_piece_id)).label("orders"),
+        )
+        .join(Client, Client.id == SalesLine.client_id)
+        .where(SalesLine.date >= prev_cutoff, SalesLine.date <= prev_end, SalesLine.sage_doc_type.in_([6, 3]))
+    )
+    prev_g = prev_geo_q.one()
+
+    def _pct(c, p):
+        if not p: return None
+        return round((c - p) / abs(p) * 100, 1)
+
+    comparison = {
+        "current": {"ca": round(float(cur_g.ca or 0), 2), "clients": cur_g.clients or 0, "orders": cur_g.orders or 0},
+        "previous": {"ca": round(float(prev_g.ca or 0), 2), "clients": prev_g.clients or 0, "orders": prev_g.orders or 0},
+        "evolution": {
+            "ca": _pct(float(cur_g.ca or 0), float(prev_g.ca or 0)),
+            "clients": _pct(cur_g.clients or 0, prev_g.clients or 0),
+        },
+    }
+
     return {
         "departments": departments,
         "regions": regions,
         "top_cities": top_cities,
         "dormant_zones": dormant_zones,
+        "comparison": comparison,
     }
 
 
@@ -458,9 +578,29 @@ async def geo_analytics(
 
 @router.get("/funnel")
 async def funnel_analytics(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    today = date.today()
+    if date_from and date_to:
+        d_from = date.fromisoformat(date_from)
+        d_to = date.fromisoformat(date_to)
+    else:
+        d_from = date(today.year, today.month, 1)
+        d_to = today
+
+    if compare_from and compare_to:
+        prev_from = date.fromisoformat(compare_from)
+        prev_to = date.fromisoformat(compare_to)
+    else:
+        period_days = (d_to - d_from).days or 1
+        prev_from = d_from - timedelta(days=period_days)
+        prev_to = d_from - timedelta(days=1)
+
     status_q = await db.execute(
         select(Client.status, func.count(Client.id))
         .group_by(Client.status)
@@ -473,10 +613,54 @@ async def funnel_analytics(
     total_dormant = status_counts.get("dormant", 0)
     total_dead = status_counts.get("dead", 0)
 
-    today = date.today()
+    async def _period_client_kpis(start: date, end: date):
+        q = await db.execute(
+            select(
+                func.count(distinct(SalesLine.client_id)).label("active_clients"),
+                func.sum(SalesLine.amount_ht).label("ca"),
+                func.count(distinct(SalesLine.sage_piece_id)).label("orders"),
+                func.avg(SalesLine.amount_ht).label("avg_basket"),
+            )
+            .where(SalesLine.date >= start, SalesLine.date <= end, SalesLine.sage_doc_type.in_([6, 3]))
+        )
+        r = q.one()
+        new_q = await db.execute(
+            select(func.count(Client.id))
+            .where(
+                Client.sage_created_at >= start,
+                Client.sage_created_at <= end,
+                Client.is_prospect == False,
+            )
+        )
+        new_clients = new_q.scalar() or 0
+        return {
+            "active_clients": r.active_clients or 0,
+            "ca": round(float(r.ca or 0), 2),
+            "orders": r.orders or 0,
+            "avg_basket": round(float(r.avg_basket or 0), 2),
+            "new_clients": new_clients,
+        }
+
+    current_kpis = await _period_client_kpis(d_from, d_to)
+    previous_kpis = await _period_client_kpis(prev_from, prev_to)
+
+    def _pct(c, p):
+        if not p: return None
+        return round((c - p) / abs(p) * 100, 1)
+
+    comparison = {
+        "current": current_kpis,
+        "previous": previous_kpis,
+        "evolution": {
+            "active_clients": _pct(current_kpis["active_clients"], previous_kpis["active_clients"]),
+            "ca": _pct(current_kpis["ca"], previous_kpis["ca"]),
+            "new_clients": _pct(current_kpis["new_clients"], previous_kpis["new_clients"]),
+        },
+    }
+
     cohorts = []
     for months_ago in range(11, -1, -1):
-        cohort_start = date(today.year, today.month, 1) - timedelta(days=months_ago * 30)
+        cohort_start = date(d_to.year, d_to.month, 1) - timedelta(days=months_ago * 30)
         cohort_start = date(cohort_start.year, cohort_start.month, 1)
         if cohort_start.month == 12:
             cohort_end = date(cohort_start.year + 1, 1, 1)
@@ -499,7 +683,8 @@ async def funnel_analytics(
             .where(
                 Client.sage_created_at >= cohort_start,
                 Client.sage_created_at < cohort_end,
-                SalesLine.date >= today - timedelta(days=90),
+                SalesLine.date >= d_from,
+                SalesLine.date <= d_to,
                 SalesLine.sage_doc_type.in_([6, 3]),
             )
         )
@@ -531,6 +716,8 @@ async def funnel_analytics(
         .where(
             ClientAuditLog.field_name == "status",
             ClientAuditLog.new_value.in_(["dormant", "dead"]),
+            ClientAuditLog.created_at >= datetime.combine(d_from, datetime.min.time(), tzinfo=timezone.utc),
+            ClientAuditLog.created_at <= datetime.combine(d_to, datetime.max.time(), tzinfo=timezone.utc),
         )
         .group_by(text("1"))
         .order_by(text("1"))
@@ -542,11 +729,16 @@ async def funnel_analytics(
             func.to_char(Client.sage_created_at, "YYYY-MM").label("month"),
             func.count(Client.id).label("count"),
         )
-        .where(Client.sage_created_at.isnot(None), Client.is_prospect == False)
+        .where(
+            Client.sage_created_at.isnot(None),
+            Client.is_prospect == False,
+            Client.sage_created_at >= d_from,
+            Client.sage_created_at <= d_to,
+        )
         .group_by(text("1"))
         .order_by(text("1"))
     )
-    new_clients_trend = [{"month": r.month, "new": r.count} for r in new_clients_monthly_q.all()][-12:]
+    new_clients_trend = [{"month": r.month, "new": r.count} for r in new_clients_monthly_q.all()]
 
     return {
         "funnel": {
@@ -565,6 +757,7 @@ async def funnel_analytics(
         },
         "churn_trend": churn_trend,
         "new_clients_trend": new_clients_trend,
+        "comparison": comparison,
     }
 
 
@@ -577,6 +770,8 @@ async def ai_insights(
     months: int = Query(default=6, ge=1, le=24),
     date_from: str | None = None,
     date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -586,6 +781,14 @@ async def ai_insights(
     else:
         cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
         end_dt = datetime.now(timezone.utc)
+
+    if compare_from and compare_to:
+        prev_cutoff = datetime.combine(date.fromisoformat(compare_from), datetime.min.time(), tzinfo=timezone.utc)
+        prev_end_dt = datetime.combine(date.fromisoformat(compare_to), datetime.max.time(), tzinfo=timezone.utc)
+    else:
+        period_days = (end_dt - cutoff).days or 1
+        prev_cutoff = cutoff - timedelta(days=period_days)
+        prev_end_dt = cutoff - timedelta(seconds=1)
 
     sentiment_q = await db.execute(
         select(
@@ -766,6 +969,47 @@ async def ai_insights(
     )
     avg_s = avg_scores_q.one()
 
+    prev_call_q = await db.execute(
+        select(
+            func.count(Call.id).label("total_calls"),
+            func.count(case((Call.is_answered == True, 1))).label("answered"),
+            func.sum(Call.incall_duration).label("total_duration"),
+            func.avg(case((Call.is_answered == True, Call.incall_duration))).label("avg_duration"),
+        )
+        .where(Call.start_time >= prev_cutoff, Call.start_time <= prev_end_dt)
+    )
+    prev_ck = prev_call_q.one()
+
+    prev_score_q = await db.execute(
+        select(func.avg(AiAnalysis.overall_score).label("overall"))
+        .where(AiAnalysis.analyzed_at >= prev_cutoff, AiAnalysis.analyzed_at <= prev_end_dt, AiAnalysis.is_voicemail == False, AiAnalysis.overall_score.isnot(None))
+    )
+    prev_score = prev_score_q.scalar() or 0
+
+    def _pct(c, p):
+        if not p: return None
+        return round((c - p) / abs(p) * 100, 1)
+
+    comparison = {
+        "current": {
+            "total_calls": ck.total_calls or 0,
+            "answered": ck.answered or 0,
+            "pickup_rate": round((ck.answered or 0) / max(ck.total_calls or 1, 1) * 100, 1),
+            "avg_score": round(float(avg_s.overall or 0), 1),
+        },
+        "previous": {
+            "total_calls": prev_ck.total_calls or 0,
+            "answered": prev_ck.answered or 0,
+            "pickup_rate": round((prev_ck.answered or 0) / max(prev_ck.total_calls or 1, 1) * 100, 1),
+            "avg_score": round(float(prev_score), 1),
+        },
+        "evolution": {
+            "total_calls": _pct(ck.total_calls or 0, prev_ck.total_calls or 0),
+            "answered": _pct(ck.answered or 0, prev_ck.answered or 0),
+            "avg_score": _pct(float(avg_s.overall or 0), float(prev_score)),
+        },
+    }
+
     return {
         "call_kpis": {
             "total_calls": ck.total_calls or 0,
@@ -792,6 +1036,7 @@ async def ai_insights(
         "quality_by_rep": quality_by_rep,
         "opportunities": opportunities,
         "top_topics": [{"topic": t, "count": c} for t, c in top_topics],
+        "comparison": comparison,
     }
 
 
@@ -803,10 +1048,12 @@ async def ai_insights(
 async def global_summary(
     date_from: str | None = None,
     date_to: str | None = None,
+    compare_from: str | None = None,
+    compare_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """KPIs globaux avec comparaison N vs N-1."""
+    """KPIs globaux avec comparaison de periodes (custom ou auto N-1)."""
     today = date.today()
     if date_from and date_to:
         d_from = date.fromisoformat(date_from)
@@ -815,9 +1062,13 @@ async def global_summary(
         d_from = date(today.year, today.month, 1)
         d_to = today
 
-    period_days = (d_to - d_from).days or 1
-    prev_from = d_from - timedelta(days=period_days)
-    prev_to = d_from - timedelta(days=1)
+    if compare_from and compare_to:
+        prev_from = date.fromisoformat(compare_from)
+        prev_to = date.fromisoformat(compare_to)
+    else:
+        period_days = (d_to - d_from).days or 1
+        prev_from = d_from - timedelta(days=period_days)
+        prev_to = d_from - timedelta(days=1)
 
     async def _period_kpis(start: date, end: date):
         q = await db.execute(
@@ -855,6 +1106,7 @@ async def global_summary(
 
     return {
         "period": {"from": str(d_from), "to": str(d_to)},
+        "compare_period": {"from": str(prev_from), "to": str(prev_to)},
         "current": current,
         "previous": previous,
         "evolution": {

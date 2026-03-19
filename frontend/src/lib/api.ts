@@ -730,8 +730,9 @@ class ApiClient {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return this.get<GeoAnalyticsData>(`/api/analytics/geo${qs}`);
   }
-  getFunnelAnalytics() {
-    return this.get<FunnelAnalyticsData>("/api/analytics/funnel");
+  getFunnelAnalytics(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<FunnelAnalyticsData>(`/api/analytics/funnel${qs}`);
   }
   getAiInsights(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
@@ -1966,11 +1967,20 @@ export interface ImportJobStatus {
 export interface ReceivablesData {
   total_outstanding: number;
   invoice_count: number;
+  total_invoiced: number;
+  total_invoice_count: number;
+  has_payment_data: boolean;
   avg_days_overdue: number;
   buckets: Record<string, { count: number; total: number }>;
   top_debtors: { client_name: string; client_id: string | null; total_remaining: number; invoice_count: number; oldest_date: string }[];
   invoices: { piece_id: string; client_name: string; client_id: string | null; date: string; days_overdue: number; total_ttc: number; amount_paid: number; remaining: number; sales_rep: string | null; bucket: string }[];
   monthly_trend: { month: string; outstanding: number }[];
+}
+
+interface AnalyticsComparison<T> {
+  current: T;
+  previous: T;
+  evolution: Record<string, number | null>;
 }
 
 export interface ProductsAnalyticsData {
@@ -1979,6 +1989,7 @@ export interface ProductsAnalyticsData {
   monthly_by_family: Record<string, { month: string; ca: number }[]>;
   stock_alerts: { article_ref: string; designation: string | null; stock_available: number; stock_min: number; deficit: number }[];
   low_margin_products: { article_ref: string; designation: string | null; total_ca: number; avg_margin: number }[];
+  comparison?: AnalyticsComparison<{ ca: number; qty: number; margin: number; products: number }>;
 }
 
 export interface GeoAnalyticsData {
@@ -1986,6 +1997,7 @@ export interface GeoAnalyticsData {
   regions: { region: string; client_count: number; total_ca: number; avg_margin: number; order_count: number }[];
   top_cities: { city: string; postal_code: string; client_count: number; total_ca: number }[];
   dormant_zones: { dept: string; count: number }[];
+  comparison?: AnalyticsComparison<{ ca: number; clients: number; orders: number }>;
 }
 
 export interface FunnelAnalyticsData {
@@ -1994,6 +2006,7 @@ export interface FunnelAnalyticsData {
   ltv: { avg: number; median: number; avg_basket: number; avg_frequency_days: number };
   churn_trend: { month: string; lost: number }[];
   new_clients_trend: { month: string; new: number }[];
+  comparison?: AnalyticsComparison<{ active_clients: number; ca: number; orders: number; avg_basket: number; new_clients: number }>;
 }
 
 export interface AiInsightsData {
@@ -2006,10 +2019,12 @@ export interface AiInsightsData {
   quality_by_rep: { user_name: string; user_id: string; avg_score: number; call_count: number }[];
   opportunities: { id: string; opportunity: string; sentiment: string | null; client_name: string | null; client_id: string | null; contact_name: string | null; user_name: string | null; date: string | null }[];
   top_topics: { topic: string; count: number }[];
+  comparison?: AnalyticsComparison<{ total_calls: number; answered: number; pickup_rate: number; avg_score: number }>;
 }
 
 export interface AnalyticsSummaryData {
   period: { from: string; to: string };
+  compare_period: { from: string; to: string };
   current: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
   previous: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
   evolution: { ca: number | null; orders: number | null; clients: number | null; margin: number | null; calls: number | null };

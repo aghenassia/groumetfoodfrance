@@ -24,6 +24,7 @@ import {
   ShoppingCart, Package, MapPin, Brain, BarChart3, PieChart, Target,
   Lightbulb, Clock, AlertCircle, Star, Download, CalendarDays, Phone,
   PhoneOutgoing, PhoneIncoming, Smile, Frown, Meh, CheckCircle,
+  ArrowLeftRight,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -110,6 +111,31 @@ function fmtDuration(seconds: number): string {
 // ═══════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
+type ComparePreset = "previous" | "year_ago" | "custom" | "off";
+
+function comparePresetLabel(p: ComparePreset): string {
+  switch (p) {
+    case "previous": return "Période précédente";
+    case "year_ago": return "Même période N-1";
+    case "custom": return "Personnalisé";
+    case "off": return "Désactivé";
+  }
+}
+
+function computeCompareRange(main: { from: Date; to: Date }, cp: ComparePreset): { from: Date; to: Date } | null {
+  if (cp === "off") return null;
+  const days = Math.round((main.to.getTime() - main.from.getTime()) / 86400000) + 1;
+  if (cp === "previous") {
+    return { from: addDays(main.from, -days), to: addDays(main.from, -1) };
+  }
+  if (cp === "year_ago") {
+    const f = new Date(main.from); f.setFullYear(f.getFullYear() - 1);
+    const t = new Date(main.to); t.setFullYear(t.getFullYear() - 1);
+    return { from: f, to: t };
+  }
+  return null;
+}
+
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<TabKey>("summary");
   const [loading, setLoading] = useState(false);
@@ -118,6 +144,10 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState(presetRange("30d"));
   const [calendarOpen, setCalendarOpen] = useState(false);
 
+  const [comparePreset, setComparePreset] = useState<ComparePreset>("previous");
+  const [compareRange, setCompareRange] = useState<{ from: Date; to: Date } | null>(computeCompareRange(presetRange("30d"), "previous"));
+  const [compareCalendarOpen, setCompareCalendarOpen] = useState(false);
+
   const [summary, setSummary] = useState<AnalyticsSummaryData | null>(null);
   const [receivables, setReceivables] = useState<ReceivablesData | null>(null);
   const [products, setProducts] = useState<ProductsAnalyticsData | null>(null);
@@ -125,7 +155,14 @@ export default function AnalyticsPage() {
   const [funnel, setFunnel] = useState<FunnelAnalyticsData | null>(null);
   const [aiInsights, setAiInsights] = useState<AiInsightsData | null>(null);
 
-  const dateParams = { date_from: toISO(dateRange.from), date_to: toISO(dateRange.to) };
+  const dateParams: Record<string, string> = {
+    date_from: toISO(dateRange.from),
+    date_to: toISO(dateRange.to),
+  };
+  if (compareRange) {
+    dateParams.compare_from = toISO(compareRange.from);
+    dateParams.compare_to = toISO(compareRange.to);
+  }
 
   const loadTab = useCallback(async (t: TabKey, dp: Record<string, string>) => {
     setLoading(true);
@@ -135,24 +172,54 @@ export default function AnalyticsPage() {
         case "receivables": setReceivables(await api.getReceivables(dp)); break;
         case "products": setProducts(await api.getProductsAnalytics(dp)); break;
         case "geo": setGeo(await api.getGeoAnalytics(dp)); break;
-        case "funnel": setFunnel(await api.getFunnelAnalytics()); break;
+        case "funnel": setFunnel(await api.getFunnelAnalytics(dp)); break;
         case "ai": setAiInsights(await api.getAiInsights(dp)); break;
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadTab(tab, dateParams); }, [tab, dateRange.from.getTime(), dateRange.to.getTime()]);
+  useEffect(() => {
+    loadTab(tab, dateParams);
+  }, [tab, dateRange.from.getTime(), dateRange.to.getTime(), compareRange?.from.getTime(), compareRange?.to.getTime()]);
 
   const handlePreset = (p: DatePreset) => {
     if (p === "custom") { setPreset("custom"); setCalendarOpen(true); return; }
-    setPreset(p); setDateRange(presetRange(p));
+    setPreset(p);
+    const newRange = presetRange(p);
+    setDateRange(newRange);
+    if (comparePreset !== "custom" && comparePreset !== "off") {
+      setCompareRange(computeCompareRange(newRange, comparePreset));
+    }
   };
   const handleCalendarSelect = (range: { from?: Date; to?: Date } | undefined) => {
     if (range?.from) {
-      setDateRange({ from: range.from, to: range.to || range.from });
+      const newRange = { from: range.from, to: range.to || range.from };
+      setDateRange(newRange);
       setPreset("custom");
-      if (range.to) setCalendarOpen(false);
+      if (range.to) {
+        setCalendarOpen(false);
+        if (comparePreset !== "custom" && comparePreset !== "off") {
+          setCompareRange(computeCompareRange(newRange, comparePreset));
+        }
+      }
+    }
+  };
+  const handleComparePreset = (cp: ComparePreset) => {
+    setComparePreset(cp);
+    if (cp === "custom") {
+      setCompareCalendarOpen(true);
+    } else if (cp === "off") {
+      setCompareRange(null);
+    } else {
+      setCompareRange(computeCompareRange(dateRange, cp));
+    }
+  };
+  const handleCompareCalendarSelect = (range: { from?: Date; to?: Date } | undefined) => {
+    if (range?.from) {
+      setCompareRange({ from: range.from, to: range.to || range.from });
+      setComparePreset("custom");
+      if (range.to) setCompareCalendarOpen(false);
     }
   };
 
@@ -177,24 +244,54 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Date filters */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {presets.map((p) => (
-          <Button key={p} variant={preset === p ? "default" : "outline"} size="sm" className="h-7 text-xs px-2.5" onClick={() => handlePreset(p)}>
-            {presetLabel(p)}
-          </Button>
-        ))}
-        <div className="w-px h-5 bg-border" />
-        <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-          <PopoverTrigger asChild>
-            <Button variant={preset === "custom" ? "default" : "outline"} size="sm" className="h-7 text-xs" onClick={() => { setPreset("custom"); setCalendarOpen(true); }}>
-              <CalendarDays className="w-3 h-3 mr-1" />
-              {preset === "custom" ? formatDateRange(dateRange.from, dateRange.to) : "Période"}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {presets.map((p) => (
+            <Button key={p} variant={preset === p ? "default" : "outline"} size="sm" className="h-7 text-xs px-2.5" onClick={() => handlePreset(p)}>
+              {presetLabel(p)}
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar mode="range" selected={{ from: dateRange.from, to: dateRange.to }} onSelect={handleCalendarSelect} numberOfMonths={2} disabled={{ after: new Date() }} />
-          </PopoverContent>
-        </Popover>
+          ))}
+          <div className="w-px h-5 bg-border" />
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button variant={preset === "custom" ? "default" : "outline"} size="sm" className="h-7 text-xs" onClick={() => { setPreset("custom"); setCalendarOpen(true); }}>
+                <CalendarDays className="w-3 h-3 mr-1" />
+                {preset === "custom" ? formatDateRange(dateRange.from, dateRange.to) : "Période"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="range" selected={{ from: dateRange.from, to: dateRange.to }} onSelect={handleCalendarSelect} numberOfMonths={2} disabled={{ after: new Date() }} />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Compare period */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <ArrowLeftRight className="w-3 h-3" /> Comparer :
+          </span>
+          {(["previous", "year_ago", "off"] as ComparePreset[]).map((cp) => (
+            <Button key={cp} variant={comparePreset === cp ? "secondary" : "ghost"} size="sm" className="h-6 text-xs px-2" onClick={() => handleComparePreset(cp)}>
+              {comparePresetLabel(cp)}
+            </Button>
+          ))}
+          <Popover open={compareCalendarOpen} onOpenChange={setCompareCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button variant={comparePreset === "custom" ? "secondary" : "ghost"} size="sm" className="h-6 text-xs px-2" onClick={() => handleComparePreset("custom")}>
+                <CalendarDays className="w-3 h-3 mr-1" />
+                {comparePreset === "custom" && compareRange ? formatDateRange(compareRange.from, compareRange.to) : "Custom"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="range" selected={compareRange ? { from: compareRange.from, to: compareRange.to } : undefined} onSelect={handleCompareCalendarSelect} numberOfMonths={2} disabled={{ after: new Date() }} />
+            </PopoverContent>
+          </Popover>
+          {compareRange && (
+            <span className="text-xs text-muted-foreground ml-1">
+              vs {formatDateRange(compareRange.from, compareRange.to)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -223,18 +320,24 @@ export default function AnalyticsPage() {
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════
 function SummaryView({ data }: { data: AnalyticsSummaryData }) {
+  const hasCompare = data.compare_period != null;
+  const compareLbl = hasCompare ? `${data.compare_period.from} → ${data.compare_period.to}` : "période précédente";
   const kpis = [
-    { label: "Chiffre d'affaires", value: fmtCur(data.current.ca), evo: data.evolution.ca, icon: DollarSign },
-    { label: "Commandes", value: fmt(data.current.orders), evo: data.evolution.orders, icon: ShoppingCart },
-    { label: "Clients actifs", value: fmt(data.current.clients), evo: data.evolution.clients, icon: Users },
-    { label: "Marge moyenne", value: `${fmt(data.current.avg_margin, 1)}%`, evo: data.evolution.margin, icon: TrendingUp },
-    { label: "Marge totale", value: fmtCur(data.current.total_margin), evo: null, icon: DollarSign },
-    { label: "Appels", value: fmt(data.current.calls), evo: data.evolution.calls, icon: Phone },
+    { label: "Chiffre d'affaires", value: fmtCur(data.current.ca), prev: fmtCur(data.previous.ca), evo: data.evolution.ca, icon: DollarSign },
+    { label: "Commandes", value: fmt(data.current.orders), prev: fmt(data.previous.orders), evo: data.evolution.orders, icon: ShoppingCart },
+    { label: "Clients actifs", value: fmt(data.current.clients), prev: fmt(data.previous.clients), evo: data.evolution.clients, icon: Users },
+    { label: "Marge moyenne", value: `${fmt(data.current.avg_margin, 1)}%`, prev: `${fmt(data.previous.avg_margin, 1)}%`, evo: data.evolution.margin, icon: TrendingUp },
+    { label: "Marge totale", value: fmtCur(data.current.total_margin), prev: fmtCur(data.previous.total_margin), evo: null, icon: DollarSign },
+    { label: "Appels", value: fmt(data.current.calls), prev: fmt(data.previous.calls), evo: data.evolution.calls, icon: Phone },
   ];
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">Période : {data.period.from} → {data.period.to} vs période précédente</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline" className="text-xs">{data.period.from} → {data.period.to}</Badge>
+        <span className="text-xs text-muted-foreground">vs</span>
+        <Badge variant="secondary" className="text-xs">{compareLbl}</Badge>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {kpis.map((k) => (
           <Card key={k.label}>
@@ -242,21 +345,30 @@ function SummaryView({ data }: { data: AnalyticsSummaryData }) {
               <div className="flex items-center justify-between mb-1"><k.icon className="w-4 h-4 text-muted-foreground" /><EvoBadge value={k.evo} /></div>
               <p className="text-xl font-bold">{k.value}</p>
               <p className="text-xs text-muted-foreground">{k.label}</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">avant: {k.prev}</p>
             </CardContent>
           </Card>
         ))}
       </div>
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Comparaison période actuelle vs précédente</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Comparaison détaillée</CardTitle></CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>KPI</TableHead><TableHead className="text-right">Actuel</TableHead><TableHead className="text-right">Précédent</TableHead><TableHead className="text-right">Évolution</TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>KPI</TableHead>
+                <TableHead className="text-right">Actuel</TableHead>
+                <TableHead className="text-right">Comparé</TableHead>
+                <TableHead className="text-right">Évolution</TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {[
                 { label: "CA", cur: fmtCur(data.current.ca), prev: fmtCur(data.previous.ca), evo: data.evolution.ca },
                 { label: "Commandes", cur: fmt(data.current.orders), prev: fmt(data.previous.orders), evo: data.evolution.orders },
                 { label: "Clients", cur: fmt(data.current.clients), prev: fmt(data.previous.clients), evo: data.evolution.clients },
                 { label: "Marge %", cur: `${fmt(data.current.avg_margin, 1)}%`, prev: `${fmt(data.previous.avg_margin, 1)}%`, evo: data.evolution.margin },
+                { label: "Marge totale", cur: fmtCur(data.current.total_margin), prev: fmtCur(data.previous.total_margin), evo: data.previous.total_margin ? data.evolution.ca : null },
                 { label: "Appels", cur: fmt(data.current.calls), prev: fmt(data.previous.calls), evo: data.evolution.calls },
               ].map((row) => (
                 <TableRow key={row.label}>
@@ -280,27 +392,35 @@ function SummaryView({ data }: { data: AnalyticsSummaryData }) {
 // ═══════════════════════════════════════════════════════════════
 function ReceivablesView({ data }: { data: ReceivablesData }) {
   const bucketData = [
-    { name: "< 30j", count: data.buckets.current.count, total: data.buckets.current.total },
-    { name: "30-60j", count: data.buckets.over_30.count, total: data.buckets.over_30.total },
-    { name: "60-90j", count: data.buckets.over_60.count, total: data.buckets.over_60.total },
-    { name: "> 90j", count: data.buckets.over_90.count, total: data.buckets.over_90.total },
+    { name: "< 30j", count: data.buckets.current?.count ?? 0, total: data.buckets.current?.total ?? 0 },
+    { name: "30-60j", count: data.buckets.over_30?.count ?? 0, total: data.buckets.over_30?.total ?? 0 },
+    { name: "60-90j", count: data.buckets.over_60?.count ?? 0, total: data.buckets.over_60?.total ?? 0 },
+    { name: "> 90j", count: data.buckets.over_90?.count ?? 0, total: data.buckets.over_90?.total ?? 0 },
   ];
   const BUCKET_COLORS = ["#3b82f6", "#f59e0b", "#f97316", "#ef4444"];
+  const pctUnpaid = data.total_invoiced > 0 ? (data.total_outstanding / data.total_invoiced * 100) : 0;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-red-200 bg-red-50/30"><CardContent className="pt-4 pb-3"><AlertCircle className="w-4 h-4 text-red-600 mb-1" /><p className="text-2xl font-bold text-red-700">{fmtCur(data.total_outstanding)}</p><p className="text-xs text-muted-foreground">Encours total</p></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><DollarSign className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{data.invoice_count}</p><p className="text-xs text-muted-foreground">Factures impayées</p></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><Clock className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmt(data.avg_days_overdue, 0)}j</p><p className="text-xs text-muted-foreground">Ancienneté moyenne</p></CardContent></Card>
-        <Card className={data.buckets.over_90.count > 0 ? "border-red-200" : ""}><CardContent className="pt-4 pb-3"><AlertTriangle className="w-4 h-4 text-red-600 mb-1" /><p className="text-2xl font-bold text-red-700">{fmtCur(data.buckets.over_90.total)}</p><p className="text-xs text-muted-foreground">&gt; 90 jours ({data.buckets.over_90.count})</p></CardContent></Card>
+      {!data.has_payment_data && (
+        <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-xs text-amber-800 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Les données de paiement Sage ne sont pas encore disponibles. Les montants affichés sont basés sur le total HT des factures.
+        </div>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card><CardContent className="pt-4 pb-3"><DollarSign className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmtCur(data.total_invoiced)}</p><p className="text-xs text-muted-foreground">Total facturé HT ({data.total_invoice_count})</p></CardContent></Card>
+        <Card className="border-red-200 bg-red-50/30"><CardContent className="pt-4 pb-3"><AlertCircle className="w-4 h-4 text-red-600 mb-1" /><p className="text-2xl font-bold text-red-700">{fmtCur(data.total_outstanding)}</p><p className="text-xs text-muted-foreground">Encours impayé</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-3"><Target className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmt(pctUnpaid, 1)}%</p><p className="text-xs text-muted-foreground">Taux d&apos;impayé</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-3"><Clock className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmt(data.avg_days_overdue, 0)}j</p><p className="text-xs text-muted-foreground">Ancienneté moy.</p></CardContent></Card>
+        <Card className={(data.buckets.over_90?.count ?? 0) > 0 ? "border-red-200" : ""}><CardContent className="pt-4 pb-3"><AlertTriangle className="w-4 h-4 text-red-600 mb-1" /><p className="text-2xl font-bold text-red-700">{fmtCur(data.buckets.over_90?.total ?? 0)}</p><p className="text-xs text-muted-foreground">&gt; 90 jours ({data.buckets.over_90?.count ?? 0})</p></CardContent></Card>
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Balance âgée</CardTitle></CardHeader>
           <CardContent><ResponsiveContainer width="100%" height={220}><BarChart data={bucketData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v) => fmtCur(v as number)} /><Bar dataKey="total" name="Montant">{bucketData.map((_, i) => <Cell key={i} fill={BUCKET_COLORS[i]} />)}</Bar></BarChart></ResponsiveContainer></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Top débiteurs</CardTitle></CardHeader>
           <CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Client</TableHead><TableHead className="text-right">Reste dû</TableHead><TableHead className="text-right">Factures</TableHead></TableRow></TableHeader>
-            <TableBody>{data.top_debtors.slice(0, 10).map((d, i) => (<TableRow key={i}><TableCell className="text-xs font-medium">{d.client_id ? <Link href={`/clients/${d.client_id}`} className="hover:underline text-primary">{d.client_name}</Link> : d.client_name}</TableCell><TableCell className="text-xs text-right tabular-nums text-red-600 font-medium">{fmtCur(d.total_remaining)}</TableCell><TableCell className="text-xs text-right">{d.invoice_count}</TableCell></TableRow>))}</TableBody></Table></CardContent></Card>
+            <TableBody>{data.top_debtors.length === 0 ? (<TableRow><TableCell colSpan={3} className="text-xs text-center text-muted-foreground py-6">Aucun impayé détecté sur cette période</TableCell></TableRow>) : data.top_debtors.slice(0, 10).map((d, i) => (<TableRow key={i}><TableCell className="text-xs font-medium">{d.client_id ? <Link href={`/clients/${d.client_id}`} className="hover:underline text-primary">{d.client_name}</Link> : d.client_name}</TableCell><TableCell className="text-xs text-right tabular-nums text-red-600 font-medium">{fmtCur(d.total_remaining)}</TableCell><TableCell className="text-xs text-right">{d.invoice_count}</TableCell></TableRow>))}</TableBody></Table></CardContent></Card>
       </div>
       {data.monthly_trend.length > 0 && (
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Évolution de l&apos;encours</CardTitle></CardHeader>
@@ -314,10 +434,36 @@ function ReceivablesView({ data }: { data: ReceivablesData }) {
 // ═══════════════════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════════════════
+function ComparisonBanner({ items }: { items: { label: string; current: string; previous: string; evo: number | null }[] }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      {items.map((it) => (
+        <div key={it.label} className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/30">
+          <div>
+            <p className="text-[10px] text-muted-foreground">{it.label}</p>
+            <p className="text-sm font-semibold">{it.current}</p>
+            <p className="text-[10px] text-muted-foreground">avant: {it.previous}</p>
+          </div>
+          <EvoBadge value={it.evo} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ProductsView({ data }: { data: ProductsAnalyticsData }) {
   const pieData = data.families.slice(0, 8).map((f) => ({ name: f.family_label, value: f.total_ca }));
+  const cmp = data.comparison;
   return (
     <div className="space-y-4">
+      {cmp && (
+        <ComparisonBanner items={[
+          { label: "CA Produits", current: fmtCur(cmp.current.ca), previous: fmtCur(cmp.previous.ca), evo: cmp.evolution.ca ?? null },
+          { label: "Quantité", current: fmt(cmp.current.qty, 0), previous: fmt(cmp.previous.qty, 0), evo: cmp.evolution.qty ?? null },
+          { label: "Marge moy.", current: `${fmt(cmp.current.margin, 1)}%`, previous: `${fmt(cmp.previous.margin, 1)}%`, evo: cmp.evolution.margin ?? null },
+          { label: "Produits vendus", current: fmt(cmp.current.products), previous: fmt(cmp.previous.products), evo: null },
+        ]} />
+      )}
       <div className="grid lg:grid-cols-2 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-1.5"><PieChart className="w-4 h-4" />Répartition CA par famille</CardTitle></CardHeader>
           <CardContent><ResponsiveContainer width="100%" height={280}><RechartsPie><Pie data={pieData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={{ strokeWidth: 1 }}>{pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}</Pie><Tooltip formatter={(v) => fmtCur(v as number)} /></RechartsPie></ResponsiveContainer></CardContent></Card>
@@ -349,8 +495,16 @@ function ProductsView({ data }: { data: ProductsAnalyticsData }) {
 // GEO
 // ═══════════════════════════════════════════════════════════════
 function GeoView({ data }: { data: GeoAnalyticsData }) {
+  const cmp = data.comparison;
   return (
     <div className="space-y-4">
+      {cmp && (
+        <ComparisonBanner items={[
+          { label: "CA total", current: fmtCur(cmp.current.ca), previous: fmtCur(cmp.previous.ca), evo: cmp.evolution.ca ?? null },
+          { label: "Clients actifs", current: fmt(cmp.current.clients), previous: fmt(cmp.previous.clients), evo: cmp.evolution.clients ?? null },
+          { label: "Commandes", current: fmt(cmp.current.orders), previous: fmt(cmp.previous.orders), evo: null },
+        ]} />
+      )}
       <div className="grid lg:grid-cols-2 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CA par département (Top 15)</CardTitle></CardHeader>
           <CardContent><ResponsiveContainer width="100%" height={300}><BarChart data={data.departments.slice(0, 15)} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" tick={{ fontSize: 10 }} /><YAxis type="category" dataKey="dept" tick={{ fontSize: 11 }} width={35} /><Tooltip formatter={(v) => fmtCur(v as number)} /><Bar dataKey="total_ca" name="CA" fill="#3b82f6" /></BarChart></ResponsiveContainer></CardContent></Card>
@@ -384,9 +538,18 @@ function FunnelView({ data }: { data: FunnelAnalyticsData }) {
     { label: "Perdus", count: data.funnel.dead, color: "bg-red-500" },
   ];
   const maxCount = Math.max(...funnelSteps.map((s) => s.count), 1);
+  const cmp = data.comparison;
 
   return (
     <div className="space-y-4">
+      {cmp && (
+        <ComparisonBanner items={[
+          { label: "Clients actifs", current: fmt(cmp.current.active_clients), previous: fmt(cmp.previous.active_clients), evo: cmp.evolution.active_clients ?? null },
+          { label: "CA période", current: fmtCur(cmp.current.ca), previous: fmtCur(cmp.previous.ca), evo: cmp.evolution.ca ?? null },
+          { label: "Nouveaux clients", current: fmt(cmp.current.new_clients), previous: fmt(cmp.previous.new_clients), evo: cmp.evolution.new_clients ?? null },
+          { label: "Panier moyen", current: fmtCur(cmp.current.avg_basket), previous: fmtCur(cmp.previous.avg_basket), evo: null },
+        ]} />
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card><CardContent className="pt-4 pb-3"><DollarSign className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmtCur(data.ltv.avg)}</p><p className="text-xs text-muted-foreground">LTV moyenne</p></CardContent></Card>
         <Card><CardContent className="pt-4 pb-3"><DollarSign className="w-4 h-4 text-muted-foreground mb-1" /><p className="text-2xl font-bold">{fmtCur(data.ltv.median)}</p><p className="text-xs text-muted-foreground">LTV médiane</p></CardContent></Card>
@@ -438,8 +601,18 @@ function AiView({ data }: { data: AiInsightsData }) {
   const moodEntries = Object.entries(data.mood_distribution);
   const totalMoods = moodEntries.reduce((s, [, v]) => s + v, 0);
 
+  const cmp = data.comparison;
+
   return (
     <div className="space-y-4">
+      {cmp && (
+        <ComparisonBanner items={[
+          { label: "Total appels", current: fmt(cmp.current.total_calls), previous: fmt(cmp.previous.total_calls), evo: cmp.evolution.total_calls ?? null },
+          { label: "Décrochés", current: fmt(cmp.current.answered), previous: fmt(cmp.previous.answered), evo: cmp.evolution.answered ?? null },
+          { label: "Taux décroché", current: `${cmp.current.pickup_rate}%`, previous: `${cmp.previous.pickup_rate}%`, evo: null },
+          { label: "Score IA", current: `${cmp.current.avg_score}/100`, previous: `${cmp.previous.avg_score}/100`, evo: cmp.evolution.avg_score ?? null },
+        ]} />
+      )}
       {/* KPIs appels */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <Card><CardContent className="pt-3 pb-2 text-center"><Phone className="w-4 h-4 mx-auto text-muted-foreground mb-1" /><p className="text-lg font-bold">{fmt(ck.total_calls)}</p><p className="text-[10px] text-muted-foreground">Total appels</p></CardContent></Card>
