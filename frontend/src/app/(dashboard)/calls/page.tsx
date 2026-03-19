@@ -111,9 +111,11 @@ function formatTime(d: string) {
 function formatDateOnly(d: string) {
   const now = new Date();
   const date = new Date(d);
-  const diff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  if (diff === 0) return "Aujourd'hui";
-  if (diff === 1) return "Hier";
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Aujourd'hui";
+  if (diffDays === 1) return "Hier";
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 
