@@ -628,6 +628,8 @@ async def get_client(
         sales_rep=client.sales_rep,
         assigned_user_name=assigned_user_name,
         tariff_category=client.tariff_category,
+        client_type=client.client_type,
+        client_subtype=client.client_subtype,
         is_prospect=client.is_prospect,
         is_dormant=client.is_dormant,
         status=client.status,
