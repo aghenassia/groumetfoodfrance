@@ -76,7 +76,7 @@ async def list_clients(
     client_type: str | None = Query(default=None, description="Filtrer par type d'entreprise"),
     sort_by: str = Query(default="name", pattern="^(name|ca_total|ca_12m|last_order|order_count|order_count_12m|avg_basket|margin|churn|upsell|priority)$"),
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
-    limit: int = Query(default=50, le=500),
+    limit: int = Query(default=50, le=5000),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),

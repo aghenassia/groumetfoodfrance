@@ -61,7 +61,12 @@ import { toast } from "sonner";
 import { NameItem } from "@/lib/api";
 import { TypePicker } from "@/components/type-picker";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 500, label: "500" },
+  { value: 0, label: "Tous" },
+] as const;
 
 type SortKey =
   | "name"
@@ -196,6 +201,7 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -246,11 +252,13 @@ export default function ClientsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const effectivePageSize = pageSize === 0 ? 5000 : pageSize;
+
   const fetchClients = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
+      limit: String(effectivePageSize),
+      offset: String(page * effectivePageSize),
       sort_by: sortBy,
       sort_dir: sortDir,
     };
@@ -280,7 +288,7 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, clientTypeFilter, sortBy, sortDir, page]);
+  }, [debouncedSearch, filter, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, clientTypeFilter, sortBy, sortDir, page, effectivePageSize]);
 
   useEffect(() => {
     fetchClients();
@@ -325,7 +333,7 @@ export default function ClientsPage() {
     );
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const totalPages = pageSize === 0 ? 1 : Math.ceil(total / pageSize);
 
   const statusOptions = [
     { key: "all", label: "Tous les statuts" },
@@ -799,35 +807,85 @@ export default function ClientsPage() {
       </Card>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} sur{" "}
-            {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Précédent
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {page + 1}/{totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-            >
-              Suivant
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
+      {total > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              {pageSize === 0
+                ? `${total} résultat${total > 1 ? "s" : ""}`
+                : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} sur ${total}`}
+            </p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Afficher :</span>
+              <div className="flex gap-1">
+                {PAGE_SIZE_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant={pageSize === opt.value ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 px-2.5 text-xs"
+                    onClick={() => {
+                      setPageSize(opt.value);
+                      setPage(0);
+                    }}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              {(() => {
+                const pages: (number | "ellipsis")[] = [];
+                if (totalPages <= 7) {
+                  for (let i = 0; i < totalPages; i++) pages.push(i);
+                } else {
+                  pages.push(0);
+                  if (page > 2) pages.push("ellipsis");
+                  const start = Math.max(1, page - 1);
+                  const end = Math.min(totalPages - 2, page + 1);
+                  for (let i = start; i <= end; i++) pages.push(i);
+                  if (page < totalPages - 3) pages.push("ellipsis");
+                  pages.push(totalPages - 1);
+                }
+                return pages.map((p, idx) =>
+                  p === "ellipsis" ? (
+                    <span key={`e${idx}`} className="px-1 text-sm text-muted-foreground">…</span>
+                  ) : (
+                    <Button
+                      key={p}
+                      variant={page === p ? "default" : "outline"}
+                      size="sm"
+                      className="h-8 w-8 p-0 text-xs"
+                      onClick={() => setPage(p)}
+                    >
+                      {p + 1}
+                    </Button>
+                  )
+                );
+              })()}
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
