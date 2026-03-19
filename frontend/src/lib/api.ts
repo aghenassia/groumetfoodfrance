@@ -722,17 +722,20 @@ class ApiClient {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return this.get<ReceivablesData>(`/api/analytics/receivables${qs}`);
   }
-  getProductsAnalytics(months = 12) {
-    return this.get<ProductsAnalyticsData>(`/api/analytics/products?months=${months}`);
+  getProductsAnalytics(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<ProductsAnalyticsData>(`/api/analytics/products${qs}`);
   }
-  getGeoAnalytics(months = 12) {
-    return this.get<GeoAnalyticsData>(`/api/analytics/geo?months=${months}`);
+  getGeoAnalytics(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<GeoAnalyticsData>(`/api/analytics/geo${qs}`);
   }
   getFunnelAnalytics() {
     return this.get<FunnelAnalyticsData>("/api/analytics/funnel");
   }
-  getAiInsights(months = 6) {
-    return this.get<AiInsightsData>(`/api/analytics/ai-insights?months=${months}`);
+  getAiInsights(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return this.get<AiInsightsData>(`/api/analytics/ai-insights${qs}`);
   }
   getAnalyticsSummary(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
@@ -1994,6 +1997,10 @@ export interface FunnelAnalyticsData {
 }
 
 export interface AiInsightsData {
+  call_kpis: { total_calls: number; answered: number; outbound: number; inbound: number; pickup_rate: number; total_duration_min: number; avg_duration_sec: number; analyzed_count: number };
+  avg_scores: { overall: number; politeness: number; objection: number; closing: number; product: number; listening: number };
+  qualification_outcomes: Record<string, number>;
+  mood_distribution: Record<string, number>;
   sentiment_trend: { month: string; positive: number; neutral: number; negative: number; total: number }[];
   quality_trend: { month: string; avg_score: number; politeness: number; objection: number; closing: number; product: number; listening: number; total_calls: number }[];
   quality_by_rep: { user_name: string; user_id: string; avg_score: number; call_count: number }[];

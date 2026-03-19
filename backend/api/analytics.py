@@ -182,11 +182,18 @@ async def receivables_dashboard(
 @router.get("/products")
 async def products_analytics(
     months: int = Query(default=12, ge=1, le=36),
+    date_from: str | None = None,
+    date_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    cutoff = date.today() - timedelta(days=months * 30)
-    prev_cutoff = cutoff - timedelta(days=months * 30)
+    if date_from and date_to:
+        cutoff = date.fromisoformat(date_from)
+        end_date = date.fromisoformat(date_to)
+    else:
+        cutoff = date.today() - timedelta(days=months * 30)
+        end_date = date.today()
+    prev_cutoff = cutoff - timedelta(days=(end_date - cutoff).days)
 
     top_q = await db.execute(
         select(
@@ -321,10 +328,17 @@ async def products_analytics(
 @router.get("/geo")
 async def geo_analytics(
     months: int = Query(default=12, ge=1, le=36),
+    date_from: str | None = None,
+    date_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    cutoff = date.today() - timedelta(days=months * 30)
+    if date_from and date_to:
+        cutoff = date.fromisoformat(date_from)
+        end_date = date.fromisoformat(date_to)
+    else:
+        cutoff = date.today() - timedelta(days=months * 30)
+        end_date = date.today()
 
     dept_q = await db.execute(
         select(
@@ -561,10 +575,17 @@ async def funnel_analytics(
 @router.get("/ai-insights")
 async def ai_insights(
     months: int = Query(default=6, ge=1, le=24),
+    date_from: str | None = None,
+    date_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
+    if date_from and date_to:
+        cutoff = datetime.combine(date.fromisoformat(date_from), datetime.min.time(), tzinfo=timezone.utc)
+        end_dt = datetime.combine(date.fromisoformat(date_to), datetime.max.time(), tzinfo=timezone.utc)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
+        end_dt = datetime.now(timezone.utc)
 
     sentiment_q = await db.execute(
         select(
@@ -692,7 +713,80 @@ async def ai_insights(
                     topic_counts[label] = topic_counts.get(label, 0) + 1
     top_topics = sorted(topic_counts.items(), key=lambda x: -x[1])[:20]
 
+    # KPIs globaux appels
+    call_kpis_q = await db.execute(
+        select(
+            func.count(Call.id).label("total_calls"),
+            func.count(case((Call.is_answered == True, 1))).label("answered"),
+            func.count(case((Call.direction == "outbound", 1))).label("outbound"),
+            func.count(case((Call.direction == "inbound", 1))).label("inbound"),
+            func.sum(Call.incall_duration).label("total_duration"),
+            func.avg(case((Call.is_answered == True, Call.incall_duration))).label("avg_duration"),
+        )
+        .where(Call.start_time >= cutoff, Call.start_time <= end_dt)
+    )
+    ck = call_kpis_q.one()
+
+    analyzed_count_q = await db.execute(
+        select(func.count(AiAnalysis.id))
+        .where(AiAnalysis.analyzed_at >= cutoff, AiAnalysis.analyzed_at <= end_dt, AiAnalysis.is_voicemail == False)
+    )
+    analyzed_count = analyzed_count_q.scalar() or 0
+
+    qual_outcome_q = await db.execute(
+        select(
+            CallQualification.outcome,
+            func.count(CallQualification.id).label("cnt"),
+        )
+        .where(CallQualification.qualified_at >= cutoff, CallQualification.qualified_at <= end_dt)
+        .group_by(CallQualification.outcome)
+    )
+    qualification_outcomes = {r.outcome: r.cnt for r in qual_outcome_q.all()}
+
+    qual_mood_q = await db.execute(
+        select(
+            CallQualification.mood,
+            func.count(CallQualification.id).label("cnt"),
+        )
+        .where(CallQualification.qualified_at >= cutoff, CallQualification.qualified_at <= end_dt)
+        .group_by(CallQualification.mood)
+    )
+    mood_distribution = {r.mood: r.cnt for r in qual_mood_q.all()}
+
+    avg_scores_q = await db.execute(
+        select(
+            func.avg(AiAnalysis.overall_score).label("overall"),
+            func.avg(AiAnalysis.politeness_score).label("politeness"),
+            func.avg(AiAnalysis.objection_handling).label("objection"),
+            func.avg(AiAnalysis.closing_attempt).label("closing"),
+            func.avg(AiAnalysis.product_knowledge).label("product"),
+            func.avg(AiAnalysis.listening_quality).label("listening"),
+        )
+        .where(AiAnalysis.analyzed_at >= cutoff, AiAnalysis.analyzed_at <= end_dt, AiAnalysis.is_voicemail == False, AiAnalysis.overall_score.isnot(None))
+    )
+    avg_s = avg_scores_q.one()
+
     return {
+        "call_kpis": {
+            "total_calls": ck.total_calls or 0,
+            "answered": ck.answered or 0,
+            "outbound": ck.outbound or 0,
+            "inbound": ck.inbound or 0,
+            "pickup_rate": round((ck.answered or 0) / max(ck.total_calls or 1, 1) * 100, 1),
+            "total_duration_min": round(float(ck.total_duration or 0) / 60, 0),
+            "avg_duration_sec": round(float(ck.avg_duration or 0), 0),
+            "analyzed_count": analyzed_count,
+        },
+        "avg_scores": {
+            "overall": round(float(avg_s.overall or 0), 1),
+            "politeness": round(float(avg_s.politeness or 0), 1),
+            "objection": round(float(avg_s.objection or 0), 1),
+            "closing": round(float(avg_s.closing or 0), 1),
+            "product": round(float(avg_s.product or 0), 1),
+            "listening": round(float(avg_s.listening or 0), 1),
+        },
+        "qualification_outcomes": qualification_outcomes,
+        "mood_distribution": mood_distribution,
         "sentiment_trend": sentiment_trend,
         "quality_trend": quality_trend,
         "quality_by_rep": quality_by_rep,
