@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api, Contact, ContactCallEntry } from "@/lib/api";
+import { usePersistedFilters } from "@/hooks/use-persisted-filters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +91,14 @@ function formatDuration(seconds: number) {
 }
 
 export default function ContactsPage() {
+  const [savedFilters, setFilters] = usePersistedFilters("contacts", {
+    sortBy: "name" as SortKey,
+    sortDir: "asc" as "asc" | "desc",
+    companyFilter: "all",
+    commercialFilter: "all",
+  });
+  const { sortBy, sortDir, companyFilter, commercialFilter } = savedFilters;
+
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -97,11 +106,7 @@ export default function ContactsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [animKey, setAnimKey] = useState(0);
-  const [companyFilter, setCompanyFilter] = useState<string>("all");
-  const [commercialFilter, setCommercialFilter] = useState<string>("all");
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
-  const [sortBy, setSortBy] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [contactCalls, setContactCalls] = useState<ContactCallEntry[]>([]);
@@ -295,10 +300,9 @@ export default function ContactsPage() {
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setFilters({ sortDir: sortDir === "asc" ? "desc" : "asc" });
     } else {
-      setSortBy(key);
-      setSortDir(key === "name" || key === "company_name" ? "asc" : "desc");
+      setFilters({ sortBy: key, sortDir: key === "name" || key === "company_name" ? "asc" : "desc" });
     }
     setPage(0);
   };
@@ -356,7 +360,7 @@ export default function ContactsPage() {
           <Select
             value={companyFilter}
             onValueChange={(v) => {
-              setCompanyFilter(v);
+              setFilters({ companyFilter: v });
               setPage(0);
             }}
           >
@@ -373,7 +377,7 @@ export default function ContactsPage() {
           <Select
             value={commercialFilter}
             onValueChange={(v) => {
-              setCommercialFilter(v);
+              setFilters({ commercialFilter: v });
               setPage(0);
             }}
           >
@@ -397,8 +401,7 @@ export default function ContactsPage() {
             <Select
               value={sortBy}
               onValueChange={(v) => {
-                setSortBy(v as SortKey);
-                setSortDir(v === "created_at" ? "desc" : "asc");
+                setFilters({ sortBy: v as SortKey, sortDir: v === "created_at" ? "desc" : "asc" });
                 setPage(0);
               }}
             >
@@ -415,7 +418,7 @@ export default function ContactsPage() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              onClick={() => setFilters({ sortDir: sortDir === "asc" ? "desc" : "asc" })}
             >
               {sortDir === "asc" ? (
                 <ArrowUp className="w-4 h-4" />

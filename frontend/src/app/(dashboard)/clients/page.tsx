@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, Client, CreateProspectRequest } from "@/lib/api";
+import { usePersistedFilters } from "@/hooks/use-persisted-filters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -198,29 +199,33 @@ function churnBadge(score: number | null | undefined) {
 }
 
 export default function ClientsPage() {
+  const [savedFilters, setFilters, resetFilters] = usePersistedFilters("clients", {
+    sortBy: "ca_total" as SortKey,
+    sortDir: "desc" as "asc" | "desc",
+    statusFilter: "all",
+    churnFilter: "all",
+    hasOrders: "all",
+    commercialFilter: "all",
+    supplierFilter: "all",
+    competitorFilter: "all",
+    clientTypeFilter: "all",
+    pageSize: 50,
+  });
+  const { sortBy, sortDir, statusFilter, churnFilter, hasOrders, commercialFilter, supplierFilter, competitorFilter, clientTypeFilter, pageSize } = savedFilters;
+
   const [clients, setClients] = useState<Client[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [animKey, setAnimKey] = useState(0);
   const [filter, setFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [churnFilter, setChurnFilter] = useState<string>("all");
-  const [hasOrders, setHasOrders] = useState<string>("all");
-  const [commercialFilter, setCommercialFilter] = useState<string>("all");
-  const [supplierFilter, setSupplierFilter] = useState<string>("all");
-  const [competitorFilter, setCompetitorFilter] = useState<string>("all");
   const [allSuppliers, setAllSuppliers] = useState<NameItem[]>([]);
   const [allCompetitors, setAllCompetitors] = useState<NameItem[]>([]);
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
-  const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
   const [allClientTypes, setAllClientTypes] = useState<string[]>([]);
   const [allClientSubtypes, setAllClientSubtypes] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<SortKey>("ca_total");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState<Partial<CreateProspectRequest>>({});
   const [adding, setAdding] = useState(false);
@@ -315,10 +320,9 @@ export default function ClientsPage() {
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setFilters({ sortDir: sortDir === "asc" ? "desc" : "asc" });
     } else {
-      setSortBy(key);
-      setSortDir(key === "name" ? "asc" : "desc");
+      setFilters({ sortBy: key, sortDir: key === "name" ? "asc" : "desc" });
     }
     setPage(0);
   };
@@ -397,7 +401,7 @@ export default function ClientsPage() {
           <Select
             value={statusFilter}
             onValueChange={(v) => {
-              setStatusFilter(v);
+              setFilters({ statusFilter: v });
               setFilter("all");
               setPage(0);
             }}
@@ -418,7 +422,7 @@ export default function ClientsPage() {
           <Select
             value={churnFilter}
             onValueChange={(v) => {
-              setChurnFilter(v);
+              setFilters({ churnFilter: v });
               setPage(0);
             }}
           >
@@ -438,7 +442,7 @@ export default function ClientsPage() {
           <Select
             value={commercialFilter}
             onValueChange={(v) => {
-              setCommercialFilter(v);
+              setFilters({ commercialFilter: v });
               setPage(0);
             }}
           >
@@ -466,7 +470,7 @@ export default function ClientsPage() {
                 variant={hasOrders === f.key ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
-                  setHasOrders(f.key);
+                  setFilters({ hasOrders: f.key });
                   setPage(0);
                 }}
               >
@@ -481,7 +485,7 @@ export default function ClientsPage() {
               <div className="w-px h-6 bg-border" />
               <Select
                 value={supplierFilter}
-                onValueChange={(v) => { setSupplierFilter(v); setPage(0); }}
+                onValueChange={(v) => { setFilters({ supplierFilter: v }); setPage(0); }}
               >
                 <SelectTrigger className="h-8 w-[170px] text-xs">
                   <div className="flex items-center gap-1.5">
@@ -504,7 +508,7 @@ export default function ClientsPage() {
             <>
               <Select
                 value={competitorFilter}
-                onValueChange={(v) => { setCompetitorFilter(v); setPage(0); }}
+                onValueChange={(v) => { setFilters({ competitorFilter: v }); setPage(0); }}
               >
                 <SelectTrigger className="h-8 w-[170px] text-xs">
                   <div className="flex items-center gap-1.5">
@@ -526,7 +530,7 @@ export default function ClientsPage() {
           {allClientTypes.length > 0 && (
             <Select
               value={clientTypeFilter}
-              onValueChange={(v) => { setClientTypeFilter(v); setPage(0); }}
+              onValueChange={(v) => { setFilters({ clientTypeFilter: v }); setPage(0); }}
             >
               <SelectTrigger className="h-8 w-[170px] text-xs">
                 <div className="flex items-center gap-1.5">
@@ -551,8 +555,7 @@ export default function ClientsPage() {
             <Select
               value={sortBy}
               onValueChange={(v) => {
-                setSortBy(v as SortKey);
-                setSortDir(v === "name" ? "asc" : "desc");
+                setFilters({ sortBy: v as SortKey, sortDir: v === "name" ? "asc" : "desc" });
                 setPage(0);
               }}
             >
@@ -574,7 +577,7 @@ export default function ClientsPage() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              onClick={() => setFilters({ sortDir: sortDir === "asc" ? "desc" : "asc" })}
             >
               {sortDir === "asc" ? (
                 <ArrowUp className="w-4 h-4" />
@@ -825,7 +828,7 @@ export default function ClientsPage() {
                     size="sm"
                     className="h-7 px-2.5 text-xs"
                     onClick={() => {
-                      setPageSize(opt.value);
+                      setFilters({ pageSize: opt.value });
                       setPage(0);
                     }}
                   >

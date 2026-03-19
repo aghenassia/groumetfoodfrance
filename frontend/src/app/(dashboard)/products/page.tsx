@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { usePersistedFilters } from "@/hooks/use-persisted-filters";
 import {
   api,
   ProductListItem,
@@ -151,6 +152,16 @@ export default function ProductsPage() {
 
 function ProductsPageInner() {
   const searchParams = useSearchParams();
+  const [savedFilters, setFilters] = usePersistedFilters("products", {
+    sortBy: "ca" as SortKey,
+    sortDir: "desc" as "asc" | "desc",
+    hasSales: "all",
+    family: "all",
+    stockFilter: "" as StockFilter,
+    depotFilter: "all",
+  });
+  const { sortBy, sortDir, hasSales, family, stockFilter, depotFilter } = savedFilters;
+
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -158,15 +169,9 @@ function ProductsPageInner() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [animKey, setAnimKey] = useState(0);
-  const [sortBy, setSortBy] = useState<SortKey>("ca");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [hasSales, setHasSales] = useState<string>("all");
-  const [family, setFamily] = useState<string>("all");
   const [families, setFamilies] = useState<{ family: string; label: string; count: number }[]>(
     []
   );
-  const [stockFilter, setStockFilter] = useState<StockFilter>("");
-  const [depotFilter, setDepotFilter] = useState<string>("all");
   const [depots, setDepots] = useState<{ depot_id: number; depot_name: string; nb_articles: number }[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -252,10 +257,9 @@ function ProductsPageInner() {
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setFilters({ sortDir: sortDir === "asc" ? "desc" : "asc" });
     } else {
-      setSortBy(key);
-      setSortDir(key === "name" ? "asc" : "desc");
+      setFilters({ sortBy: key, sortDir: key === "name" ? "asc" : "desc" });
     }
     setPage(0);
   };
@@ -341,7 +345,7 @@ function ProductsPageInner() {
                     size="sm"
                     className="h-7 text-xs px-2.5"
                     onClick={() => {
-                      setHasSales(f.key);
+                      setFilters({ hasSales: f.key });
                       setPage(0);
                     }}
                   >
@@ -361,7 +365,7 @@ function ProductsPageInner() {
               <Select
                 value={family}
                 onValueChange={(v) => {
-                  setFamily(v);
+                  setFilters({ family: v });
                   setPage(0);
                 }}
               >
@@ -387,7 +391,7 @@ function ProductsPageInner() {
               <Select
                 value={depotFilter}
                 onValueChange={(v) => {
-                  setDepotFilter(v);
+                  setFilters({ depotFilter: v });
                   setPage(0);
                 }}
               >
@@ -418,7 +422,7 @@ function ProductsPageInner() {
                     size="sm"
                     className="h-7 text-xs px-2.5"
                     onClick={() => {
-                      setStockFilter(f.value);
+                      setFilters({ stockFilter: f.value });
                       setPage(0);
                     }}
                   >
@@ -437,10 +441,7 @@ function ProductsPageInner() {
                   size="sm"
                   className="h-7 text-xs text-muted-foreground"
                   onClick={() => {
-                    setHasSales("all");
-                    setFamily("all");
-                    setStockFilter("");
-                    setDepotFilter("all");
+                    setFilters({ hasSales: "all", family: "all", stockFilter: "" as StockFilter, depotFilter: "all" });
                     setPage(0);
                   }}
                 >
