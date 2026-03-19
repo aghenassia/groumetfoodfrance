@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
@@ -31,6 +31,8 @@ class CreateContactRequest(BaseModel):
     email: str | None = None
     company_id: str | None = None
     is_primary: bool = False
+    birthday: date | None = None
+    personal_notes: str | None = None
 
 
 class UpdateContactRequest(BaseModel):
@@ -42,6 +44,8 @@ class UpdateContactRequest(BaseModel):
     phone: str | None = None
     email: str | None = None
     is_primary: bool | None = None
+    birthday: date | None = None
+    personal_notes: str | None = None
 
 
 def _contact_to_response(contact: Contact, company_name: str | None = None, user_name: str | None = None, phones: list | None = None) -> ContactResponse:
@@ -63,6 +67,8 @@ def _contact_to_response(contact: Contact, company_name: str | None = None, user
         phone=primary_phone.phone if primary_phone else contact.phone,
         phone_e164=primary_phone.phone_e164 if primary_phone else contact.phone_e164,
         email=contact.email,
+        birthday=contact.birthday,
+        personal_notes=contact.personal_notes,
         is_primary=contact.is_primary,
         source=contact.source,
         assigned_user_id=contact.assigned_user_id,
@@ -202,6 +208,8 @@ async def create_contact(
         company_id=body.company_id,
         assigned_user_id=user.id,
         is_primary=body.is_primary,
+        birthday=body.birthday,
+        personal_notes=body.personal_notes,
         source="manual",
     )
     db.add(contact)

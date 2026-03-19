@@ -96,6 +96,8 @@ class ContactBrief(BaseModel):
     phone: str | None = None
     phone_e164: str | None = None
     email: str | None = None
+    birthday: date | None = None
+    personal_notes: str | None = None
     is_primary: bool = False
     source: str = "manual"
     assigned_user_id: str | None = None

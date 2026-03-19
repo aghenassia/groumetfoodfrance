@@ -51,7 +51,11 @@ import {
   Plus,
   Save,
   Trash2,
+  Cake,
+  StickyNote,
+  Heart,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
 import { toast } from "sonner";
@@ -109,6 +113,7 @@ export default function ContactsPage() {
     first_name: "", last_name: "", role: "", title: "",
     phones: [{ phone: "", label: "", is_primary: true }],
     emails: [""], is_primary: false,
+    birthday: "", personal_notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [companySearch, setCompanySearch] = useState("");
@@ -120,6 +125,7 @@ export default function ContactsPage() {
     first_name: "", last_name: "", role: "", title: "",
     phones: [{ phone: "", label: "", is_primary: true }],
     emails: [""], is_primary: false,
+    birthday: "", personal_notes: "",
   });
 
   const openNewContact = () => {
@@ -145,6 +151,8 @@ export default function ContactsPage() {
       phones,
       emails: ct.email ? ct.email.split(",").map((e) => e.trim()) : [""],
       is_primary: ct.is_primary,
+      birthday: ct.birthday || "",
+      personal_notes: ct.personal_notes || "",
     });
     setSelectedCompanyId(ct.company_id || null);
     setSelectedCompanyName(ct.company_name || "");
@@ -179,6 +187,8 @@ export default function ContactsPage() {
         phone: primaryPhone?.phone || contactForm.phones.find((p) => p.phone.trim())?.phone || undefined,
         email,
         is_primary: contactForm.is_primary,
+        birthday: contactForm.birthday || undefined,
+        personal_notes: contactForm.personal_notes || undefined,
       };
       if (editingContact) {
         await api.updateContact(editingContact.id, payload);
@@ -687,6 +697,22 @@ export default function ContactsPage() {
                   ))}
                 </div>
               </div>
+              <div className="pt-1 border-t">
+                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                  <Heart className="w-3 h-3" />
+                  Infos personnelles
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-xs">Date d&apos;anniversaire</Label>
+                    <Input className="h-8 text-sm" type="date" value={contactForm.birthday} onChange={(e) => setContactForm({ ...contactForm, birthday: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Notes personnelles</Label>
+                    <Textarea className="text-sm min-h-[60px] resize-y" value={contactForm.personal_notes} onChange={(e) => setContactForm({ ...contactForm, personal_notes: e.target.value })} placeholder="Prénom des enfants, lieu de vacances, centres d'intérêt…" />
+                  </div>
+                </div>
+              </div>
               {!editingContact && (
                 <div>
                   <Label className="text-xs">Entreprise (optionnel)</Label>
@@ -836,6 +862,40 @@ export default function ContactsPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Personal info */}
+                    {(selectedContact.birthday || selectedContact.personal_notes) && (
+                      <div className="p-4 border-b">
+                        <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
+                          <Heart className="w-3.5 h-3.5" />
+                          Infos personnelles
+                        </h4>
+                        <div className="space-y-2">
+                          {selectedContact.birthday && (
+                            <div className="flex items-start gap-2 text-sm">
+                              <Cake className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                              <div>
+                                <span className="text-muted-foreground text-xs">Anniversaire</span>
+                                <p className="font-medium">
+                                  {new Date(selectedContact.birthday + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {selectedContact.personal_notes && (
+                            <div className="flex items-start gap-2 text-sm">
+                              <StickyNote className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-muted-foreground text-xs">Notes personnelles</span>
+                                <p className="whitespace-pre-wrap text-[13px] leading-relaxed mt-0.5">
+                                  {selectedContact.personal_notes}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Call history */}
                     <div className="p-4">

@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Index
+from datetime import datetime, date, timezone
+from sqlalchemy import String, Boolean, DateTime, Date, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from core.database import Base
 
@@ -20,6 +20,9 @@ class Contact(Base):
     phone: Mapped[str | None] = mapped_column(String(30))
     phone_e164: Mapped[str | None] = mapped_column(String(20))
     email: Mapped[str | None] = mapped_column(String(255))
+
+    birthday: Mapped[date | None] = mapped_column(Date)
+    personal_notes: Mapped[str | None] = mapped_column(Text)
 
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
