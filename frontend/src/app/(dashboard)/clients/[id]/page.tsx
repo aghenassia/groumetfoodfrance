@@ -183,6 +183,8 @@ export default function ClientDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<UpdateClientPayload>({});
   const [saving, setSaving] = useState(false);
+  const [existingTypes, setExistingTypes] = useState<string[]>([]);
+  const [existingSubtypes, setExistingSubtypes] = useState<string[]>([]);
 
   const [enriching, setEnriching] = useState(false);
   const [enrichSuggestions, setEnrichSuggestions] = useState<EnrichSuggestion | null>(null);
@@ -266,6 +268,7 @@ export default function ClientDetailPage() {
     fetchIntel();
     fetchSessions();
     fetchNotes();
+    api.getClientTypes().then((r) => { setExistingTypes(r.types); setExistingSubtypes(r.subtypes); }).catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -1055,18 +1058,26 @@ export default function ClientDetailPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">Type d&apos;entreprise</Label>
                 <Input
+                  list="client-types-list"
                   value={editForm.client_type || ""}
                   onChange={(e) => setEditForm({ ...editForm, client_type: e.target.value })}
-                  placeholder="Ex: Restaurant, Grossiste…"
+                  placeholder="Sélectionner ou saisir…"
                 />
+                <datalist id="client-types-list">
+                  {existingTypes.map((t) => <option key={t} value={t} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Sous-type</Label>
                 <Input
+                  list="client-subtypes-list"
                   value={editForm.client_subtype || ""}
                   onChange={(e) => setEditForm({ ...editForm, client_subtype: e.target.value })}
-                  placeholder="Ex: Restaurant étoilé, Grillades…"
+                  placeholder="Sélectionner ou saisir…"
                 />
+                <datalist id="client-subtypes-list">
+                  {existingSubtypes.map((t) => <option key={t} value={t} />)}
+                </datalist>
               </div>
             </div>
           </CardContent>

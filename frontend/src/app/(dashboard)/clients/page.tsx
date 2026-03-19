@@ -149,6 +149,7 @@ export default function ClientsPage() {
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([]);
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
   const [allClientTypes, setAllClientTypes] = useState<string[]>([]);
+  const [allClientSubtypes, setAllClientSubtypes] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortKey>("ca_total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showAdd, setShowAdd] = useState(false);
@@ -171,7 +172,7 @@ export default function ClientsPage() {
     }).catch(() => {});
     api.searchSuppliers().then(setAllSuppliers).catch(() => {});
     api.searchCompetitors().then(setAllCompetitors).catch(() => {});
-    api.getClientTypes().then((r) => setAllClientTypes(r.types)).catch(() => {});
+    api.getClientTypes().then((r) => { setAllClientTypes(r.types); setAllClientSubtypes(r.subtypes); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -787,22 +788,30 @@ export default function ClientsPage() {
               <div className="space-y-2">
                 <Label>Type d&apos;entreprise</Label>
                 <Input
+                  list="prospect-types-list"
                   value={addForm.client_type || ""}
                   onChange={(e) =>
                     setAddForm((p) => ({ ...p, client_type: e.target.value }))
                   }
-                  placeholder="Ex: Restaurant, Grossiste…"
+                  placeholder="Sélectionner ou saisir…"
                 />
+                <datalist id="prospect-types-list">
+                  {allClientTypes.map((t) => <option key={t} value={t} />)}
+                </datalist>
               </div>
               <div className="space-y-2">
                 <Label>Précision</Label>
                 <Input
+                  list="prospect-subtypes-list"
                   value={addForm.client_subtype || ""}
                   onChange={(e) =>
                     setAddForm((p) => ({ ...p, client_subtype: e.target.value }))
                   }
-                  placeholder="Ex: Grillades, Étoilé…"
+                  placeholder="Sélectionner ou saisir…"
                 />
+                <datalist id="prospect-subtypes-list">
+                  {allClientSubtypes.map((t) => <option key={t} value={t} />)}
+                </datalist>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
