@@ -226,11 +226,11 @@ class ApiClient {
     return this.get<Contact>(`/api/contacts/${id}`);
   }
 
-  createContact(data: { name: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; company_id?: string; is_primary?: boolean }) {
+  createContact(data: { name: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; company_id?: string; is_primary?: boolean; birthday?: string; personal_notes?: string }) {
     return this.post<Contact>("/api/contacts", data);
   }
 
-  updateContact(contactId: string, data: { name?: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; is_primary?: boolean }) {
+  updateContact(contactId: string, data: { name?: string; first_name?: string; last_name?: string; role?: string; title?: string; phone?: string; email?: string; is_primary?: boolean; birthday?: string; personal_notes?: string }) {
     return this.put<Contact>(`/api/contacts/${contactId}`, data);
   }
 
@@ -748,6 +748,25 @@ class ApiClient {
   getExportProductsUrl() {
     return `${API_BASE}/api/analytics/export/products`;
   }
+
+  // Client objectives
+  getClientObjectives(clientId: string, year?: number) {
+    const qs = year ? `?year=${year}` : "";
+    return this.get<ClientObjectiveResponse[]>(`/api/clients/${clientId}/objectives${qs}`);
+  }
+  getClientObjectiveProgress(clientId: string, year?: number) {
+    const qs = year ? `?year=${year}` : "";
+    return this.get<ClientObjectiveProgress[]>(`/api/clients/${clientId}/objectives/progress${qs}`);
+  }
+  createClientObjective(clientId: string, data: CreateClientObjectivePayload) {
+    return this.post<ClientObjectiveResponse>(`/api/clients/${clientId}/objectives`, data);
+  }
+  updateClientObjective(clientId: string, objId: string, data: UpdateClientObjectivePayload) {
+    return this.put<{ ok: boolean }>(`/api/clients/${clientId}/objectives/${objId}`, data);
+  }
+  deleteClientObjective(clientId: string, objId: string) {
+    return this.delete<{ ok: boolean }>(`/api/clients/${clientId}/objectives/${objId}`);
+  }
 }
 
 export const api = new ApiClient();
@@ -976,6 +995,8 @@ export interface Contact {
   phone?: string | null;
   phone_e164?: string | null;
   email?: string | null;
+  birthday?: string | null;
+  personal_notes?: string | null;
   is_primary: boolean;
   source: string;
   assigned_user_id?: string | null;
@@ -2030,4 +2051,42 @@ export interface AnalyticsSummaryData {
   current: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
   previous: { ca: number; orders: number; clients: number; avg_margin: number; total_margin: number; total_qty: number; calls: number };
   evolution: { ca: number | null; orders: number | null; clients: number | null; margin: number | null; calls: number | null };
+}
+
+// ── Objectifs clients ────────────────────────────────────────
+
+export interface ClientObjectiveResponse {
+  id: string;
+  client_id: string;
+  metric: string;
+  metric_label?: string;
+  year: number;
+  annual_target: number;
+  monthly_targets: Record<string, number>;
+  filter_product_family?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+}
+
+export interface ClientObjectiveProgress extends ClientObjectiveResponse {
+  annual_actual: number;
+  annual_pct: number;
+  ytd_target: number;
+  ytd_actual: number;
+  ytd_pct: number;
+  months: { month: string; target: number; actual: number; pct: number }[];
+}
+
+export interface CreateClientObjectivePayload {
+  metric: string;
+  year: number;
+  annual_target: number;
+  monthly_targets: Record<string, number>;
+  filter_product_family?: string | null;
+}
+
+export interface UpdateClientObjectivePayload {
+  annual_target?: number;
+  monthly_targets?: Record<string, number>;
+  is_active?: boolean;
 }

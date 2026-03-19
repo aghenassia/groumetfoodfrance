@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType, ClientIntelResponse, CallSessionResponse, ClientNoteResponse } from "@/lib/api";
+import { api, ClientDetail, PhoneNumber, OrderDetailResponse, UpsellResponse, EnrichSuggestion, ClientAuditLog, UpdateClientPayload, Contact as ContactType, ClientIntelResponse, CallSessionResponse, ClientNoteResponse, ClientObjectiveProgress, CreateClientObjectivePayload } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -71,6 +71,7 @@ import {
   ListPlus,
   Bell,
   Building2,
+  Target,
 } from "lucide-react";
 import { ClickToCall } from "@/components/click-to-call";
 import { SupplierPicker } from "@/components/intel/supplier-picker";
@@ -100,6 +101,10 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Brush,
+  ComposedChart,
+  Bar,
+  Line,
+  Cell,
 } from "recharts";
 import Link from "next/link";
 
@@ -219,6 +224,15 @@ export default function ClientDetailPage() {
   const [newNoteContent, setNewNoteContent] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
+  const [objProgress, setObjProgress] = useState<ClientObjectiveProgress[]>([]);
+  const [objYear, setObjYear] = useState(new Date().getFullYear());
+  const [showObjDialog, setShowObjDialog] = useState(false);
+  const [objForm, setObjForm] = useState<CreateClientObjectivePayload>({
+    metric: "ca", year: new Date().getFullYear(), annual_target: 0,
+    monthly_targets: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [String(i + 1).padStart(2, "0"), 0])),
+  });
+  const [savingObj, setSavingObj] = useState(false);
+
   const { user: currentUser } = useAuth();
   const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
   const [allUsers, setAllUsers] = useState<{ id: string; name: string; role: string }[]>([]);
@@ -253,6 +267,10 @@ export default function ClientDetailPage() {
     api.getClientNotes(id).then(setNotes).catch(() => {});
   };
 
+  const fetchObjProgress = (y?: number) => {
+    api.getClientObjectiveProgress(id, y || objYear).then(setObjProgress).catch(() => {});
+  };
+
   const handleAddNote = async () => {
     if (!newNoteContent.trim()) return;
     setSavingNote(true);
@@ -270,6 +288,7 @@ export default function ClientDetailPage() {
     fetchIntel();
     fetchSessions();
     fetchNotes();
+    fetchObjProgress();
     api.getClientTypes().then((r) => { setExistingTypes(r.types); setExistingSubtypes(r.subtypes); }).catch(() => {});
   }, [id]);
 
@@ -1224,6 +1243,26 @@ export default function ClientDetailPage() {
           </Card>
         )}
       </div>
+
+      {/* Objectifs client */}
+      <ClientObjectivesSection
+        clientId={id}
+        objProgress={objProgress}
+        objYear={objYear}
+        setObjYear={(y) => { setObjYear(y); fetchObjProgress(y); }}
+        onAdd={() => {
+          setObjForm({
+            metric: "ca", year: objYear, annual_target: 0,
+            monthly_targets: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [String(i + 1).padStart(2, "0"), 0])),
+          });
+          setShowObjDialog(true);
+        }}
+        onDelete={async (objId) => {
+          await api.deleteClientObjective(id, objId);
+          fetchObjProgress();
+        }}
+        isManager={isManager}
+      />
 
       {/* Qualification feedback summary */}
       {(client.last_qualification_mood || (client.qualification_hot_count || 0) > 0 || (client.qualification_cold_count || 0) > 0) && (
@@ -3088,6 +3127,137 @@ export default function ClientDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Client Objective Dialog */}
+      <Dialog open={showObjDialog} onOpenChange={setShowObjDialog}>
+        <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5" />
+              Nouvel objectif client
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">KPI</label>
+                <Select value={objForm.metric} onValueChange={(v) => setObjForm({ ...objForm, metric: v })}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {OBJ_METRICS.map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Année</label>
+                <Select value={String(objForm.year)} onValueChange={(v) => setObjForm({ ...objForm, year: Number(v) })}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Famille produit (optionnel)</label>
+              <Input
+                placeholder="Ex: Boeuf, Porc, Volaille..."
+                value={objForm.filter_product_family || ""}
+                onChange={(e) => setObjForm({ ...objForm, filter_product_family: e.target.value || null })}
+                className="h-9 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">Objectif annuel</label>
+                <span className="text-xs font-medium tabular-nums">
+                  {fmtObjVal(objForm.annual_target, objForm.metric)}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="Ex: 50000"
+                  value={objForm.annual_target || ""}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setObjForm({ ...objForm, annual_target: val });
+                  }}
+                  className="flex-1 h-9"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-xs shrink-0"
+                  onClick={() => {
+                    if (!objForm.annual_target) return;
+                    const perMonth = Math.round(objForm.annual_target / 12 * 100) / 100;
+                    const targets: Record<string, number> = {};
+                    for (let i = 1; i <= 12; i++) targets[String(i).padStart(2, "0")] = perMonth;
+                    setObjForm({ ...objForm, monthly_targets: targets });
+                  }}
+                >
+                  Répartir /12
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">Ventilation mensuelle</label>
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  Total : {fmtObjVal(Object.values(objForm.monthly_targets).reduce((a, b) => a + b, 0), objForm.metric)}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {MONTH_LABELS.map((label, i) => {
+                  const mk = String(i + 1).padStart(2, "0");
+                  return (
+                    <div key={mk} className="space-y-0.5">
+                      <label className="text-[10px] text-muted-foreground font-medium">{label}</label>
+                      <Input
+                        type="number"
+                        value={objForm.monthly_targets[mk] || ""}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          const newTargets = { ...objForm.monthly_targets, [mk]: val };
+                          const newAnnual = Object.values(newTargets).reduce((a, b) => a + b, 0);
+                          setObjForm({ ...objForm, monthly_targets: newTargets, annual_target: Math.round(newAnnual * 100) / 100 });
+                        }}
+                        className="h-8 text-xs px-2 tabular-nums"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Button
+              className="w-full"
+              disabled={savingObj || !objForm.annual_target || Object.values(objForm.monthly_targets).every((v) => !v)}
+              onClick={async () => {
+                setSavingObj(true);
+                try {
+                  await api.createClientObjective(id, objForm);
+                  setShowObjDialog(false);
+                  fetchObjProgress();
+                  toast.success("Objectif créé");
+                } catch (e: unknown) {
+                  toast.error(e instanceof Error ? e.message : "Erreur");
+                }
+                setSavingObj(false);
+              }}
+            >
+              {savingObj ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
+              Créer l&apos;objectif
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3186,5 +3356,156 @@ function MonthlyCAChart({
         </AreaChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+
+const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
+const OBJ_METRICS = [
+  { key: "ca", label: "Chiffre d'affaires", unit: "€" },
+  { key: "quantity_kg", label: "Quantité (kg)", unit: "kg" },
+  { key: "margin_gross", label: "Marge brute", unit: "€" },
+  { key: "margin_net", label: "Marge nette", unit: "€" },
+  { key: "order_count", label: "Nb commandes", unit: "" },
+  { key: "avg_basket", label: "Panier moyen", unit: "€" },
+  { key: "quantity_units", label: "Quantité (unités)", unit: "" },
+];
+
+function fmtObjVal(v: number, metric: string) {
+  if (["ca", "margin_gross", "margin_net", "avg_basket"].includes(metric)) {
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
+  }
+  if (metric === "quantity_kg") return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(v)} kg`;
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(v);
+}
+
+function ClientObjectivesSection({
+  clientId, objProgress, objYear, setObjYear, onAdd, onDelete, isManager,
+}: {
+  clientId: string;
+  objProgress: ClientObjectiveProgress[];
+  objYear: number;
+  setObjYear: (y: number) => void;
+  onAdd: () => void;
+  onDelete: (objId: string) => void;
+  isManager: boolean;
+}) {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 1, currentYear, currentYear + 1];
+  const currentMonth = objYear === currentYear ? new Date().getMonth() : 11;
+
+  if (objProgress.length === 0 && !isManager) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-1.5">
+            <Target className="w-4 h-4" />
+            Objectifs {objYear}
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Select value={String(objYear)} onValueChange={(v) => setObjYear(Number(v))}>
+              <SelectTrigger className="h-7 w-[90px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {isManager && (
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onAdd}>
+                <Plus className="w-3 h-3" /> Ajouter
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {objProgress.length === 0 ? (
+          <div className="text-center py-8 border border-dashed rounded-lg">
+            <Target className="w-8 h-8 mx-auto text-muted-foreground/40 mb-2" />
+            <p className="text-sm text-muted-foreground">Aucun objectif pour {objYear}</p>
+            {isManager && <p className="text-xs text-muted-foreground mt-1">Cliquez sur &quot;Ajouter&quot; pour en créer un</p>}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {objProgress.map((obj) => {
+              const ytdColor = obj.ytd_pct >= 100 ? "bg-green-500" : obj.ytd_pct >= 80 ? "bg-sora" : obj.ytd_pct >= 50 ? "bg-amber-500" : "bg-red-500";
+              const annualColor = obj.annual_pct >= 100 ? "text-green-600" : obj.annual_pct >= 80 ? "text-sora" : obj.annual_pct >= 50 ? "text-amber-600" : "text-red-600";
+
+              const chartData = obj.months.map((m, i) => ({
+                name: MONTH_LABELS[i],
+                actual: m.actual,
+                target: m.target,
+                isFuture: i > currentMonth,
+              }));
+
+              return (
+                <div key={obj.id} className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold">{obj.metric_label}</span>
+                        {obj.filter_product_family && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{obj.filter_product_family}</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>Annuel : <span className={`font-bold ${annualColor}`}>{fmtObjVal(obj.annual_actual, obj.metric)}</span> / {fmtObjVal(obj.annual_target, obj.metric)} ({obj.annual_pct}%)</span>
+                      </div>
+                      <div className="mt-1.5">
+                        <div className="flex justify-between text-[11px] mb-0.5">
+                          <span className="text-muted-foreground">YTD (janv–{MONTH_LABELS[currentMonth]})</span>
+                          <span className="font-medium">{fmtObjVal(obj.ytd_actual, obj.metric)} / {fmtObjVal(obj.ytd_target, obj.metric)} ({obj.ytd_pct}%)</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div className={`h-2 rounded-full transition-all ${ytdColor}`} style={{ width: `${Math.min(obj.ytd_pct, 100)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                    {isManager && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600 shrink-0" onClick={() => onDelete(obj.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="h-[200px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={chartData} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E2DC" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9E9E9E" }} tickLine={false} axisLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: "#9E9E9E" }} tickLine={false} axisLine={false}
+                          tickFormatter={(v: number) => {
+                            if (["ca", "margin_gross", "margin_net", "avg_basket"].includes(obj.metric)) {
+                              return v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`;
+                            }
+                            return `${v}`;
+                          }}
+                        />
+                        <RechartsTooltip
+                          contentStyle={{ backgroundColor: "#fff", border: "1px solid #E5E2DC", borderRadius: "8px", fontSize: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
+                          formatter={(value: number, name: string) => {
+                            const label = name === "actual" ? "Réalisé" : "Objectif";
+                            return [fmtObjVal(value, obj.metric), label];
+                          }}
+                        />
+                        <Bar dataKey="actual" radius={[3, 3, 0, 0]} maxBarSize={28}>
+                          {chartData.map((d, i) => (
+                            <Cell key={i} fill={d.isFuture ? "#E5E2DC" : d.actual >= d.target ? "#22c55e" : d.actual >= d.target * 0.8 ? "#8397A7" : "#ef4444"} opacity={d.isFuture ? 0.4 : 1} />
+                          ))}
+                        </Bar>
+                        <Line type="monotone" dataKey="target" stroke="#C4A87C" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {objProgress.indexOf(obj) < objProgress.length - 1 && <Separator />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

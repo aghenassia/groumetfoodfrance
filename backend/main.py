@@ -37,6 +37,8 @@ async def _run_migrations(conn):
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS margin_group VARCHAR(50)",
         # contacts
         "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS title VARCHAR(100)",
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday DATE",
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS personal_notes TEXT",
         # challenges
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_refs TEXT",
         "ALTER TABLE challenges ADD COLUMN IF NOT EXISTS article_family VARCHAR(50)",
@@ -116,6 +118,7 @@ from api.intel import router as intel_router
 from api.call_sessions import router as call_sessions_router
 from api.import_leads import router as import_leads_router
 from api.analytics import router as analytics_router
+from api.client_objectives import router as client_objectives_router
 
 app.include_router(auth_router)
 app.include_router(clients_router)
@@ -134,6 +137,7 @@ app.include_router(intel_router)
 app.include_router(call_sessions_router)
 app.include_router(import_leads_router)
 app.include_router(analytics_router)
+app.include_router(client_objectives_router)
 
 
 @app.get("/api/health")
