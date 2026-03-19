@@ -224,6 +224,8 @@ async def list_clients(
             item.churn_risk_score = score.churn_risk_score or 0
             item.upsell_score = score.upsell_score or 0
             item.global_priority_score = score.global_priority_score or 0
+            item.avg_frequency_days = float(score.avg_frequency_days) if score.avg_frequency_days else None
+            item.days_since_last_order = score.days_since_last_order
         clients.append(item)
 
     return {

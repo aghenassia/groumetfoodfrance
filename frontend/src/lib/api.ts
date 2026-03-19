@@ -799,6 +799,8 @@ export interface Client {
   churn_risk_score?: number | null;
   upsell_score?: number | null;
   global_priority_score?: number | null;
+  avg_frequency_days?: number | null;
+  days_since_last_order?: number | null;
 }
 
 export interface ClientListResponse {

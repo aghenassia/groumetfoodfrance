@@ -44,13 +44,16 @@ import {
   ArrowUp,
   ArrowDown,
   TrendingUp,
+  TrendingDown,
   ShoppingCart,
   Calendar,
+  Clock,
   AlertTriangle,
   Target,
   Truck,
   Swords,
   Package,
+  CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
@@ -84,6 +87,65 @@ const SORT_OPTIONS: { value: SortKey; label: string; icon: React.ReactNode }[] =
   { value: "upsell", label: "Potentiel upsell", icon: <Target className="w-3.5 h-3.5" /> },
   { value: "priority", label: "Priorité globale", icon: <Target className="w-3.5 h-3.5" /> },
 ];
+
+function getOrderDelay(client: Client) {
+  const freq = client.avg_frequency_days;
+  const daysSince = client.days_since_last_order;
+  if (freq == null || daysSince == null || freq <= 0 || (client.order_count_total ?? 0) < 3) {
+    return null;
+  }
+  const delayDays = Math.max(0, daysSince - freq);
+  const delayRatio = delayDays / freq;
+  const basket = client.avg_basket ?? 0;
+  const missedOrders = Math.ceil(delayDays / freq);
+  const lateCA = missedOrders * basket;
+  return { delayDays: Math.round(delayDays), delayRatio, lateCA, freq: Math.round(freq), daysSince };
+}
+
+function OrderDelayBadge({ client }: { client: Client }) {
+  const delay = getOrderDelay(client);
+  if (!delay) return <span className="text-xs text-muted-foreground">—</span>;
+
+  if (delay.delayDays === 0) {
+    return (
+      <div className="flex items-center gap-1">
+        <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+        <span className="text-xs text-green-700">À jour</span>
+      </div>
+    );
+  }
+
+  const isWarning = delay.delayRatio < 1;
+  const isCritical = delay.delayRatio >= 1;
+  const color = isCritical
+    ? "text-red-700 bg-red-50 border-red-200"
+    : isWarning
+      ? "text-amber-700 bg-amber-50 border-amber-200"
+      : "";
+
+  const formatCA = (v: number) =>
+    new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
+
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <div className="flex items-center gap-1">
+        {isCritical ? (
+          <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+        ) : (
+          <Clock className="w-3.5 h-3.5 text-amber-500" />
+        )}
+        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${color}`}>
+          +{delay.delayDays}j retard
+        </Badge>
+      </div>
+      {delay.lateCA > 0 && (
+        <span className={`text-[10px] font-medium ${isCritical ? "text-red-600" : "text-amber-600"}`}>
+          ~{formatCA(delay.lateCA)} manquant
+        </span>
+      )}
+    </div>
+  );
+}
 
 function formatCurrency(v: number | null | undefined): string {
   if (v == null || v === 0) return "—";
@@ -578,6 +640,7 @@ export default function ClientsPage() {
                         <SortIcon col="last_order" />
                       </span>
                     </TableHead>
+                    <TableHead className="hidden lg:table-cell">Rythme</TableHead>
                     <TableHead className="hidden xl:table-cell">Statut</TableHead>
                     <TableHead
                       className="hidden xl:table-cell text-center cursor-pointer select-none"
@@ -686,7 +749,17 @@ export default function ClientsPage() {
                               {daysAgo(client.last_order_date)}
                             </span>
                           )}
+                          {client.avg_frequency_days != null && client.avg_frequency_days > 0 && (client.order_count_total ?? 0) >= 3 && (
+                            <span className="text-[10px] text-muted-foreground/70 block">
+                              ~tous les {Math.round(client.avg_frequency_days)}j
+                            </span>
+                          )}
                         </div>
+                      </TableCell>
+
+                      {/* Rythme / Retard */}
+                      <TableCell className="hidden lg:table-cell">
+                        <OrderDelayBadge client={client} />
                       </TableCell>
 
                       {/* Statut */}

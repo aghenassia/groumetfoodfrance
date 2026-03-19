@@ -57,6 +57,8 @@ class ClientListItem(ClientResponse):
     churn_risk_score: int | None = None
     upsell_score: int | None = None
     global_priority_score: int | None = None
+    avg_frequency_days: float | None = None
+    days_since_last_order: int | None = None
 
 
 class TopProduct(BaseModel):
