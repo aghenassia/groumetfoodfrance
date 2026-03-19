@@ -334,7 +334,11 @@ async def list_users(
         .outerjoin(Call, (Call.user_id == User.id) | (Call.user_name == User.name))
         .outerjoin(
             SalesLine,
-            (SalesLine.user_id == User.id) | (SalesLine.sales_rep.ilike(func.concat("%", User.sage_rep_name, "%"))),
+            (SalesLine.user_id == User.id) | (
+                (User.sage_rep_name.isnot(None))
+                & (User.sage_rep_name != "")
+                & SalesLine.sales_rep.ilike(func.concat("%", User.sage_rep_name, "%"))
+            ),
         )
         .group_by(User.id)
         .order_by(User.name)
