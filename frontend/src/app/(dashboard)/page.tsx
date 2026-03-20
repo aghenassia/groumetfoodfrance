@@ -324,6 +324,7 @@ export default function DashboardPage() {
   const targetCA = myStats?.target?.monthly;
   const currentCA = myStats?.sales?.ca || 0;
   const caEvolution = myStats?.sales?.ca_evolution_pct || 0;
+  const viewAsUser = viewAs !== "me" && viewAs !== "all" ? allUsers.find((u) => u.id === viewAs) : null;
 
   return (
     <div className="space-y-5">
@@ -331,10 +332,14 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-            {isAdmin && viewAs === "all" ? "Pilotage commercial" : "Mon tableau de bord"}
+            {isAdmin && viewAs === "all"
+              ? "Pilotage commercial"
+              : viewAsUser
+                ? `Dashboard de ${viewAsUser.name}`
+                : "Mon tableau de bord"}
           </h2>
           <p className="text-muted-foreground text-xs sm:text-sm">
-            {currentUser?.name} · {preset !== "custom"
+            {viewAsUser ? viewAsUser.name : currentUser?.name} · {preset !== "custom"
               ? presetLabel(preset)
               : formatDateRange(dateRange.from, dateRange.to)}
           </p>

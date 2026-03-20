@@ -228,11 +228,9 @@ async def list_reminders(
         .where(
             DailyPlaylist.reason == "callback",
             DailyPlaylist.status.in_(["pending"]) if not include_past else True,
+            DailyPlaylist.user_id == effective_user_id,
         )
     )
-
-    if user.role not in ("admin", "manager") or not user_id or user_id == user.id:
-        stmt = stmt.where(DailyPlaylist.user_id == effective_user_id)
 
     if not include_past:
         stmt = stmt.where(DailyPlaylist.generated_date >= date.today())
@@ -283,11 +281,9 @@ async def reminders_by_month(
             DailyPlaylist.reason == "callback",
             DailyPlaylist.generated_date >= first_day,
             DailyPlaylist.generated_date <= last_day,
+            DailyPlaylist.user_id == effective_user_id,
         )
     )
-
-    if user.role not in ("admin", "manager") or not user_id:
-        stmt = stmt.where(DailyPlaylist.user_id == effective_user_id)
 
     stmt = stmt.order_by(DailyPlaylist.generated_date, DailyPlaylist.reminder_time)
 
