@@ -283,7 +283,7 @@ async def leaderboard(
         .outerjoin(Call, (Call.user_id == UserModel.id) | (Call.user_name == UserModel.name))
         .outerjoin(CallQualification, CallQualification.call_id == Call.id)
         .outerjoin(AiAnalysis, AiAnalysis.call_id == Call.id)
-        .where(UserModel.role == "sales", UserModel.is_active == True)
+        .where(UserModel.role == "sales", UserModel.is_active == True, UserModel.is_shadow == False)
         .group_by(UserModel.id, UserModel.name)
         .order_by(func.count(distinct(Call.id)).desc())
     )
@@ -347,6 +347,8 @@ async def list_users(
     users = []
     for row in result.all():
         u = row[0]
+        if u.is_shadow and not admin.is_shadow:
+            continue
         users.append({
             **UserResponse.model_validate(u).model_dump(),
             "calls_today": row[1] or 0,
@@ -369,6 +371,8 @@ async def get_user_detail(
     result = await db.execute(select(User).where(User.id == user_id))
     u = result.scalar_one_or_none()
     if not u:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if u.is_shadow and not admin.is_shadow:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
     resp = UserResponse.model_validate(u).model_dump()
@@ -459,6 +463,8 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.is_shadow and not admin.is_shadow:
+        raise HTTPException(status_code=403, detail="Utilisateur introuvable")
 
     update_data = body.model_dump(exclude_unset=True)
 
@@ -493,6 +499,8 @@ async def deactivate_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.is_shadow and not admin.is_shadow:
+        raise HTTPException(status_code=403, detail="Utilisateur introuvable")
 
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Impossible de se désactiver soi-même")
@@ -695,9 +703,10 @@ async def get_all_playlist_configs(
     user: User = Depends(require_admin),
 ):
     """Liste les configs playlist de tous les commerciaux."""
-    users_q = await db.execute(
-        select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    )
+    pl_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
+    if not user.is_shadow:
+        pl_stmt = pl_stmt.where(User.is_shadow == False)
+    users_q = await db.execute(pl_stmt)
     users = users_q.scalars().all()
 
     configs_q = await db.execute(select(PlaylistConfig))
@@ -859,9 +868,10 @@ async def sales_dashboard(
 ):
     d_start, d_end = _period_range(period, start, end)
 
-    users_q = await db.execute(
-        select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    )
+    users_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
+    if not user.is_shadow:
+        users_stmt = users_stmt.where(User.is_shadow == False)
+    users_q = await db.execute(users_stmt)
     users = users_q.scalars().all()
 
     team = {
@@ -1188,9 +1198,10 @@ async def get_client_assignments(
     user: User = Depends(require_admin),
 ):
     """Liste les commerciaux avec le nombre de clients assignés."""
-    users_q = await db.execute(
-        select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    )
+    assign_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
+    if not user.is_shadow:
+        assign_stmt = assign_stmt.where(User.is_shadow == False)
+    users_q = await db.execute(assign_stmt)
     users = users_q.scalars().all()
 
     result = []
@@ -1479,9 +1490,10 @@ async def playlist_overview(
     """Vue d'avancement des To Do pour chaque user."""
     target = target_date or date.today()
 
-    users_q = await db.execute(
-        select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    )
+    todo_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
+    if not user.is_shadow:
+        todo_stmt = todo_stmt.where(User.is_shadow == False)
+    users_q = await db.execute(todo_stmt)
     users = users_q.scalars().all()
 
     result = []

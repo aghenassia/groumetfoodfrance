@@ -55,6 +55,9 @@ async def _run_migrations(conn):
         "ALTER TABLE user_objectives ADD COLUMN IF NOT EXISTS filter_client_category VARCHAR(50)",
         "ALTER TABLE user_objectives ADD COLUMN IF NOT EXISTS filter_region VARCHAR(50)",
         "ALTER TABLE user_objectives ADD COLUMN IF NOT EXISTS filter_product_family VARCHAR(50)",
+        # users
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT FALSE",
+        "UPDATE users SET is_shadow = TRUE WHERE email = 'admin@salesmachine.fr'",
     ]
     for sql in migrations:
         try:

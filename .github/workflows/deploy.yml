@@ -48,5 +48,7 @@ jobs:
               ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_subtype TEXT;
               ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday DATE;
               ALTER TABLE contacts ADD COLUMN IF NOT EXISTS personal_notes TEXT;
+              ALTER TABLE users ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT FALSE;
+              UPDATE users SET is_shadow = TRUE WHERE email = 'admin@salesmachine.fr';
             " || echo "Migration already applied or skipped"
             /opt/deploy-crm.sh
