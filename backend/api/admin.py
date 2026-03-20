@@ -703,10 +703,9 @@ async def get_all_playlist_configs(
     user: User = Depends(require_admin),
 ):
     """Liste les configs playlist de tous les commerciaux."""
-    pl_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    if not user.is_shadow:
-        pl_stmt = pl_stmt.where(User.is_shadow == False)
-    users_q = await db.execute(pl_stmt)
+    users_q = await db.execute(
+        select(User).where(User.is_active == True, User.is_shadow == False, User.role.in_(["sales", "manager", "admin"]))
+    )
     users = users_q.scalars().all()
 
     configs_q = await db.execute(select(PlaylistConfig))
@@ -868,10 +867,9 @@ async def sales_dashboard(
 ):
     d_start, d_end = _period_range(period, start, end)
 
-    users_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    if not user.is_shadow:
-        users_stmt = users_stmt.where(User.is_shadow == False)
-    users_q = await db.execute(users_stmt)
+    users_q = await db.execute(
+        select(User).where(User.is_active == True, User.is_shadow == False, User.role.in_(["sales", "manager", "admin"]))
+    )
     users = users_q.scalars().all()
 
     team = {
@@ -1198,10 +1196,9 @@ async def get_client_assignments(
     user: User = Depends(require_admin),
 ):
     """Liste les commerciaux avec le nombre de clients assignés."""
-    assign_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    if not user.is_shadow:
-        assign_stmt = assign_stmt.where(User.is_shadow == False)
-    users_q = await db.execute(assign_stmt)
+    users_q = await db.execute(
+        select(User).where(User.is_active == True, User.is_shadow == False, User.role.in_(["sales", "manager", "admin"]))
+    )
     users = users_q.scalars().all()
 
     result = []
@@ -1490,10 +1487,9 @@ async def playlist_overview(
     """Vue d'avancement des To Do pour chaque user."""
     target = target_date or date.today()
 
-    todo_stmt = select(User).where(User.is_active == True, User.role.in_(["sales", "manager", "admin"]))
-    if not user.is_shadow:
-        todo_stmt = todo_stmt.where(User.is_shadow == False)
-    users_q = await db.execute(todo_stmt)
+    users_q = await db.execute(
+        select(User).where(User.is_active == True, User.is_shadow == False, User.role.in_(["sales", "manager", "admin"]))
+    )
     users = users_q.scalars().all()
 
     result = []

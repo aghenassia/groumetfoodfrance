@@ -37,14 +37,11 @@ async def list_users_simple(
     user: User = Depends(get_current_user),
 ):
     """Liste basique des utilisateurs actifs (id, name, role). Accessible à tous."""
-    stmt = (
+    result = await db.execute(
         select(User.id, User.name, User.role)
-        .where(User.is_active == True)
+        .where(User.is_active == True, User.is_shadow == False)
         .order_by(User.name)
     )
-    if not user.is_shadow:
-        stmt = stmt.where(User.is_shadow == False)
-    result = await db.execute(stmt)
     return [{"id": r.id, "name": r.name, "role": r.role} for r in result.all()]
 
 
