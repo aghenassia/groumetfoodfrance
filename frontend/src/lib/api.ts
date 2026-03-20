@@ -1073,6 +1073,7 @@ export interface Call {
   contact_number?: string;
   contact_e164?: string;
   record_url?: string;
+  voicemail_url?: string;
   user_name?: string;
   client_id?: string;
   contact_id?: string;

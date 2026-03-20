@@ -26,6 +26,7 @@ class CallResponse(BaseModel):
     contact_number: str | None = None
     contact_e164: str | None = None
     record_url: str | None = None
+    voicemail_url: str | None = None
     user_name: str | None = None
     client_id: str | None = None
     contact_id: str | None = None

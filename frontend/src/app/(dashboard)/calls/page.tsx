@@ -59,6 +59,13 @@ import {
   Loader2,
   Bell,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
@@ -259,14 +266,28 @@ export default function CallsPage() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [searchingAssign, setSearchingAssign] = useState(false);
   const [assigningContact, setAssigningContact] = useState(false);
+  const [userFilter, setUserFilter] = useState<string>("all");
+  const [allUsers, setAllUsers] = useState<{ id: string; name: string; role: string }[]>([]);
+
+  useEffect(() => {
+    if (isManagerOrAdmin) {
+      api.getUsersList().then(setAllUsers).catch(() => {});
+    }
+  }, [isManagerOrAdmin]);
 
   const fetchCalls = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {};
     if (searchQuery.trim()) params.search = searchQuery.trim();
-    if (viewAll && isManagerOrAdmin) params.mine = "false";
+    if (viewAll && isManagerOrAdmin) {
+      params.mine = "false";
+      if (userFilter !== "all") params.user_id = userFilter;
+    }
+    const unqualParams = viewAll && isManagerOrAdmin
+      ? { mine: "false", ...(userFilter !== "all" ? { user_id: userFilter } : {}) }
+      : undefined;
     const promise = tab === "unqualified"
-      ? api.getUnqualifiedCalls(viewAll && isManagerOrAdmin ? { mine: "false" } : undefined)
+      ? api.getUnqualifiedCalls(unqualParams)
       : api.getCalls(params);
     promise.then((freshCalls) => {
       setCalls(freshCalls);
@@ -277,9 +298,9 @@ export default function CallsPage() {
         if (updated) setSelectedCall(updated);
       }
     }).catch(() => toast.error("Erreur de chargement")).finally(() => setLoading(false));
-  }, [tab, searchQuery, viewAll, isManagerOrAdmin]);
+  }, [tab, searchQuery, viewAll, isManagerOrAdmin, userFilter]);
 
-  useEffect(() => { fetchCalls(); }, [tab, viewAll]);
+  useEffect(() => { fetchCalls(); }, [tab, viewAll, userFilter]);
 
   const prevSearchRef = useRef(searchQuery);
   useEffect(() => {
@@ -322,7 +343,8 @@ export default function CallsPage() {
 
   const isOrphanCall = (call: Call) => !contactName(call) && !companyName(call);
 
-  const isVoicemail = (call: Call) => call.ai_analysis?.is_voicemail === true;
+  const isVoicemail = (call: Call) =>
+    call.ai_analysis?.is_voicemail === true || !!call.voicemail_url;
 
   const directionIcon = (call: Call) => {
     if (isVoicemail(call)) return <Voicemail className="w-3.5 h-3.5 text-amber-500" />;
@@ -612,8 +634,21 @@ export default function CallsPage() {
           <div className="flex gap-1">
             {isManagerOrAdmin && (
               <>
-                <Button variant={!viewAll ? "default" : "outline"} size="sm" className="h-9" onClick={() => setViewAll(false)}>Mes appels</Button>
+                <Button variant={!viewAll ? "default" : "outline"} size="sm" className="h-9" onClick={() => { setViewAll(false); setUserFilter("all"); }}>Mes appels</Button>
                 <Button variant={viewAll ? "default" : "outline"} size="sm" className="h-9" onClick={() => setViewAll(true)}>Équipe</Button>
+                {viewAll && allUsers.length > 0 && (
+                  <Select value={userFilter} onValueChange={setUserFilter}>
+                    <SelectTrigger className="h-9 w-[160px] text-xs">
+                      <SelectValue placeholder="Tous les commerciaux" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">Tous les commerciaux</SelectItem>
+                      {allUsers.filter(u => ["sales", "manager", "admin"].includes(u.role)).map(u => (
+                        <SelectItem key={u.id} value={u.id} className="text-xs">{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <div className="w-px bg-border mx-1" />
               </>
             )}
