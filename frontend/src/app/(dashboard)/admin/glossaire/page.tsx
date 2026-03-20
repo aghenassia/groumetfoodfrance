@@ -31,6 +31,9 @@ import {
   Package,
   ShoppingCart,
   Upload,
+  PieChart,
+  Tags,
+  Palette,
 } from "lucide-react";
 
 const STATUSES = [
@@ -376,6 +379,7 @@ const OBJECTIVE_METRICS = [
   { key: "avg_basket", label: "Panier moyen", unit: "€", description: "CA divisé par le nombre de commandes" },
   { key: "avg_ca_per_order", label: "CA moyen / commande", unit: "€", description: "Montant moyen par commande" },
   { key: "order_count", label: "Nombre de commandes", unit: "—", description: "Volume total de commandes distinctes" },
+  { key: "client_count", label: "Nombre de clients", unit: "—", description: "Nombre de clients distincts ayant commandé sur la période" },
 ];
 
 const MARGIN_RULES = [
@@ -383,6 +387,27 @@ const MARGIN_RULES = [
   { name: "Forfait structure", type: "par kg", value: "1,00 €/kg", applies: "Tous les clients", description: "Coûts fixes de structure répartis au kg" },
   { name: "Étiquetage", type: "par kg", value: "0,15 €/kg", applies: "Metro (margin_group)", description: "Opération d'étiquetage spécifique Metro" },
   { name: "RFA", type: "% CA", value: "2%", applies: "CSF + Promocash", description: "Remise/Rabais/Ristourne sur le CA" },
+];
+
+const MARGIN_THRESHOLDS = [
+  { color: "bg-green-500", label: "Vert (bonne)", description: "Marge ≥ seuil vert configuré en admin (ex. ≥ 15 %)" },
+  { color: "bg-orange-500", label: "Orange (attention)", description: "Marge ≥ seuil orange mais < seuil vert (ex. ≥ 8 %)" },
+  { color: "bg-red-500", label: "Rouge (critique)", description: "Marge en dessous du seuil orange (ex. < 8 %)" },
+];
+
+const CLIENT_CLASSIFICATION = [
+  { field: "client_type", label: "Type d'entreprise", badge: "bg-blue-100 text-blue-700", description: "Classification métier du client : Restaurant, Grossiste, Traiteur, GMS, etc. Multi-valeurs (stocké en texte séparé par virgules). Éditable via le TypePicker sur la fiche 360°." },
+  { field: "client_subtype", label: "Sous-type", badge: "bg-purple-100 text-purple-700", description: "Qualification fine du client : Restaurant grillades, Restaurant étoilé, Traiteur événementiel, etc. Multi-valeurs, éditable. Complémentaire au type." },
+  { field: "tariff_category", label: "Catégorie tarifaire", badge: "bg-amber-100 text-amber-700", description: "Grille tarifaire Sage appliquée au client. Synchronisée automatiquement, non éditable." },
+];
+
+const ANALYTICS_TABS = [
+  { key: "summary", label: "Vue d'ensemble", description: "KPIs principaux (CA, commandes, clients actifs, marge, appels) avec comparaison période précédente / N-1" },
+  { key: "receivables", label: "Impayés", description: "Balance âgée, encours impayé, top débiteurs, évolution mensuelle. Fonctionne même sans enrichissement paiement Sage." },
+  { key: "products", label: "Produits", description: "Répartition CA par famille, top 20 produits, alertes faible marge (< 10 %), dynamique avec la période sélectionnée" },
+  { key: "geo", label: "Géographie", description: "CA par département, région, ville. Zones sans activité récente pour identifier des opportunités. Dynamique avec la période." },
+  { key: "funnel", label: "Clients", description: "Entonnoir Prospect → Client → Risque → Dormant → Perdu. Cohortes de rétention, tendance nouveaux vs perdus, LTV et panier moyen." },
+  { key: "ai", label: "Intelligence IA", description: "Volume d'appels, score IA, radar qualité, sentiment, résultats de qualification, score par commercial, sujets fréquents." },
 ];
 
 const CHALLENGE_METRICS = [
@@ -1437,6 +1462,39 @@ export default function GlossairePage() {
             pour garder un historique des barèmes.
           </p>
         </div>
+
+        <Card className="mt-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Palette className="w-4 h-4 text-kiku" />
+              Seuils de couleur de marge
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Les marges sont colorées dans toute l&apos;application (commandes, produits, analytics) selon des seuils configurables dans Admin → Règles de marge.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Couleur</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Signification</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {MARGIN_THRESHOLDS.map((t) => (
+                    <tr key={t.label}>
+                      <td className="px-3 py-2"><span className={`inline-block w-3 h-3 rounded-full ${t.color} mr-2 align-middle`} />{t.label}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{t.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">L&apos;évaluation se fait du seuil le plus haut au plus bas. Les valeurs exactes sont paramétrables par l&apos;admin.</p>
+          </CardContent>
+        </Card>
       </section>
 
       <Separator />
@@ -1808,13 +1866,33 @@ export default function GlossairePage() {
                       <td className="px-3 py-2 font-mono">2 s</td>
                       <td className="px-3 py-2 text-muted-foreground">Fréquence de polling du statut d&apos;import par le frontend</td>
                     </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">telephone_2, telephone_3</td>
+                      <td className="px-3 py-2 font-mono">colonnes CSV</td>
+                      <td className="px-3 py-2 text-muted-foreground">Numéros secondaire et tertiaire. Ajoutés dans le PhoneIndex pour la recherche et la détection de doublons.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">type_entreprise</td>
+                      <td className="px-3 py-2 font-mono">colonne CSV</td>
+                      <td className="px-3 py-2 text-muted-foreground">Classification métier (multi-valeurs séparées par virgules). Stocké dans client_type.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">sous_type_entreprise</td>
+                      <td className="px-3 py-2 font-mono">colonne CSV</td>
+                      <td className="px-3 py-2 text-muted-foreground">Sous-classification (multi-valeurs). Stocké dans client_subtype.</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 font-mono text-sora">contact_role</td>
+                      <td className="px-3 py-2 font-mono">colonne CSV</td>
+                      <td className="px-3 py-2 text-muted-foreground">Fonction/rôle du contact dans l&apos;entreprise (ex: Directeur, Chef cuisinier, Acheteur)</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
 
               <div className="mt-4 p-3 rounded-lg border bg-muted/30">
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">Détection doublons :</strong> par téléphone normalisé E.164 dans PhoneIndex, et par nom d&apos;entreprise + ville (comparaison insensible à la casse).
+                  <strong className="text-foreground">Détection doublons :</strong> par téléphone normalisé E.164 dans PhoneIndex (inclut les numéros secondaires et tertiaires), et par nom d&apos;entreprise + ville (comparaison insensible à la casse).
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed mt-1">
                   <strong className="text-foreground">Actions doublon :</strong>{" "}
@@ -1828,6 +1906,550 @@ export default function GlossairePage() {
                   <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/admin/import/parse</code>,{" "}
                   <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/admin/import/execute</code>,{" "}
                   <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/admin/import/status/&#123;job_id&#125;</code>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- CLASSIFICATION CLIENT --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Tags className="w-5 h-5 text-sora" />
+          Classification client (Type / Sous-type)
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Système de tags multi-valeurs pour classifier les clients par type d&apos;activité.
+          Éditable depuis la fiche 360° via le composant TypePicker. Importable via CSV.
+        </p>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Champ</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Badge</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {CLIENT_CLASSIFICATION.map((c) => (
+                    <tr key={c.field}>
+                      <td className="px-3 py-2 font-mono text-sora">{c.field}</td>
+                      <td className="px-3 py-2"><Badge className={`text-[10px] ${c.badge}`}>{c.label}</Badge></td>
+                      <td className="px-3 py-2 text-muted-foreground">{c.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Stockage :</strong> les types et sous-types sont stockés en <code className="bg-muted px-1 py-0.5 rounded text-foreground">TEXT</code> (valeurs séparées par virgules).
+                L&apos;API accepte et retourne des listes JSON.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                <strong className="text-foreground">Import CSV :</strong> colonnes <code className="bg-muted px-1 py-0.5 rounded text-foreground">type_entreprise</code> et <code className="bg-muted px-1 py-0.5 rounded text-foreground">sous_type_entreprise</code>.
+                Multi-valeurs séparées par virgules (ex: &quot;Restaurant,Traiteur&quot;).
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator />
+
+      {/* --- ANALYTICS --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <PieChart className="w-5 h-5 text-sora" />
+          Module Analytics
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Tableau de bord stratégique pour le pilotage de l&apos;activité commerciale.
+          Toutes les vues réagissent à la période sélectionnée et supportent la comparaison (période précédente, même période N-1, personnalisé).
+        </p>
+
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs font-medium text-foreground mb-2">Onglets du module Analytics :</p>
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Clé</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Onglet</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Contenu</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {ANALYTICS_TABS.map((t) => (
+                    <tr key={t.key}>
+                      <td className="px-3 py-2 font-mono text-sora">{t.key}</td>
+                      <td className="px-3 py-2 font-medium">{t.label}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{t.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Comparaison de périodes :</strong> chaque onglet (sauf Impayés) supporte la comparaison de périodes.
+                Par défaut, la comparaison se fait avec la période précédente de même durée. Vous pouvez aussi comparer avec le même intervalle N-1 ou une période personnalisée.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                <strong className="text-foreground">Exports :</strong>{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/analytics/export/clients</code> et{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/analytics/export/products</code> (CSV).
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                <strong className="text-foreground">Endpoints :</strong>{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/summary</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/receivables</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/products</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/geo</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/funnel</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">/api/analytics/ai-insights</code>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator />
+
+      {/* --- ANALYTICS — DÉTAIL KPIs PAR ONGLET --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-kiku" />
+          Analytics — KPIs détaillés par onglet
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Détail des indicateurs calculés dans chaque onglet du module Analytics.
+          Tous les KPIs réagissent à la période sélectionnée et affichent l&apos;évolution vs la période de comparaison.
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Vue d&apos;ensemble (summary)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_ca</td><td className="px-3 py-1.5 text-muted-foreground">CA HT total sur la période (factures + avoirs)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_orders</td><td className="px-3 py-1.5 text-muted-foreground">Nombre de commandes distinctes</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">active_clients</td><td className="px-3 py-1.5 text-muted-foreground">Clients distincts ayant commandé sur la période</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">avg_margin_pct</td><td className="px-3 py-1.5 text-muted-foreground">Taux de marge moyen pondéré</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_margin</td><td className="px-3 py-1.5 text-muted-foreground">Marge brute totale en €</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_calls</td><td className="px-3 py-1.5 text-muted-foreground">Nombre total d&apos;appels sur la période</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Impayés (receivables)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_invoiced</td><td className="px-3 py-1.5 text-muted-foreground">Total facturé TTC</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">total_outstanding</td><td className="px-3 py-1.5 text-muted-foreground">Encours impayé total</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">unpaid_rate</td><td className="px-3 py-1.5 text-muted-foreground">Taux d&apos;impayé (outstanding / invoiced × 100)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">avg_age_days</td><td className="px-3 py-1.5 text-muted-foreground">Ancienneté moyenne des impayés en jours</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">aging_buckets</td><td className="px-3 py-1.5 text-muted-foreground">Répartition : &lt; 30j, 30–60j, 60–90j, &gt; 90j</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">top_debtors</td><td className="px-3 py-1.5 text-muted-foreground">Top 10 clients par encours impayé</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Produits (products)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">family_breakdown</td><td className="px-3 py-1.5 text-muted-foreground">CA par famille de produits (graphique camembert)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">family_details</td><td className="px-3 py-1.5 text-muted-foreground">CA, marge %, nombre de produits par famille</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">top_products</td><td className="px-3 py-1.5 text-muted-foreground">Top 20 produits par CA avec marge et quantité</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">low_margin_products</td><td className="px-3 py-1.5 text-muted-foreground">Produits avec marge &lt; 10% (alertes)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Géographie (geo)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">by_department</td><td className="px-3 py-1.5 text-muted-foreground">Top 15 départements par CA</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">by_region</td><td className="px-3 py-1.5 text-muted-foreground">CA par région administrative</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">top_cities</td><td className="px-3 py-1.5 text-muted-foreground">Classement des villes par CA</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">inactive_zones</td><td className="px-3 py-1.5 text-muted-foreground">Zones sans commande récente (opportunités)</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Clients / Funnel</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">funnel</td><td className="px-3 py-1.5 text-muted-foreground">Répartition par statut : Prospect → Actif → Risque → Dormant → Perdu</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">ltv_avg / ltv_median</td><td className="px-3 py-1.5 text-muted-foreground">Lifetime Value moyenne et médiane</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">avg_basket</td><td className="px-3 py-1.5 text-muted-foreground">Panier moyen global</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">avg_frequency</td><td className="px-3 py-1.5 text-muted-foreground">Fréquence moyenne de commande (en jours)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">retention_90d</td><td className="px-3 py-1.5 text-muted-foreground">Taux de rétention à 90 jours par cohorte</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">new_vs_lost</td><td className="px-3 py-1.5 text-muted-foreground">Tendance nouveaux clients vs perdus par mois</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Intelligence IA (ai-insights)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">KPI</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">call_volume</td><td className="px-3 py-1.5 text-muted-foreground">Total, sortants, entrants, taux de décroché, durée moyenne</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">avg_ai_score</td><td className="px-3 py-1.5 text-muted-foreground">Score IA global moyen (qualité des appels /10)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">radar_quality</td><td className="px-3 py-1.5 text-muted-foreground">5 axes : politesse, objections, closing, produits, écoute</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">qualification_outcomes</td><td className="px-3 py-1.5 text-muted-foreground">Répartition : intéressé, rappel, commande, refus…</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">sentiment_distribution</td><td className="px-3 py-1.5 text-muted-foreground">Répartition positive / neutre / négative</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">score_by_rep</td><td className="px-3 py-1.5 text-muted-foreground">Score IA par commercial (identification coaching)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">topics / opportunities</td><td className="px-3 py-1.5 text-muted-foreground">Sujets fréquents et opportunités détectées par l&apos;IA</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- ANALYSE IA DES APPELS --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-sora" />
+          Analyse IA des appels — Pipeline &amp; Scoring
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Chaque appel enregistré via Ringover passe par un pipeline IA en 3 étapes :
+          téléchargement → transcription (Whisper) → double analyse (GPT-4o).
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Pipeline de traitement</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Étape</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Outil</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Sortie</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr>
+                      <td className="px-3 py-1.5 font-medium">1. Download</td>
+                      <td className="px-3 py-1.5 font-mono text-sora">httpx</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">Fichier MP3 temporaire depuis l&apos;URL d&apos;enregistrement Ringover</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-1.5 font-medium">2. Transcription</td>
+                      <td className="px-3 py-1.5 font-mono text-sora">Whisper-1</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">Texte brut de la conversation (langue : FR)</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-1.5 font-medium">3a. Analyse Sales</td>
+                      <td className="px-3 py-1.5 font-mono text-sora">GPT-4o (temp 0.3)</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">Résumé, sentiment, feedback coaching, opportunités, sujets clés, détection répondeur</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-1.5 font-medium">3b. Analyse Admin</td>
+                      <td className="px-3 py-1.5 font-mono text-sora">GPT-4o (temp 0.2)</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">Scores qualité (5 critères /10), note globale, feedback manager</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Sortie Analyse Sales (SALES_PROMPT)</CardTitle>
+              <p className="text-xs text-muted-foreground">Contexte : coach commercial expert pour Gourmet Food France (viande premium B2B)</p>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Champ JSON</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Type</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">is_voicemail</td><td className="px-3 py-1.5 font-mono">bool</td><td className="px-3 py-1.5 text-muted-foreground">true si répondeur détecté (message unilatéral, bip, pas de conversation)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">summary</td><td className="px-3 py-1.5 font-mono">string</td><td className="px-3 py-1.5 text-muted-foreground">Résumé en 2-3 phrases de l&apos;appel</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">client_sentiment</td><td className="px-3 py-1.5 font-mono">enum</td><td className="px-3 py-1.5 text-muted-foreground">positive | neutral | negative</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">sales_feedback</td><td className="px-3 py-1.5 font-mono">string</td><td className="px-3 py-1.5 text-muted-foreground">Feedback coaching : ce qui a marché, axes d&apos;amélioration (3-5 phrases)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">detected_opportunities</td><td className="px-3 py-1.5 font-mono">string | null</td><td className="px-3 py-1.5 text-muted-foreground">Opportunités upsell, nouveaux produits, augmentation volume</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">next_actions</td><td className="px-3 py-1.5 font-mono">string</td><td className="px-3 py-1.5 text-muted-foreground">Actions recommandées : rappel, devis, livraison test…</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">key_topics</td><td className="px-3 py-1.5 font-mono">string[]</td><td className="px-3 py-1.5 text-muted-foreground">Liste des sujets abordés pendant l&apos;appel</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Sortie Analyse Admin (ADMIN_PROMPT)</CardTitle>
+              <p className="text-xs text-muted-foreground">Contexte : directeur commercial évaluant la qualité des appels de son équipe</p>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Critère</th>
+                      <th className="text-center px-3 py-1.5 font-medium text-muted-foreground">Plage</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">Évalue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">politeness_score</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Politesse, professionnalisme, ton adapté</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">objection_handling</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Capacité à reformuler et traiter les objections</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">closing_attempt</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Tentative de conclure (commande, RDV, devis)</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">product_knowledge</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Maîtrise de la gamme, origine, qualité</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">listening_quality</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Écoute active, questions pertinentes</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">overall_score</td><td className="px-3 py-1.5 text-center font-mono">1–10</td><td className="px-3 py-1.5 text-muted-foreground">Note globale synthétique</td></tr>
+                    <tr><td className="px-3 py-1.5 font-mono text-sora">admin_feedback</td><td className="px-3 py-1.5 text-center font-mono">texte</td><td className="px-3 py-1.5 text-muted-foreground">Feedback manager : points forts, axes d&apos;amélioration, recommandations de formation</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="p-4 rounded-lg border bg-muted/30 space-y-2">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">Stockage :</strong> les résultats sont enregistrés dans la table{" "}
+              <code className="bg-muted px-1 py-0.5 rounded text-foreground">ai_analyses</code> (un enregistrement par appel). Le transcript complet est conservé.
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">Détection répondeur :</strong> un appel est considéré comme répondeur si{" "}
+              <code className="bg-muted px-1 py-0.5 rounded text-foreground">is_voicemail = true</code> dans l&apos;analyse IA OU si{" "}
+              <code className="bg-muted px-1 py-0.5 rounded text-foreground">voicemail_url</code> est renseigné par Ringover. Les deux sources sont combinées côté frontend.
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">Modèles :</strong> Whisper-1 pour la transcription, GPT-4o pour les deux analyses.
+              Température basse (0.2–0.3) pour la reproductibilité. Max tokens : 600 (sales) / 400 (admin).
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* --- OBJECTIFS PAR CLIENT --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Target className="w-5 h-5 text-kiku" />
+          Objectifs par client
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Système d&apos;objectifs annuels par client, distinct des objectifs globaux par commercial.
+          Permet de suivre les engagements de volume ou de CA négociés avec chaque client.
+        </p>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="rounded border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Champ</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  <tr><td className="px-3 py-2 font-mono text-sora">client_id</td><td className="px-3 py-2 font-mono">VARCHAR(36)</td><td className="px-3 py-2 text-muted-foreground">FK vers la fiche client</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">metric</td><td className="px-3 py-2 font-mono">VARCHAR(30)</td><td className="px-3 py-2 text-muted-foreground">KPI ciblé : ca, margin_gross, margin_net, quantity_kg, quantity_units, avg_basket, order_count</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">year</td><td className="px-3 py-2 font-mono">INTEGER</td><td className="px-3 py-2 text-muted-foreground">Année de l&apos;objectif (ex. 2026)</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">annual_target</td><td className="px-3 py-2 font-mono">NUMERIC(15,2)</td><td className="px-3 py-2 text-muted-foreground">Cible annuelle totale</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">monthly_targets</td><td className="px-3 py-2 font-mono">JSONB</td><td className="px-3 py-2 text-muted-foreground">Clés &quot;01&quot; à &quot;12&quot; avec la cible de chaque mois</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">filter_product_family</td><td className="px-3 py-2 font-mono">VARCHAR(100)</td><td className="px-3 py-2 text-muted-foreground">Filtre famille produit (optionnel). Seules les ventes de cette famille sont comptabilisées</td></tr>
+                  <tr><td className="px-3 py-2 font-mono text-sora">created_by</td><td className="px-3 py-2 font-mono">VARCHAR(36)</td><td className="px-3 py-2 text-muted-foreground">FK vers l&apos;utilisateur ayant créé l&apos;objectif</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 p-3 rounded-lg border bg-muted/30 space-y-2">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Contrainte d&apos;unicité :</strong> un seul objectif actif par combinaison client + métrique + année + famille produit.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Endpoints :</strong>{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/clients/&#123;id&#125;/objectives</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST .../objectives</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">PUT .../objectives/&#123;obj_id&#125;</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">DELETE .../objectives/&#123;obj_id&#125;</code>,{" "}
+                <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET .../objectives/progress</code>
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Calcul marge nette :</strong> si la métrique est <code className="bg-muted px-1 py-0.5 rounded text-foreground">margin_net</code>,
+                le calcul applique les règles de marge (logistique, structure, étiquetage, RFA) de la même manière que le module global.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Separator />
+
+      {/* --- GESTION DES UTILISATEURS --- */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <UserPlus className="w-5 h-5 text-sora" />
+          Gestion des utilisateurs
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          CRUD complet des comptes CRM, avec liaison aux systèmes externes (Ringover, Sage)
+          et configuration des objectifs par commercial.
+        </p>
+
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-xs font-medium text-foreground mb-2">Champs du modèle User :</p>
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Champ</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-2 font-mono text-sora">email</td><td className="px-3 py-2 font-mono">VARCHAR(255)</td><td className="px-3 py-2 text-muted-foreground">Email unique, utilisé pour le login</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">name</td><td className="px-3 py-2 font-mono">VARCHAR(100)</td><td className="px-3 py-2 text-muted-foreground">Nom affiché dans tout le CRM</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">role</td><td className="px-3 py-2 font-mono">VARCHAR(20)</td><td className="px-3 py-2 text-muted-foreground">sales | manager | admin — détermine les accès</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">ringover_user_id</td><td className="px-3 py-2 font-mono">VARCHAR(50)</td><td className="px-3 py-2 text-muted-foreground">ID Ringover pour le matching des appels</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">ringover_number</td><td className="px-3 py-2 font-mono">VARCHAR(20)</td><td className="px-3 py-2 text-muted-foreground">Numéro de ligne Ringover</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">sage_collaborator_id</td><td className="px-3 py-2 font-mono">INTEGER</td><td className="px-3 py-2 text-muted-foreground">CO_No Sage pour lier les commandes</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">sage_rep_name</td><td className="px-3 py-2 font-mono">VARCHAR(70)</td><td className="px-3 py-2 text-muted-foreground">Nom du rep dans Sage (matching sales_rep des clients)</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">target_ca_monthly</td><td className="px-3 py-2 font-mono">NUMERIC(15,2)</td><td className="px-3 py-2 text-muted-foreground">Objectif CA mensuel simple (utilisé pour la note A/B/C/D)</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">is_active</td><td className="px-3 py-2 font-mono">BOOLEAN</td><td className="px-3 py-2 text-muted-foreground">Soft delete — compte désactivé ne peut plus se connecter</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-xs font-medium text-foreground mb-2">Rôles et permissions :</p>
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Rôle</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Accès</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    <tr><td className="px-3 py-2 font-mono text-sora">sales</td><td className="px-3 py-2 text-muted-foreground">Dashboard perso, To do, appels personnels, fiche client, qualification, produits, commandes, leaderboard, challenges, objectifs</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">manager</td><td className="px-3 py-2 text-muted-foreground">Tout sales + vue Équipe (appels), pilotage sales, assignation clients, analytics</td></tr>
+                    <tr><td className="px-3 py-2 font-mono text-sora">admin</td><td className="px-3 py-2 text-muted-foreground">Tout manager + synchronisation, gestion utilisateurs, config To do, règles marge, challenges, import CSV, glossaire</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border bg-muted/30">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Endpoints :</strong>{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/admin/users</code> (liste avec stats),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">GET /api/admin/users/&#123;id&#125;</code> (détail),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">POST /api/auth/users</code> (créer),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">PUT /api/admin/users/&#123;id&#125;</code> (modifier),{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded text-foreground">DELETE /api/admin/users/&#123;id&#125;</code> (toggle actif)
                 </p>
               </div>
             </CardContent>

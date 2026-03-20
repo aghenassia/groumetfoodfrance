@@ -50,6 +50,8 @@ import {
   Bell,
   Weight,
   Upload,
+  PieChart,
+  Download,
 } from "lucide-react";
 
 type ArticleId =
@@ -70,6 +72,7 @@ type ArticleId =
   | "objectives"
   | "challenges"
   | "margins"
+  | "analytics"
   | "admin-sync"
   | "admin-playlist"
   | "admin-assign"
@@ -82,7 +85,9 @@ type ArticleId =
   | "intel"
   | "reminders"
   | "kg-view"
-  | "admin-import";
+  | "admin-import"
+  | "admin-users"
+  | "client-objectives";
 
 interface ArticleMeta {
   id: ArticleId;
@@ -107,8 +112,8 @@ const ARTICLES: ArticleMeta[] = [
     title: "To do quotidienne",
     icon: ListMusic,
     category: "sales",
-    summary: "Votre liste de clients à appeler chaque jour, générée automatiquement selon des critères intelligents.",
-    tags: ["appels", "priorité", "prospect", "dormant", "callback", "todo"],
+    summary: "Votre liste de clients à appeler chaque jour + vue Agenda avec calendrier de rappels. Générée automatiquement selon des critères intelligents.",
+    tags: ["appels", "priorité", "prospect", "dormant", "callback", "todo", "agenda", "calendrier"],
   },
   {
     id: "clients",
@@ -131,8 +136,8 @@ const ARTICLES: ArticleMeta[] = [
     title: "Fiche client 360°",
     icon: Target,
     category: "sales",
-    summary: "Tout savoir sur un client : coordonnées, CA, historique d'appels, retours commerciaux, qualifications, analyse IA, upsell, section Contacts.",
-    tags: ["détail", "historique", "ca", "scoring", "téléphone", "retours", "contacts"],
+    summary: "Tout savoir sur un client : coordonnées, CA, classification type/sous-type, historique d'appels, retours commerciaux, qualifications, analyse IA, upsell, section Contacts.",
+    tags: ["détail", "historique", "ca", "scoring", "téléphone", "retours", "contacts", "type", "classification"],
   },
   {
     id: "calls",
@@ -227,8 +232,16 @@ const ARTICLES: ArticleMeta[] = [
     title: "Commandes",
     icon: ShoppingCart,
     category: "sales",
-    summary: "Liste globale de toutes les pièces commerciales (BC, BL, factures, avoirs) avec filtres par type, dates, commercial et recherche.",
-    tags: ["commande", "bc", "bl", "facture", "avoir", "pipeline", "filtre"],
+    summary: "Liste des pièces commerciales avec pagination, export CSV, filtres par type/dates/commercial/statut paiement et détail par commande.",
+    tags: ["commande", "bc", "bl", "facture", "avoir", "pipeline", "filtre", "export", "csv", "pagination"],
+  },
+  {
+    id: "analytics",
+    title: "Analytics",
+    icon: PieChart,
+    category: "sales",
+    summary: "Pilotage stratégique : vue d'ensemble, impayés, produits, géographie, clients et intelligence IA avec comparaison de périodes.",
+    tags: ["analytics", "kpi", "impayé", "produit", "géographie", "ia", "comparaison", "export"],
   },
   {
     id: "leaderboard",
@@ -317,6 +330,22 @@ const ARTICLES: ArticleMeta[] = [
     category: "admin",
     summary: "Importez des entreprises et contacts depuis un fichier CSV : validation, détection de doublons, import asynchrone.",
     tags: ["import", "csv", "lead", "upload", "doublon", "entreprise", "contact"],
+  },
+  {
+    id: "admin-users",
+    title: "Gestion utilisateurs (Admin)",
+    icon: UserCog,
+    category: "admin",
+    summary: "Créer, modifier, lier Ringover/Sage, fixer des objectifs et activer/désactiver les comptes utilisateurs.",
+    tags: ["utilisateur", "compte", "ringover", "sage", "objectif", "rôle", "admin"],
+  },
+  {
+    id: "client-objectives",
+    title: "Objectifs par client",
+    icon: Target,
+    category: "sales",
+    summary: "Fixez des objectifs annuels par client (CA, marge, kg…) avec suivi mois par mois et progression temps réel.",
+    tags: ["objectif", "client", "ca", "marge", "kg", "annuel", "progression"],
   },
   {
     id: "admin-glossaire",
@@ -616,11 +645,21 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             </ul>
           </Section>
 
+          <Section title="Onglet Agenda">
+            <p>L&apos;onglet <strong>Agenda</strong> offre une vue calendrier de vos tâches et rappels :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Calendrier mensuel</strong> : les jours ayant des rappels sont marqués par un indicateur visuel. Cliquez sur un jour pour voir ses rappels.</li>
+              <li>• <strong>Liste des rappels</strong> : triée par date, avec le client associé, l&apos;heure et la note. Bouton pour marquer comme fait.</li>
+              <li>• <strong>Créer un rappel</strong> : directement depuis l&apos;agenda avec sélection du client (recherche), date, heure et note. Les managers peuvent assigner à un commercial.</li>
+              <li>• <strong>Tous les rappels à venir</strong> : basculez vers une vue complète de tous les rappels futurs.</li>
+            </ul>
+          </Section>
+
           <Section title="Ajout manuel & rappels">
             <p>En plus de la génération automatique, vous pouvez :</p>
             <ul className="text-sm space-y-1">
               <li>• <strong>Ajouter manuellement</strong> un client à votre To do depuis sa <L to="client360">fiche 360°</L> (bouton &quot;To do&quot;).</li>
-              <li>• Créer un <L to="reminders">rappel</L> avec date et heure, qui apparaîtra dans votre To do le jour J.</li>
+              <li>• Créer un <L to="reminders">rappel</L> avec date et heure, qui apparaîtra dans votre To do le jour J et dans l&apos;Agenda.</li>
               <li>• Les managers peuvent assigner ces actions à un commercial spécifique.</li>
             </ul>
             <p className="text-sm text-muted-foreground mt-1">Les entrées manuelles et rappels ne sont <strong>jamais supprimés</strong> par la regénération automatique des To do.</p>
@@ -700,6 +739,16 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>Marge moyenne</strong> en % et en valeur.</li>
               <li>• <strong>Dernière commande</strong> : nombre de jours depuis + date de première commande.</li>
             </ul>
+          </Section>
+
+          <Section title="Classification">
+            <p>Une carte dédiée dans la sidebar affiche la <strong>classification</strong> du client :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Type d&apos;entreprise</strong> (badges bleus) : ex. Restaurant, Grossiste, Traiteur. Un client peut avoir plusieurs types.</li>
+              <li>• <strong>Sous-type</strong> (badges violets) : ex. Restaurant grillades, Restaurant étoilé. Permet une qualification plus fine.</li>
+              <li>• <strong>Catégorie tarifaire</strong> (badge ambre) : la grille tarifaire Sage appliquée au client.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Les types et sous-types sont éditables avec un système de tags autocomplete : sélectionnez parmi les valeurs existantes ou créez-en de nouvelles.</p>
           </Section>
 
           <Section title="Scoring">
@@ -1329,26 +1378,34 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>CA total</strong> : somme des montants HT (format K€/M€ si besoin).</li>
               <li>• <strong>Commandes</strong> : nombre total de pièces.</li>
               <li>• <strong>Clients</strong> : nombre de clients distincts.</li>
-              <li>• <strong>Marge moyenne</strong> : pourcentage moyen de marge sur les pièces.</li>
+              <li>• <strong>Marge moyenne</strong> : pourcentage moyen de marge avec code couleur configurable (vert/orange/rouge).</li>
             </ul>
           </Section>
 
           <Section title="Filtres disponibles">
             <ul className="text-sm space-y-1">
-              <li>• <strong>Recherche</strong> : par numéro de pièce, nom de client ou désignation.</li>
+              <li>• <strong>Recherche</strong> : par numéro de pièce, nom de client, désignation, commercial ou ville.</li>
               <li>• <strong>Type de document</strong> : filtrez par BC, BL, FA, AV (combinables).</li>
-              <li>• <strong>Période</strong> : presets rapides (7j, 30j, 90j, YTD, All) + calendrier personnalisé.</li>
+              <li>• <strong>Période</strong> : presets rapides (Mois en cours, 7j, 30j, 90j, YTD, 12 mois, Tout) + calendrier personnalisé. Le preset &quot;Mois en cours&quot; est activé par défaut pour s&apos;aligner sur les objectifs mensuels.</li>
               <li>• <strong>Commercial</strong> (admin/manager uniquement) : filtrez les commandes par commercial assigné.</li>
+              <li>• <strong>Statut de paiement</strong> : filtrez par Impayé, Partiellement payé ou Payé.</li>
+              <li>• <strong>Tri par marge</strong> : triez les commandes par marge (ascendant/descendant).</li>
             </ul>
-            <p className="text-sm text-muted-foreground mt-1">Le compteur de filtres actifs s&apos;affiche sur le bouton &quot;Filtres&quot; et le bouton &quot;Réinitialiser&quot; remet tout à zéro.</p>
+          </Section>
+
+          <Section title="Pagination & Export">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Résultats par page</strong> : choisissez entre 50, 100, 200 ou 500 résultats par page.</li>
+              <li>• <strong>Export CSV</strong> : exportez les commandes affichées (avec les filtres appliqués) en fichier CSV via le bouton <Download className="w-3 h-3 inline" /> Export.</li>
+            </ul>
           </Section>
 
           <Section title="Détail d'une commande">
             <p>Cliquez sur une ligne pour ouvrir le <strong>panel de détail</strong> à droite (même UX que la fiche produit). Le panel affiche :</p>
             <ul className="text-sm space-y-1">
-              <li>• En-tête : n° de pièce, type, date, client (lien vers la fiche).</li>
+              <li>• En-tête : n° de pièce, type, date, client (lien vers la fiche), statut de paiement.</li>
               <li>• KPIs : Total HT, quantité, nombre d&apos;articles, lignes, marge moyenne.</li>
-              <li>• <strong>Lignes détaillées</strong> : chaque ligne est cliquable et redirige vers la fiche du produit correspondant.</li>
+              <li>• <strong>Lignes détaillées</strong> : chaque ligne avec marge colorée (seuils configurables en admin). Cliquable pour accéder à la fiche produit.</li>
             </ul>
           </Section>
 
@@ -1357,6 +1414,88 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <ul className="text-sm space-y-1">
               <li>• La <strong>sidebar</strong> principale (icône Commandes).</li>
               <li>• L&apos;onglet <strong>Commandes</strong> de la <L to="products">fiche produit</L> (clique sur une commande).</li>
+              <li>• L&apos;onglet <L to="analytics">Analytics</L> (vue &quot;Produits&quot; et &quot;Impayés&quot;).</li>
+            </ul>
+          </Section>
+        </div>
+      );
+
+    case "analytics":
+      return (
+        <div className="space-y-4">
+          <Section title="Le module Analytics">
+            <p>La page Analytics est un <strong>outil de pilotage stratégique</strong> destiné aux managers et dirigeants. Elle offre une vision à 360° de l&apos;activité commerciale à travers 6 onglets thématiques.</p>
+          </Section>
+
+          <Section title="Sélection de période & Comparaison">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Presets de dates</strong> : Mois en cours, 7 jours, 30 jours, 90 jours, 12 mois ou période personnalisée via calendrier.</li>
+              <li>• <strong>Comparaison de périodes</strong> (comme Google Ads) : comparez avec la période précédente, la même période N-1, une période personnalisée ou désactivez la comparaison.</li>
+              <li>• Les évolutions (↑ / ↓) sont affichées en vert (positif) ou rouge (négatif) avec le pourcentage d&apos;écart.</li>
+            </ul>
+          </Section>
+
+          <Section title="1 — Vue d'ensemble">
+            <p>KPIs principaux avec évolution vs période de comparaison :</p>
+            <ul className="text-sm space-y-1">
+              <li>• CA, nombre de commandes, clients actifs, marge moyenne, marge totale, nombre d&apos;appels.</li>
+              <li>• Tableau comparatif détaillé : période actuelle vs précédente avec évolution en %.</li>
+            </ul>
+          </Section>
+
+          <Section title="2 — Impayés">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>KPIs</strong> : total facturé, encours impayé, taux d&apos;impayé, ancienneté moyenne.</li>
+              <li>• <strong>Balance âgée</strong> : répartition par tranche (&lt; 30j, 30–60j, 60–90j, &gt; 90j).</li>
+              <li>• <strong>Top débiteurs</strong> : les clients avec le plus d&apos;encours (lien vers la fiche).</li>
+              <li>• <strong>Évolution mensuelle</strong> : graphique de l&apos;encours sur les 12 derniers mois.</li>
+            </ul>
+          </Section>
+
+          <Section title="3 — Produits">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Répartition par famille</strong> : graphique camembert du CA par famille de produits.</li>
+              <li>• <strong>Familles</strong> : détail avec CA, marge %, nombre de produits.</li>
+              <li>• <strong>Top 20 produits</strong> : classement par CA avec marge et quantité.</li>
+              <li>• <strong>Produits à faible marge</strong> : alertes pour les produits en dessous de 10 %.</li>
+            </ul>
+          </Section>
+
+          <Section title="4 — Géographie">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>CA par département</strong> : top 15 départements avec barres de progression.</li>
+              <li>• <strong>CA par région</strong> : vue régionale de l&apos;activité.</li>
+              <li>• <strong>Top villes</strong> : classement des villes par CA.</li>
+              <li>• <strong>Zones sans activité</strong> : départements/villes sans commande récente — opportunités de prospection.</li>
+            </ul>
+          </Section>
+
+          <Section title="5 — Clients (Funnel)">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Entonnoir</strong> : répartition Prospects → Actifs → À risque → Dormants → Perdus.</li>
+              <li>• <strong>KPIs clients</strong> : LTV moyenne/médiane, panier moyen, fréquence de commande.</li>
+              <li>• <strong>Cohortes de rétention</strong> : taux de rétention à 90 jours.</li>
+              <li>• <strong>Tendance</strong> : graphique nouveaux clients vs clients perdus par mois.</li>
+            </ul>
+          </Section>
+
+          <Section title="6 — Intelligence IA">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Volume d&apos;appels</strong> : total, sortants, entrants, taux de décroché, durée moyenne.</li>
+              <li>• <strong>Score IA global</strong> : note moyenne de qualité des appels.</li>
+              <li>• <strong>Radar qualité</strong> : politesse, gestion des objections, closing, connaissance produit, écoute active.</li>
+              <li>• <strong>Résultats de qualification</strong> : répartition des outcomes (intéressé, rappel, commande, refus…).</li>
+              <li>• <strong>Sentiment</strong> : répartition des humeurs et tendances sentiment/qualité dans le temps.</li>
+              <li>• <strong>Par commercial</strong> : score IA par vendeur pour identifier le coaching nécessaire.</li>
+              <li>• <strong>Sujets fréquents & opportunités</strong> : ce que l&apos;IA détecte dans les conversations.</li>
+            </ul>
+          </Section>
+
+          <Section title="Exports">
+            <p>Deux exports CSV sont disponibles depuis la page Analytics :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Export Clients</strong> : données client détaillées avec CA, marge, scores, statut.</li>
+              <li>• <strong>Export Produits</strong> : catalogue avec CA, marge, quantités vendues.</li>
             </ul>
           </Section>
         </div>
@@ -1396,7 +1535,7 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
       return (
         <div className="space-y-4">
           <Section title="Objectifs personnalisés">
-            <p>Votre manager vous fixe des objectifs sur un ou plusieurs <strong>KPIs</strong>. Chaque objectif a une cible chiffrée et une période (mois, trimestre ou année).</p>
+            <p>Votre manager vous fixe des objectifs sur un ou plusieurs <strong>KPIs</strong>. Chaque objectif a une cible chiffrée et une période (mois, trimestre, année ou un mois précis).</p>
           </Section>
           <Section title="KPIs disponibles">
             <ul className="text-sm space-y-1">
@@ -1408,7 +1547,20 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
               <li>• <strong>Panier moyen</strong> — CA divisé par le nombre de commandes</li>
               <li>• <strong>CA moyen / commande</strong> — montant moyen par commande</li>
               <li>• <strong>Nombre de commandes</strong> — volume total de commandes</li>
+              <li>• <strong>Nombre de clients</strong> — nombre de clients distincts servis sur la période</li>
             </ul>
+          </Section>
+          <Section title="Mois précis">
+            <p>En plus des périodes récurrentes (mensuel, trimestriel, annuel), le manager peut créer un objectif pour un <strong>mois précis</strong> (ex. mars 2026). Idéal pour des opérations ponctuelles ou des promotions ciblées.</p>
+          </Section>
+          <Section title="Filtres avancés">
+            <p>Chaque objectif peut être filtré par :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Catégorie client</strong> : ciblez un segment (ex. Metro, CSF, Promocash) pour mesurer la performance sur un réseau spécifique.</li>
+              <li>• <strong>Région</strong> : limitez l&apos;objectif à une zone géographique.</li>
+              <li>• <strong>Famille de produits</strong> : mesurez la performance sur une famille précise (ex. Saurisserie, Coquillage).</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Les filtres se combinent : un objectif peut cibler les clients Metro d&apos;une région spécifique sur la famille Saurisserie.</p>
           </Section>
           <Section title="Suivi en temps réel">
             <p>La progression de chaque objectif est affichée sur votre <L to="dashboard">dashboard</L> avec une jauge visuelle. La valeur actuelle est calculée automatiquement à partir des données Sage sur la période en cours.</p>
@@ -1477,7 +1629,16 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <p>Chaque règle peut s&apos;appliquer à <strong>tous</strong> les clients ou à un <strong>groupe spécifique</strong> (ex: Metro, CSF+Promocash) basé sur le champ <code className="text-xs bg-muted px-1 py-0.5 rounded">margin_group</code> du client.</p>
           </Section>
           <Section title="Dates d'effet">
-            <p>Les règles supportent des dates de début et fin d&apos;effet. Pour désactiver une règle, fixez sa date de fin à aujourd&apos;hui. Cela permet de garder un historique des barèmes appliqués.</p>
+            <p>Les règles supportent des dates de début et fin d&apos;effet. Pour désactiver une règle, fixez sa date de fin à aujourd&apos;hui. Cela permet de garder un historique des barèmes appliqués. Basculez <strong>&quot;Voir tout l&apos;historique&quot;</strong> pour afficher aussi les règles expirées.</p>
+          </Section>
+          <Section title="Seuils de couleur des marges">
+            <p>En bas de page, configurez les <strong>3 seuils de couleur</strong> pour la marge visible sur les commandes et produits :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <span className="inline-block w-3 h-3 rounded-full bg-green-500 align-middle mr-1" /> <strong>Vert</strong> : marge ≥ X % (bonne marge)</li>
+              <li>• <span className="inline-block w-3 h-3 rounded-full bg-orange-500 align-middle mr-1" /> <strong>Orange</strong> : marge ≥ Y % (attention)</li>
+              <li>• <span className="inline-block w-3 h-3 rounded-full bg-red-500 align-middle mr-1" /> <strong>Rouge</strong> : en dessous (marge critique)</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">L&apos;évaluation se fait du seuil le plus haut au plus bas. Ces couleurs s&apos;appliquent automatiquement partout dans le CRM : liste des commandes, détail d&apos;une commande, page produits et analytics.</p>
           </Section>
         </div>
       );
@@ -1490,15 +1651,25 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
             <ul className="text-sm space-y-1">
               <li>• <strong>Nom</strong> : titre accrocheur du challenge</li>
               <li>• <strong>Récompense</strong> : ce que gagne le vainqueur (affiché à tous)</li>
-              <li>• <strong>Produit</strong> : recherchez et sélectionnez un produit du catalogue (optionnel)</li>
+              <li>• <strong>Produit</strong> : recherchez et sélectionnez un produit du catalogue, une famille entière ou plusieurs références (optionnel)</li>
               <li>• <strong>Métrique</strong> : kg, unités, CA ou marge brute</li>
               <li>• <strong>Objectif</strong> : cible chiffrée (optionnel, pour afficher la progression)</li>
               <li>• <strong>Période</strong> : dates de début et fin</li>
               <li>• <strong>Statut</strong> : brouillon → actif → terminé</li>
             </ul>
           </Section>
+          <Section title="Sélection des participants">
+            <p>Par défaut, <strong>tous les commerciaux</strong> participent au challenge. Le manager peut restreindre les participants :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Cliquez sur <strong>&quot;Participants&quot;</strong> pour ouvrir la liste des commerciaux.</li>
+              <li>• Cochez/décochez les commerciaux souhaités (les admins sont exclus).</li>
+              <li>• Le bouton affiche les noms sélectionnés (ou &quot;X + N&quot; si plus de 3).</li>
+              <li>• Cliquez sur <strong>&quot;Réinitialiser&quot;</strong> pour revenir à tous les participants.</li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Seuls les commerciaux sélectionnés verront le challenge sur leur dashboard et seront comptabilisés dans le classement.</p>
+          </Section>
           <Section title="Classement">
-            <p>Le classement est calculé en temps réel à partir des lignes de vente Sage. Il est visible par tous les commerciaux sur le dashboard et la page classement.</p>
+            <p>Le classement est calculé en temps réel à partir des lignes de vente Sage. Il est visible par tous les commerciaux participants sur le dashboard et la page classement. Chaque participant voit sa position en surbrillance et sa barre de progression vers l&apos;objectif.</p>
           </Section>
         </div>
       );
@@ -1729,8 +1900,13 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
 
           <Section title="Format du fichier CSV">
             <p>Le séparateur attendu est le <strong>point-virgule</strong> (;). L&apos;encodage UTF-8 ou Latin-1 (Excel français) est détecté automatiquement.</p>
-            <p>Colonnes disponibles : <code>nom_entreprise</code> (obligatoire), <code>telephone</code>, <code>email</code>, <code>adresse</code>, <code>code_postal</code>, <code>ville</code>, <code>pays</code>, <code>siret</code>, <code>code_naf</code>, <code>site_web</code>, <code>commercial</code>, <code>est_prospect</code>, <code>contact_nom</code>, <code>contact_prenom</code>, <code>contact_role</code>, <code>contact_telephone</code>, <code>contact_email</code>.</p>
-            <p>Astuce : téléchargez le template pour avoir toutes les colonnes prêtes avec des exemples.</p>
+            <p>Colonnes disponibles :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Entreprise</strong> : <code>nom_entreprise</code> (obligatoire), <code>telephone</code>, <code>telephone_2</code>, <code>telephone_3</code>, <code>email</code>, <code>adresse</code>, <code>code_postal</code>, <code>ville</code>, <code>pays</code>, <code>siret</code>, <code>code_naf</code>, <code>site_web</code>, <code>commercial</code>, <code>est_prospect</code></li>
+              <li>• <strong>Type</strong> : <code>type_entreprise</code>, <code>sous_type_entreprise</code> — classification multi-valeurs (séparées par des virgules). Ex: &quot;Restaurant,Traiteur&quot;</li>
+              <li>• <strong>Contact</strong> : <code>contact_nom</code>, <code>contact_prenom</code>, <code>contact_role</code> (fonction du contact), <code>contact_telephone</code>, <code>contact_email</code></li>
+            </ul>
+            <p className="text-sm text-muted-foreground mt-1">Astuce : téléchargez le template pour avoir toutes les colonnes prêtes avec des exemples. Les numéros de téléphone secondaires et tertiaires sont ajoutés dans le PhoneIndex pour la recherche et la détection de doublons.</p>
           </Section>
 
           <Section title="Détection des doublons">
@@ -1744,6 +1920,103 @@ function ArticleContent({ id, goTo }: { id: ArticleId; goTo: (id: ArticleId) => 
           <Section title="Que deviennent les leads importés ?">
             <p>Chaque entreprise importée est créée avec le statut <strong>&quot;lead&quot;</strong> et un identifiant <code>LEAD-xxxxxxxx</code>. Elle apparaît dans la liste clients et peut être intégrée aux <L to="playlist">To do</L> dès le lendemain.</p>
             <p>Si un commercial est spécifié dans le CSV (colonne <code>commercial</code>), l&apos;entreprise lui est automatiquement assignée.</p>
+          </Section>
+        </div>
+      );
+
+    case "admin-users":
+      return (
+        <div className="space-y-4">
+          <Section title="Gestion des utilisateurs">
+            <p>La page <strong>Admin → Utilisateurs</strong> permet de gérer tous les comptes du CRM : création, modification des rôles, liaison avec Ringover et Sage, et définition des objectifs.</p>
+          </Section>
+
+          <Section title="Créer un utilisateur">
+            <ol className="text-sm space-y-2 list-decimal list-inside">
+              <li>Cliquez sur <strong>Ajouter un utilisateur</strong>.</li>
+              <li>Renseignez : nom, email, mot de passe, rôle (<em>sales</em>, <em>manager</em> ou <em>admin</em>).</li>
+              <li>Optionnel : numéro de téléphone direct.</li>
+            </ol>
+          </Section>
+
+          <Section title="Les 3 rôles">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>Sales (commercial)</strong> — accès à son portefeuille, sa To do, ses appels et ses objectifs.</li>
+              <li>• <strong>Manager</strong> — accès aux vues d&apos;équipe : <L to="admin-dashboard">pilotage sales</L>, <L to="admin-assign">assignation</L>, vue Équipe des appels.</li>
+              <li>• <strong>Admin</strong> — accès complet : synchronisation, configuration des <L to="admin-playlist">To do</L>, <L to="admin-margins">marges</L>, <L to="admin-challenges">challenges</L>, <L to="admin-import">import CSV</L>, gestion des utilisateurs.</li>
+            </ul>
+          </Section>
+
+          <Section title="Liaison Ringover">
+            <p>Cliquez sur l&apos;icône <strong>téléphone</strong> d&apos;un utilisateur pour lier son compte CRM à une ligne Ringover :</p>
+            <ul className="text-sm space-y-1">
+              <li>• La liste des membres Ringover est récupérée automatiquement via l&apos;API Ringover.</li>
+              <li>• Sélectionnez le membre correspondant — le <code className="text-xs bg-muted px-1 py-0.5 rounded">ringover_user_id</code>, le numéro et l&apos;email sont enregistrés.</li>
+              <li>• Cette liaison permet d&apos;associer les appels Ringover au bon utilisateur CRM.</li>
+            </ul>
+          </Section>
+
+          <Section title="Liaison Sage">
+            <p>Cliquez sur l&apos;icône <strong>building</strong> pour lier un utilisateur à un collaborateur Sage :</p>
+            <ul className="text-sm space-y-1">
+              <li>• Le <code className="text-xs bg-muted px-1 py-0.5 rounded">sage_collaborator_id</code> (CO_No) permet de relier les commandes Sage au commercial.</li>
+              <li>• Le <code className="text-xs bg-muted px-1 py-0.5 rounded">sage_rep_name</code> est utilisé pour matcher les clients via le champ <code className="text-xs bg-muted px-1 py-0.5 rounded">sales_rep</code> des fiches clients.</li>
+            </ul>
+          </Section>
+
+          <Section title="Objectifs par commercial">
+            <p>Cliquez sur l&apos;icône <strong>cible</strong> pour gérer les <L to="objectives">objectifs</L> d&apos;un commercial :</p>
+            <ul className="text-sm space-y-1">
+              <li>• <strong>9 KPIs disponibles</strong> : CA, marge brute, marge nette, quantité kg, quantité unités, panier moyen, CA moyen, nombre de commandes, nombre de clients.</li>
+              <li>• <strong>Période</strong> : mensuel, trimestriel, annuel ou mois précis.</li>
+              <li>• <strong>Filtres</strong> : catégorie client, région, famille de produits.</li>
+              <li>• La progression est calculée en temps réel sur le <L to="dashboard">dashboard</L> du commercial.</li>
+            </ul>
+          </Section>
+
+          <Section title="Activer / Désactiver">
+            <p>Le bouton <strong>power</strong> désactive un compte (soft delete). L&apos;utilisateur ne peut plus se connecter et n&apos;apparaît plus dans les sélecteurs, mais son historique est conservé.</p>
+          </Section>
+
+          <Section title="CA mensuel cible">
+            <p>Le champ <code className="text-xs bg-muted px-1 py-0.5 rounded">target_ca_monthly</code> est un objectif CA simple utilisé pour la note de performance <L to="admin-dashboard">A/B/C/D</L> du pilotage sales.</p>
+          </Section>
+        </div>
+      );
+
+    case "client-objectives":
+      return (
+        <div className="space-y-4">
+          <Section title="Objectifs par client">
+            <p>En plus des <L to="objectives">objectifs par commercial</L>, le CRM permet de fixer des <strong>objectifs annuels par client</strong>. Utile pour suivre les engagements pris lors de négociations annuelles ou pour piloter la croissance d&apos;un compte clé.</p>
+          </Section>
+
+          <Section title="KPIs disponibles">
+            <ul className="text-sm space-y-1">
+              <li>• <strong>CA</strong> — chiffre d&apos;affaires HT réalisé avec ce client</li>
+              <li>• <strong>Marge brute</strong> — prix de vente - coût de revient</li>
+              <li>• <strong>Marge nette</strong> — après déductions (<L to="margins">voir calcul</L>)</li>
+              <li>• <strong>Quantité (kg)</strong> — poids net vendu</li>
+              <li>• <strong>Quantité (unités)</strong> — nombre d&apos;unités vendues</li>
+              <li>• <strong>Panier moyen</strong> — CA / nombre de commandes</li>
+              <li>• <strong>Nombre de commandes</strong> — volume de commandes</li>
+            </ul>
+          </Section>
+
+          <Section title="Cible annuelle & mensuelle">
+            <p>Chaque objectif a une <strong>cible annuelle</strong> et <strong>12 cibles mensuelles</strong> (une par mois). Vous pouvez répartir la cible de manière linéaire ou ajuster mois par mois pour tenir compte de la saisonnalité.</p>
+          </Section>
+
+          <Section title="Filtre par famille de produits">
+            <p>Un objectif peut être <strong>filtré par famille de produits</strong> (ex. Saurisserie, Coquillage). Seules les ventes correspondant à cette famille seront comptabilisées dans la progression.</p>
+          </Section>
+
+          <Section title="Où les voir ?">
+            <p>Les objectifs par client sont visibles sur la <L to="client360">fiche client 360°</L>, dans l&apos;onglet dédié. La progression mois par mois est affichée avec des barres et le pourcentage d&apos;atteinte.</p>
+          </Section>
+
+          <Section title="Qui peut les créer ?">
+            <p>Tous les utilisateurs authentifiés peuvent créer et modifier des objectifs par client. L&apos;identité du créateur est enregistrée pour traçabilité.</p>
           </Section>
         </div>
       );
