@@ -188,6 +188,7 @@ export default function DashboardPage() {
   const [editReminderTime, setEditReminderTime] = useState("");
   const [editReminderNote, setEditReminderNote] = useState("");
   const [savingReminder, setSavingReminder] = useState(false);
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
   const [objProgress, setObjProgress] = useState<ObjectiveProgress[]>([]);
   const [activeChallenges, setActiveChallenges] = useState<ChallengeEntry[]>([]);
   const [challengeRankings, setChallengeRankings] = useState<Record<string, ChallengeRankingEntry[]>>({});
@@ -809,9 +810,16 @@ export default function DashboardPage() {
           <CardContent>
             {reminders.length === 0 && playlistReminders.length === 0 ? (
               <p className="text-xs text-muted-foreground py-4 text-center">Aucun rappel</p>
-            ) : (
+            ) : (() => {
+              const REMINDERS_LIMIT = 10;
+              const totalReminders = playlistReminders.length + reminders.length;
+              const visiblePlaylist = remindersExpanded ? playlistReminders : playlistReminders.slice(0, REMINDERS_LIMIT);
+              const remainingSlots = Math.max(0, REMINDERS_LIMIT - playlistReminders.length);
+              const visibleReminders = remindersExpanded ? reminders : reminders.slice(0, remainingSlots);
+              const hiddenCount = totalReminders - visiblePlaylist.length - visibleReminders.length;
+              return (
               <div className="space-y-1.5">
-                {playlistReminders.map((r) => (
+                {visiblePlaylist.map((r) => (
                   <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors group">
                     <div className="flex-1 min-w-0">
                       <Link href={`/clients/${r.client_id}`} className="text-sm font-medium hover:underline">{r.client_name}</Link>
@@ -844,7 +852,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
-                {reminders.map((r) => (
+                {visibleReminders.map((r) => (
                   <div key={r.call_id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors">
                     <div className="flex-1 min-w-0">
                       {r.client_id ? (
@@ -862,8 +870,23 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
+                {totalReminders > REMINDERS_LIMIT && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-muted-foreground hover:text-foreground mt-1"
+                    onClick={() => setRemindersExpanded(!remindersExpanded)}
+                  >
+                    {remindersExpanded ? (
+                      <>Réduire <ChevronUp className="w-3 h-3 ml-1" /></>
+                    ) : (
+                      <>Voir les {hiddenCount} autres rappels <ChevronDown className="w-3 h-3 ml-1" /></>
+                    )}
+                  </Button>
+                )}
               </div>
-            )}
+              );
+            })()}
           </CardContent>
         </Card>
 
