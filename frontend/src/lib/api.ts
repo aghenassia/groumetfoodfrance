@@ -925,6 +925,7 @@ export interface UnpaidSummary {
 }
 
 export interface CallQualificationBrief {
+  id: string;
   mood?: string;
   outcome?: string;
   tags?: string[];

@@ -200,6 +200,7 @@ class UnpaidSummary(BaseModel):
 
 
 class CallQualificationBrief(BaseModel):
+    id: str
     mood: str | None = None
     outcome: str | None = None
     tags: list[str] | None = None
