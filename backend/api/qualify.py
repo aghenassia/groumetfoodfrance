@@ -8,6 +8,7 @@ from core.security import get_current_user
 from models.user import User
 from models.call import Call
 from models.qualification import CallQualification
+from models.client_audit import ClientAuditLog
 from schemas.call import QualifyCallRequest, QualificationResponse
 from engines.lifecycle_engine import on_qualification, on_call_answered
 
@@ -70,3 +71,34 @@ async def qualify_call(
     await db.commit()
     await db.refresh(qualif)
     return QualificationResponse.model_validate(qualif)
+
+
+@router.delete("/{qualification_id}")
+async def delete_qualification(
+    qualification_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    qualif = await db.get(CallQualification, qualification_id)
+    if not qualif:
+        raise HTTPException(404, "Qualification introuvable")
+
+    call = await db.get(Call, qualif.call_id)
+    summary = f"{qualif.mood or ''} / {qualif.outcome or ''}"
+    if qualif.notes:
+        summary += f" — {qualif.notes[:100]}"
+
+    if call and call.client_id:
+        db.add(ClientAuditLog(
+            client_id=call.client_id,
+            user_id=user.id,
+            user_name=user.name,
+            action="feedback_deleted",
+            field_name="qualification",
+            old_value=summary.strip(" /"),
+            details=f"Qualification d'appel supprimée ({call.user_name or 'inconnu'}, {call.start_time.strftime('%d/%m/%Y %H:%M') if call.start_time else ''})",
+        ))
+
+    await db.delete(qualif)
+    await db.commit()
+    return {"deleted": True}

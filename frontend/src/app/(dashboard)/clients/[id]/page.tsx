@@ -2258,7 +2258,7 @@ export default function ClientDetailPage() {
                               <Phone className="w-2.5 h-2.5 text-muted-foreground" />
                             )}
                           </div>
-                          <div className="bg-accent/40 rounded-lg p-3 space-y-2">
+                          <div className="bg-accent/40 rounded-lg p-3 space-y-2 group/item">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 border-blue-200 text-blue-700">Appel</Badge>
@@ -2277,6 +2277,20 @@ export default function ClientDetailPage() {
                                   </Badge>
                                 )}
                                 {q.outcome && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{q.outcome}</Badge>}
+                                <button
+                                  className="opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-100 text-muted-foreground hover:text-red-500"
+                                  title="Supprimer cette qualification"
+                                  onClick={async () => {
+                                    if (!confirm("Supprimer cette qualification ?")) return;
+                                    try {
+                                      await api.deleteQualification(q.id);
+                                      toast.success("Qualification supprimée");
+                                      fetchClient();
+                                    } catch { toast.error("Erreur de suppression"); }
+                                  }}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                             {q.notes && <p className="text-sm bg-white rounded p-2.5 border text-foreground">{q.notes}</p>}
@@ -2310,7 +2324,7 @@ export default function ClientDetailPage() {
                           <div className="absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white border-green-400">
                             <Phone className="w-2.5 h-2.5 text-green-600" />
                           </div>
-                          <div className="bg-green-50/60 rounded-lg p-3 space-y-2">
+                          <div className="bg-green-50/60 rounded-lg p-3 space-y-2 group/item">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 border-green-200 text-green-700">Companion</Badge>
@@ -2339,6 +2353,20 @@ export default function ClientDetailPage() {
                                      s.outcome === "quote_sent" ? "Devis envoyé" : s.outcome}
                                   </Badge>
                                 )}
+                                <button
+                                  className="opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-100 text-muted-foreground hover:text-red-500"
+                                  title="Supprimer cette session"
+                                  onClick={async () => {
+                                    if (!confirm("Supprimer cette session Companion ?")) return;
+                                    try {
+                                      await api.deleteCallSession(s.id);
+                                      toast.success("Session supprimée");
+                                      fetchSessions();
+                                    } catch { toast.error("Erreur de suppression"); }
+                                  }}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                             {s.notes && <p className="text-sm bg-white rounded p-2.5 border text-foreground">{s.notes}</p>}
@@ -2360,13 +2388,29 @@ export default function ClientDetailPage() {
                         <div className="absolute -left-6 top-1 w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center bg-white border-purple-300">
                           <FileText className="w-2.5 h-2.5 text-purple-500" />
                         </div>
-                        <div className="bg-purple-50/40 rounded-lg p-3 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 border-purple-200 text-purple-700">Note</Badge>
-                            <span className="text-xs font-medium">
-                              {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                            {n.user_name && <span className="text-xs text-muted-foreground">· {n.user_name}</span>}
+                        <div className="bg-purple-50/40 rounded-lg p-3 space-y-1 group/item">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 border-purple-200 text-purple-700">Note</Badge>
+                              <span className="text-xs font-medium">
+                                {new Date(n.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              {n.user_name && <span className="text-xs text-muted-foreground">· {n.user_name}</span>}
+                            </div>
+                            <button
+                              className="opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-100 text-muted-foreground hover:text-red-500"
+                              title="Supprimer cette note"
+                              onClick={async () => {
+                                if (!confirm("Supprimer cette note ?")) return;
+                                try {
+                                  await api.deleteClientNote(client.id, n.id);
+                                  toast.success("Note supprimée");
+                                  fetchNotes();
+                                } catch { toast.error("Erreur de suppression"); }
+                              }}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                           <p className="text-sm bg-white rounded p-2.5 border text-foreground">{n.content}</p>
                         </div>
@@ -2485,6 +2529,7 @@ export default function ClientDetailPage() {
                     enriched_ai: { label: "Enrichissement IA", color: "border-purple-400 bg-purple-50", icon: <Sparkles className="w-2.5 h-2.5 text-purple-600" /> },
                     phone_added: { label: "Téléphone ajouté", color: "border-cyan-400 bg-cyan-50", icon: <Phone className="w-2.5 h-2.5 text-cyan-600" /> },
                     phone_removed: { label: "Téléphone supprimé", color: "border-red-400 bg-red-50", icon: <Trash2 className="w-2.5 h-2.5 text-red-600" /> },
+                    feedback_deleted: { label: "Retour supprimé", color: "border-orange-400 bg-orange-50", icon: <Trash2 className="w-2.5 h-2.5 text-orange-600" /> },
                   };
                   const cfg = actionConfig[log.action] || { label: log.action, color: "border-gray-300", icon: <History className="w-2.5 h-2.5 text-muted-foreground" /> };
                   const isSystem = !log.user_id || log.user_name === "system";

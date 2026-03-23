@@ -618,6 +618,15 @@ class ApiClient {
   createClientNote(clientId: string, content: string) {
     return this.post<ClientNoteResponse>(`/api/clients/${clientId}/notes`, { content });
   }
+  deleteClientNote(clientId: string, noteId: string) {
+    return this.delete<{ deleted: boolean }>(`/api/clients/${clientId}/notes/${noteId}`);
+  }
+  deleteQualification(qualificationId: string) {
+    return this.delete<{ deleted: boolean }>(`/api/qualify/${qualificationId}`);
+  }
+  deleteCallSession(sessionId: string) {
+    return this.delete<{ deleted: boolean }>(`/api/call-sessions/${sessionId}`);
+  }
 
   // User management (admin)
   getUsers() {

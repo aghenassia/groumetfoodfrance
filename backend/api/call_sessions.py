@@ -12,6 +12,7 @@ from core.security import get_current_user
 from models.user import User
 from models.client import Client
 from models.call_session import CallSession
+from models.client_audit import ClientAuditLog
 
 router = APIRouter(prefix="/api/call-sessions", tags=["call-sessions"])
 
@@ -181,3 +182,33 @@ async def client_sessions(
         )
         for s, cname in result.all()
     ]
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    session = await db.get(CallSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session introuvable")
+
+    summary = f"{session.mood or ''} / {session.outcome or ''}"
+    if session.notes:
+        summary += f" — {session.notes[:100]}"
+
+    if session.client_id:
+        db.add(ClientAuditLog(
+            client_id=session.client_id,
+            user_id=user.id,
+            user_name=user.name,
+            action="feedback_deleted",
+            field_name="companion",
+            old_value=summary.strip(" /"),
+            details=f"Session Companion supprimée ({session.started_at.strftime('%d/%m/%Y %H:%M') if session.started_at else ''})",
+        ))
+
+    await db.delete(session)
+    await db.commit()
+    return {"deleted": True}

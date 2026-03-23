@@ -1489,3 +1489,31 @@ async def create_note(
     await db.commit()
     await db.refresh(note)
     return note
+
+
+@router.delete("/{client_id}/notes/{note_id}")
+async def delete_note(
+    client_id: str,
+    note_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from models.client_note import ClientNote
+    from models.client_audit import ClientAuditLog
+
+    note = await db.get(ClientNote, note_id)
+    if not note or note.client_id != client_id:
+        raise HTTPException(404, "Note introuvable")
+
+    db.add(ClientAuditLog(
+        client_id=client_id,
+        user_id=user.id,
+        user_name=user.name,
+        action="feedback_deleted",
+        field_name="note",
+        old_value=note.content[:200],
+        details=f"Note supprimée (auteur: {note.user_name or 'inconnu'})",
+    ))
+    await db.delete(note)
+    await db.commit()
+    return {"deleted": True}
