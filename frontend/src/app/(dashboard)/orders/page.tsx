@@ -69,7 +69,10 @@ type DatePreset = "month" | "7d" | "30d" | "90d" | "ytd" | "12m" | "all" | "cust
 const PRESETS: DatePreset[] = ["month", "7d", "30d", "90d", "ytd", "12m", "all"];
 
 function toISO(d: Date): string {
-  return d.toISOString().split("T")[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 function addDays(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(r.getDate() + n); return r;
