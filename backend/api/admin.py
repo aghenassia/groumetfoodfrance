@@ -1058,43 +1058,19 @@ async def sales_dashboard(
         team["calls_inbound_answered"] += calls_inbound_answered
         team["calls_qualified"] += calls_qualified
         team["total_talk_time"] += cr[2] or 0
-        # per-user CA/orders/margin are still accumulated for reference but
-        # team totals for invoiced/pipeline are overridden by global queries below
+        team["total_invoiced_ca"] += inv_ca
+        team["total_invoiced_orders"] += inv_orders
+        team["total_invoiced_margin"] += inv_margin
+        team["total_pipeline_ca"] += pipe_ca
+        team["total_pipeline_orders"] += pipe_orders
         team["playlist_total"] += playlist_total
         team["playlist_completed"] += playlist_done
         if ai_overall > 0:
             ai_scores_accum.append(ai_overall)
 
-    # Global pipeline query (counts ALL BDC/BL regardless of user mapping)
-    global_pipe = (await db.execute(
-        select(
-            func.coalesce(func.sum(SalesLine.amount_ht), 0),
-            func.count(distinct(SalesLine.sage_piece_id)),
-        ).where(
-            SalesLine.sage_doc_type.in_([1, 3]),
-            SalesLine.date >= d_start,
-            SalesLine.date <= d_end,
-        )
-    )).one()
-    team["total_pipeline_ca"] = round(float(global_pipe[0]), 2)
-    team["total_pipeline_orders"] = global_pipe[1] or 0
-
-    # Global invoiced query (counts ALL FA/AV regardless of user mapping)
-    global_inv = (await db.execute(
-        select(
-            func.coalesce(func.sum(SalesLine.amount_ht), 0),
-            func.count(distinct(SalesLine.sage_piece_id)),
-            func.coalesce(func.sum(SalesLine.margin_value), 0),
-        ).where(
-            SalesLine.sage_doc_type.in_([6, 7]),
-            SalesLine.date >= d_start,
-            SalesLine.date <= d_end,
-        )
-    )).one()
-    team["total_invoiced_ca"] = round(float(global_inv[0]), 2)
-    team["total_invoiced_orders"] = global_inv[1] or 0
-    team["total_invoiced_margin"] = round(float(global_inv[2]), 2)
-
+    team["total_invoiced_ca"] = round(team["total_invoiced_ca"], 2)
+    team["total_invoiced_margin"] = round(team["total_invoiced_margin"], 2)
+    team["total_pipeline_ca"] = round(team["total_pipeline_ca"], 2)
     team["total_orders"] = team["total_invoiced_orders"] + team["total_pipeline_orders"]
     team["total_ca"] = round(team["total_invoiced_ca"] + team["total_pipeline_ca"], 2)
     team["total_margin"] = round(team["total_invoiced_margin"], 2)
