@@ -820,16 +820,16 @@ export default function DashboardPage() {
               return (
               <div className="space-y-1.5">
                 {visiblePlaylist.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors group">
-                    <div className="flex-1 min-w-0">
+                  <div key={r.id} className="flex items-start justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors group gap-3">
+                    <div className="flex-1 min-w-0 pt-0.5">
                       <Link href={`/clients/${r.client_id}`} className="text-sm font-medium hover:underline">{r.client_name}</Link>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground line-clamp-2">
                         {r.reason_detail || "Rappel"}
                         {r.reminder_time && <span> · <Clock className="w-3 h-3 inline" /> {r.reminder_time}</span>}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Badge variant={new Date(r.generated_date) <= new Date() ? "destructive" : "outline"} className="text-xs">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant={new Date(r.generated_date) <= new Date() ? "destructive" : "outline"} className="text-xs whitespace-nowrap">
                         {new Date(r.generated_date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
                       </Badge>
                       <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => {
@@ -853,18 +853,18 @@ export default function DashboardPage() {
                   </div>
                 ))}
                 {visibleReminders.map((r) => (
-                  <div key={r.call_id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors">
-                    <div className="flex-1 min-w-0">
+                  <div key={r.call_id} className="flex items-start justify-between py-2 px-3 rounded-lg hover:bg-accent transition-colors gap-3">
+                    <div className="flex-1 min-w-0 pt-0.5">
                       {r.client_id ? (
                         <Link href={`/clients/${r.client_id}`} className="text-sm font-medium hover:underline">{r.client_name || "Client"}</Link>
                       ) : (
                         <p className="text-sm font-medium">{r.contact_number || "Inconnu"}</p>
                       )}
-                      <p className="text-xs text-muted-foreground">{r.next_step || r.outcome || "Rappel"} · {new Date(r.next_step_date).toLocaleDateString("fr-FR")}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{r.next_step || r.outcome || "Rappel"} · {new Date(r.next_step_date).toLocaleDateString("fr-FR")}</p>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       {r.contact_e164 && <ClickToCall phoneNumber={r.contact_e164} />}
-                      <Badge variant={new Date(r.next_step_date) <= new Date() ? "destructive" : "outline"} className="text-xs">
+                      <Badge variant={new Date(r.next_step_date) <= new Date() ? "destructive" : "outline"} className="text-xs whitespace-nowrap">
                         {new Date(r.next_step_date) <= new Date() ? "Aujourd'hui" : new Date(r.next_step_date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
                       </Badge>
                     </div>
