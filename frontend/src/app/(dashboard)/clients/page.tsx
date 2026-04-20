@@ -55,6 +55,7 @@ import {
   Swords,
   Package,
   CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { ClickToCall } from "@/components/click-to-call";
@@ -547,6 +548,21 @@ export default function ClientsPage() {
             </Select>
           )}
 
+          {(statusFilter !== "all" || churnFilter !== "all" || hasOrders !== "all" || commercialFilter !== "all" || supplierFilter !== "all" || competitorFilter !== "all" || clientTypeFilter !== "all") && (
+            <>
+              <div className="w-px h-6 bg-border" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => { resetFilters(); setPage(0); }}
+              >
+                <RotateCcw className="w-3 h-3 mr-1" />
+                Réinitialiser
+              </Button>
+            </>
+          )}
+
           <div className="w-px h-6 bg-border" />
 
           {/* Sort selector */}
@@ -597,8 +613,18 @@ export default function ClientsPage() {
               Chargement...
             </div>
           ) : clients.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Aucun client trouvé
+            <div className="text-center py-12 text-muted-foreground space-y-3">
+              <p>Aucun client trouvé</p>
+              {(statusFilter !== "all" || churnFilter !== "all" || hasOrders !== "all" || commercialFilter !== "all" || supplierFilter !== "all" || competitorFilter !== "all" || clientTypeFilter !== "all") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { resetFilters(); setPage(0); }}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                  Réinitialiser les filtres
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">

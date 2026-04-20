@@ -161,7 +161,7 @@ async def sync_clients_from_sage(
                     select(Contact).where(
                         Contact.company_id == client.id,
                         Contact.is_primary == True,
-                    )
+                    ).order_by(Contact.created_at.desc()).limit(1)
                 )).scalar_one_or_none()
 
                 primary_contact_id = None
