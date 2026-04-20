@@ -33,6 +33,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { CallCompanionProvider } from "@/components/call-companion/context";
 import { CallCompanionWidget } from "@/components/call-companion/widget";
 import { ReminderNotifier } from "@/components/reminder-notifier";
+import { UnpaidInvoiceBanner } from "@/components/unpaid-invoice-banner";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -201,6 +202,7 @@ export default function DashboardLayout({
 
           {/* Main content */}
           <div className="flex-1 flex flex-col min-w-0">
+            <UnpaidInvoiceBanner />
             {/* Mobile header (always) */}
             <header className="md:hidden flex items-center gap-3 border-b px-4 h-14 shrink-0">
               <Button
