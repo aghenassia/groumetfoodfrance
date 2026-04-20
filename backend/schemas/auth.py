@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     phone: str | None = None
     target_ca_monthly: float | None = None
     is_active: bool
+    is_shadow: bool = False
 
     model_config = {"from_attributes": True}
 

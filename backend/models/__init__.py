@@ -25,6 +25,7 @@ from models.client_note import ClientNote
 from models.contact_phone import ContactPhone
 from models.app_setting import AppSetting
 from models.client_objective import ClientObjective
+from models.user_activity import UserLoginEvent, UserDailyActivity
 
 __all__ = [
     "User", "Client", "Contact", "PhoneIndex", "SalesLine", "Call",
@@ -35,4 +36,5 @@ __all__ = [
     "Supplier", "Competitor", "ClientSupplier", "ClientCompetitor",
     "ClientProductInterest", "CallSession", "ClientNote", "ContactPhone",
     "AppSetting", "ClientObjective",
+    "UserLoginEvent", "UserDailyActivity",
 ]

@@ -50,5 +50,25 @@ jobs:
               ALTER TABLE contacts ADD COLUMN IF NOT EXISTS personal_notes TEXT;
               ALTER TABLE users ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT FALSE;
               UPDATE users SET is_shadow = TRUE WHERE email = 'admin@salesmachine.fr';
+              CREATE TABLE IF NOT EXISTS user_login_events (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                logged_in_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                ip_address VARCHAR(45),
+                user_agent VARCHAR(500)
+              );
+              CREATE INDEX IF NOT EXISTS idx_user_login_events_user ON user_login_events(user_id);
+              CREATE INDEX IF NOT EXISTS idx_user_login_events_at ON user_login_events(logged_in_at);
+              CREATE TABLE IF NOT EXISTS user_daily_activity (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                day DATE NOT NULL,
+                minutes_active INTEGER NOT NULL DEFAULT 0,
+                session_count INTEGER NOT NULL DEFAULT 0,
+                last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_user_daily_activity UNIQUE (user_id, day)
+              );
+              CREATE INDEX IF NOT EXISTS idx_user_daily_activity_user ON user_daily_activity(user_id);
+              CREATE INDEX IF NOT EXISTS idx_user_daily_activity_day ON user_daily_activity(day);
             " || echo "Migration already applied or skipped"
             /opt/deploy-crm.sh

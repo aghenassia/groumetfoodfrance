@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PieChart,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -34,6 +35,7 @@ import { CallCompanionProvider } from "@/components/call-companion/context";
 import { CallCompanionWidget } from "@/components/call-companion/widget";
 import { ReminderNotifier } from "@/components/reminder-notifier";
 import { UnpaidInvoiceBanner } from "@/components/unpaid-invoice-banner";
+import { ActivityTracker } from "@/components/activity-tracker";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -58,6 +60,10 @@ const ADMIN_ITEMS = [
   { href: "/admin/challenges", label: "Challenges", icon: Trophy },
   { href: "/admin/import", label: "Import leads", icon: Upload },
   { href: "/admin/glossaire", label: "Glossaire", icon: BookOpen },
+];
+
+const SHADOW_ITEMS = [
+  { href: "/admin/usage", label: "Usage", icon: Activity },
 ];
 
 export default function DashboardLayout({
@@ -100,8 +106,11 @@ export default function DashboardLayout({
     router.push("/login");
   };
 
-  const navItems =
-    user.role === "admin" ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(user.role === "admin" ? ADMIN_ITEMS : []),
+    ...(user.is_shadow ? SHADOW_ITEMS : []),
+  ];
 
   const SidebarContent = ({ showCollapse = false }: { showCollapse?: boolean }) => (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
@@ -233,6 +242,7 @@ export default function DashboardLayout({
         </div>
         <CallCompanionWidget />
         <ReminderNotifier />
+        <ActivityTracker />
       </CallCompanionProvider>
     </AuthProvider>
   );

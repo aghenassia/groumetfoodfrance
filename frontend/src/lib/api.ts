@@ -88,6 +88,16 @@ class ApiClient {
     return this.get<User>("/api/auth/me");
   }
 
+  sendHeartbeat() {
+    return this.post<{ ok: boolean; minutes_today: number; sessions_today: number }>(
+      "/api/me/heartbeat"
+    );
+  }
+
+  getUsageAnalytics(period: "7d" | "30d" | "90d" | "all" = "30d") {
+    return this.get<UsageAnalyticsResponse>(`/api/admin/usage-analytics?period=${period}`);
+  }
+
   // Clients
   getClients(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
@@ -800,6 +810,28 @@ export interface User {
   phone?: string;
   target_ca_monthly?: number;
   is_active: boolean;
+  is_shadow?: boolean;
+}
+
+export interface UsageAnalyticsUser {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_shadow: boolean;
+  total_logins: number;
+  first_login_at: string | null;
+  last_login_at: string | null;
+  total_minutes: number;
+  total_sessions: number;
+  days_active: number;
+  last_active_at: string | null;
+}
+
+export interface UsageAnalyticsResponse {
+  period: "7d" | "30d" | "90d" | "all";
+  generated_at: string;
+  users: UsageAnalyticsUser[];
 }
 
 export interface Client {

@@ -58,6 +58,27 @@ async def _run_migrations(conn):
         # users
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT FALSE",
         "UPDATE users SET is_shadow = TRUE WHERE email = 'admin@salesmachine.fr'",
+        # user_login_events / user_daily_activity (tracking d'activité)
+        """CREATE TABLE IF NOT EXISTS user_login_events (
+            id VARCHAR(36) PRIMARY KEY,
+            user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            logged_in_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ip_address VARCHAR(45),
+            user_agent VARCHAR(500)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_user_login_events_user ON user_login_events(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_user_login_events_at ON user_login_events(logged_in_at)",
+        """CREATE TABLE IF NOT EXISTS user_daily_activity (
+            id VARCHAR(36) PRIMARY KEY,
+            user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            day DATE NOT NULL,
+            minutes_active INTEGER NOT NULL DEFAULT 0,
+            session_count INTEGER NOT NULL DEFAULT 0,
+            last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_user_daily_activity UNIQUE (user_id, day)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_user_daily_activity_user ON user_daily_activity(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_user_daily_activity_day ON user_daily_activity(day)",
     ]
     for sql in migrations:
         try:
@@ -122,6 +143,7 @@ from api.call_sessions import router as call_sessions_router
 from api.import_leads import router as import_leads_router
 from api.analytics import router as analytics_router
 from api.client_objectives import router as client_objectives_router
+from api.user_activity import router as user_activity_router
 
 app.include_router(auth_router)
 app.include_router(clients_router)
@@ -141,6 +163,7 @@ app.include_router(call_sessions_router)
 app.include_router(import_leads_router)
 app.include_router(analytics_router)
 app.include_router(client_objectives_router)
+app.include_router(user_activity_router)
 
 
 @app.get("/api/health")

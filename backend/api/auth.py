@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,13 +6,14 @@ from core.database import get_db
 from core.security import hash_password, verify_password, create_access_token, get_current_user, require_admin
 from models.user import User
 from models.client import Client
+from models.user_activity import UserLoginEvent
 from schemas.auth import LoginRequest, TokenResponse, UserResponse, CreateUserRequest
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -21,6 +22,20 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Compte désactivé")
+
+    # Tracker la connexion (best-effort, ne bloque jamais le login)
+    try:
+        ip = request.client.host if request.client else None
+        # Respect des reverse proxies (nginx)
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            ip = fwd.split(",")[0].strip()
+        ua = request.headers.get("user-agent", "")[:500]
+        db.add(UserLoginEvent(user_id=user.id, ip_address=ip, user_agent=ua or None))
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        print(f"[login-tracking] skip: {e}")
 
     token = create_access_token({"sub": user.id, "role": user.role})
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
