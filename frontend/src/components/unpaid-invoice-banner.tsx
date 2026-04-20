@@ -10,8 +10,7 @@ const INVOICE_ISSUE_DATE = "2026-03-19";
 
 const IBAN = "FR7630066106370002043240182";
 
-const SNOOZE_MINUTES = 5;
-const SNOOZE_KEY = "unpaid_invoice_snoozed_until";
+const LEGACY_SNOOZE_KEY = "unpaid_invoice_snoozed_until";
 
 function daysSince(dateIso: string): number {
   const start = new Date(dateIso).getTime();
@@ -20,31 +19,23 @@ function daysSince(dateIso: string): number {
 }
 
 export function UnpaidInvoiceBanner() {
-  const [snoozedUntil, setSnoozedUntil] = useState<number>(0);
   const [copied, setCopied] = useState(false);
-  const [now, setNow] = useState<number>(Date.now());
+  const [, setTick] = useState(0);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(SNOOZE_KEY);
-    if (raw) setSnoozedUntil(parseInt(raw, 10) || 0);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(LEGACY_SNOOZE_KEY);
+    }
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(t);
   }, []);
 
   if (!ENABLED) return null;
-  if (snoozedUntil && now < snoozedUntil) return null;
 
   const days = daysSince(INVOICE_ISSUE_DATE);
-
-  const handleSnooze = () => {
-    const until = Date.now() + SNOOZE_MINUTES * 60 * 1000;
-    window.localStorage.setItem(SNOOZE_KEY, String(until));
-    setSnoozedUntil(until);
-  };
 
   const handleCopy = async () => {
     try {
@@ -84,14 +75,6 @@ export function UnpaidInvoiceBanner() {
                 <Copy className="w-3.5 h-3.5 mr-1" /> Copier l'IBAN
               </>
             )}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleSnooze}
-            className="h-7 px-2 text-white/90 hover:bg-orange-600 hover:text-white"
-          >
-            Plus tard
           </Button>
         </div>
       </div>
