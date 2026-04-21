@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, AdminDashboard, SyncLog } from "@/lib/api";
 import {
@@ -44,6 +44,7 @@ export default function AdminPage() {
     error?: string;
   } | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const fetchDashboard = () => {
     api
@@ -69,8 +70,8 @@ export default function AdminPage() {
       toast.success(`${res.synced} appels synchronisés`);
       fetchDashboard();
       fetchLogs();
-    } catch {
-      toast.error("Erreur de synchronisation");
+    } catch (e) {
+      toast.error(`Erreur de synchronisation: ${(e as Error).message || "inconnue"}`);
     } finally {
       setSyncing(false);
     }
@@ -129,8 +130,10 @@ export default function AdminPage() {
       );
       fetchDashboard();
       fetchLogs();
-    } catch {
-      toast.error("Erreur sync Sage");
+    } catch (e) {
+      const msg = (e as Error).message || "inconnue";
+      toast.error(`Erreur sync Sage: ${msg}`, { duration: 10000 });
+      fetchLogs();
     } finally {
       setSageSyncing(false);
     }
@@ -146,8 +149,10 @@ export default function AdminPage() {
       );
       fetchDashboard();
       fetchLogs();
-    } catch {
-      toast.error("Erreur delta sync Sage");
+    } catch (e) {
+      const msg = (e as Error).message || "inconnue";
+      toast.error(`Erreur delta sync Sage: ${msg}`, { duration: 10000 });
+      fetchLogs();
     } finally {
       setSageSyncing(false);
     }
@@ -458,51 +463,79 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {syncLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-accent/50">
-                    <td className="px-3 py-2">
-                      <Badge variant="outline" className="text-xs">
-                        {log.source}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-xs">{log.sync_type}</td>
-                    <td className="px-3 py-2">
-                      <Badge
-                        variant={
-                          log.status === "completed"
-                            ? "default"
-                            : log.status === "error"
-                              ? "destructive"
-                              : "secondary"
-                        }
-                        className="text-xs"
+                {syncLogs.map((log) => {
+                  const isExpandable = !!log.error_message;
+                  const isExpanded = expandedLogId === log.id;
+                  return (
+                    <Fragment key={log.id}>
+                      <tr
+                        className={`hover:bg-accent/50 ${isExpandable ? "cursor-pointer" : ""}`}
+                        onClick={() => isExpandable && setExpandedLogId(isExpanded ? null : log.id)}
+                        title={isExpandable ? "Cliquer pour voir le détail de l'erreur" : undefined}
                       >
-                        {log.status}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs">
-                      {log.records_found}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs">
-                      {log.records_created}
-                    </td>
-                    <td className="px-3 py-2 text-right text-xs">
-                      {log.records_errors > 0 ? (
-                        <span className="text-red-600">{log.records_errors}</span>
-                      ) : (
-                        "0"
+                        <td className="px-3 py-2">
+                          <Badge variant="outline" className="text-xs">
+                            {log.source}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 text-xs">{log.sync_type}</td>
+                        <td className="px-3 py-2">
+                          <Badge
+                            variant={
+                              log.status === "completed"
+                                ? "default"
+                                : log.status === "error"
+                                  ? "destructive"
+                                  : "secondary"
+                            }
+                            className="text-xs"
+                          >
+                            {log.status}
+                            {isExpandable && (isExpanded ? " ▾" : " ▸")}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs">
+                          {log.records_found}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs">
+                          {log.records_created}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs">
+                          {log.records_errors > 0 ? (
+                            <span className="text-red-600">{log.records_errors}</span>
+                          ) : (
+                            "0"
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                          {new Date(log.started_at).toLocaleString("fr-FR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                      </tr>
+                      {isExpanded && log.error_message && (
+                        <tr className="bg-red-50/40">
+                          <td colSpan={7} className="px-4 py-3">
+                            <div className="text-xs font-medium text-red-700 mb-1">
+                              Message d&apos;erreur complet :
+                            </div>
+                            <pre className="text-xs bg-white border border-red-200 rounded p-3 overflow-x-auto whitespace-pre-wrap text-red-900 max-h-64">
+                              {log.error_message}
+                            </pre>
+                            {log.finished_at && (
+                              <div className="text-[10px] text-muted-foreground mt-2">
+                                Terminé à {new Date(log.finished_at).toLocaleString("fr-FR")}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {new Date(log.started_at).toLocaleString("fr-FR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
